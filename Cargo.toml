@@ -1,0 +1,26 @@
+[package]
+name = "gpui-m3"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Material 3 Expressive components for GPUI: shape morphing, spring motion and dynamic color"
+authors = ["chrx3"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/chrx3/gpui-m3"
+readme = "README.md"
+keywords = ["gpui", "material-design", "ui", "components", "gui"]
+categories = ["gui"]
+exclude = ["/docs", "/.github", "/.cargo"]
+
+[dependencies]
+gpui = "0.2.2"
+material-colors = "0.4"
+unicode-segmentation = "1"
+
+# Unoptimized GPUI is very slow. In development, dependencies are optimized (built once) and
+# this crate gets a light optimization that keeps rebuilds fast. Copy these into your app.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
