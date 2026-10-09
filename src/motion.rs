@@ -462,6 +462,16 @@ pub fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32) -> impl Fn(f32) -> f32 +
 }
 
 /// Stable child key for a component's animated values.
+/// Opacity for pulsing text ("Working…"): 1 → 0.45 → 1 every `period` seconds, at 30 fps.
+/// With reduced motion it stays at 1.
+pub fn pulse(period: f32, window: &mut Window, cx: &mut App) -> f32 {
+    if MotionSettings::get(cx).reduced {
+        return 1.;
+    }
+    let t = continuous_at(30., window, cx);
+    0.725 + 0.275 * (t / period.max(0.1) * std::f32::consts::TAU).cos()
+}
+
 /// Time-based replay: returns the seconds elapsed since `generation` last changed, or `None`
 /// once `duration` has passed (and on the first frame, so nothing plays on mount). Use it for
 /// one-shot effects such as the send button's launch or a tab's content fading in.

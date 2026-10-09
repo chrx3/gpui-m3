@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, BoxShadow, ClickEvent, Div, ElementId, FontWeight, InteractiveElement,
+    AnyElement, App, BoxShadow, ClickEvent, Div, ElementId, FontWeight, Hsla, InteractiveElement,
     IntoElement, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
     Styled, Window, div, point, px,
 };
@@ -693,7 +693,11 @@ impl RenderOnce for MenuItem {
 pub struct Card {
     id: Option<ElementId>,
     tone: Option<Tone>,
-    padding: Pixels,
+    background: Option<Hsla>,
+    padding: (Pixels, Pixels),
+    radius: Pixels,
+    gap: Pixels,
+    entrance: bool,
     on_click: Option<ClickHandler>,
     children: Vec<AnyElement>,
 }
@@ -702,11 +706,8 @@ impl Card {
     /// Card with a tonal container.
     pub fn tonal(tone: Tone) -> Self {
         Self {
-            id: None,
             tone: Some(tone),
-            padding: px(22.),
-            on_click: None,
-            children: Vec::new(),
+            ..Self::plain()
         }
     }
 
@@ -715,19 +716,55 @@ impl Card {
         Self {
             id: None,
             tone: None,
-            padding: px(22.),
+            background: None,
+            padding: (px(22.), px(22.)),
+            radius: px(28.),
+            gap: px(12.),
+            entrance: false,
             on_click: None,
             children: Vec::new(),
         }
     }
 
-    /// Inner padding (22 px by default).
+    /// Inner padding on all sides (22 px by default).
     pub fn padding(mut self, padding: Pixels) -> Self {
-        self.padding = padding;
+        self.padding = (padding, padding);
         self
     }
 
-    /// Id unique within the view; required by [`Card::on_click`].
+    /// Horizontal and vertical padding.
+    pub fn padding_xy(mut self, x: Pixels, y: Pixels) -> Self {
+        self.padding = (x, y);
+        self
+    }
+
+    /// Corner radius (28 px by default).
+    pub fn radius(mut self, radius: Pixels) -> Self {
+        self.radius = radius;
+        self
+    }
+
+    /// Gap between children (12 px by default).
+    pub fn gap(mut self, gap: Pixels) -> Self {
+        self.gap = gap;
+        self
+    }
+
+    /// Custom background (e.g. `surface_container_high` for tool cards); the text keeps the
+    /// tone's or `on_surface` color.
+    pub fn bg(mut self, background: Hsla) -> Self {
+        self.background = Some(background);
+        self
+    }
+
+    /// Shape entrance when the card appears: corners open from 48 px to the final radius while
+    /// it rises 24 px and fades in (permission requests). Needs a [`Card::id`].
+    pub fn entrance(mut self, entrance: bool) -> Self {
+        self.entrance = entrance;
+        self
+    }
+
+    /// Id unique within the view; required by [`Card::on_click`] and [`Card::entrance`].
     pub fn id(mut self, id: impl Into<ElementId>) -> Self {
         self.id = Some(id.into());
         self
@@ -753,25 +790,36 @@ impl RenderOnce for Card {
             Some(tone) => tone.colors(&s),
             None => (mix(s.primary, s.surface_container, 0.06), s.on_surface),
         };
+        let bg = self.background.unwrap_or(bg);
+        debug_assert!(
+            (self.on_click.is_none() && !self.entrance) || self.id.is_some(),
+            "Card::on_click and Card::entrance need Card::id"
+        );
+        let progress = match (&self.id, self.entrance) {
+            (Some(id), true) => entrance(key(id, "enter"), Spring::SPATIAL_SLOW, 0., window, cx),
+            _ => 1.,
+        };
+        let radius = self.radius + (px(48.) - self.radius) * (1. - progress).max(0.);
         let card = div()
             .relative()
             .flex()
             .flex_col()
-            .gap(px(12.))
-            .p(self.padding)
-            .rounded(px(28.))
+            .gap(self.gap)
+            .px(self.padding.0)
+            .py(self.padding.1)
+            .rounded(radius)
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY);
-        debug_assert!(
-            self.on_click.is_none() || self.id.is_some(),
-            "Card::on_click needs Card::id"
-        );
+            .font_family(FONT_FAMILY)
+            .when(progress < 1., |d| {
+                d.top(px((1. - progress) * 24.))
+                    .opacity(progress.clamp(0., 1.))
+            });
         let (Some(id), Some(f)) = (self.id, self.on_click) else {
             return card.children(self.children).into_any_element();
         };
         let state = use_interaction(&id, window, cx);
-        let layer = state_layer(&id, &state, all(px(28.)), fg, window, cx);
+        let layer = state_layer(&id, &state, all(radius), fg, window, cx);
         let card = card.id(id).child(layer).children(self.children);
         interactive(card, &state, true, true)
             .on_click(move |e, w, cx| f(e, w, cx))

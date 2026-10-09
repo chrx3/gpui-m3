@@ -542,44 +542,88 @@ impl RenderOnce for SplitButton {
     }
 }
 
-/// Badge: a dot (no text) or a pill with a short number.
+/// Badge: a dot (no text), a pill with a short number, or a tonal text label ("all",
+/// "3 changes", "in background").
 #[derive(IntoElement)]
 pub struct Badge {
     label: Option<SharedString>,
+    tone: Option<Tone>,
+    mono: bool,
+    height: Pixels,
 }
 
 impl Badge {
+    /// Numeric badge (tertiary container).
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
             label: Some(label.into()),
+            tone: None,
+            mono: false,
+            height: px(18.),
         }
     }
 
     pub fn dot() -> Self {
-        Self { label: None }
+        Self {
+            label: None,
+            ..Self::new("")
+        }
+    }
+
+    /// Text label on a tonal container (11 px, weight 500).
+    pub fn tonal(tone: Tone, label: impl Into<SharedString>) -> Self {
+        Self {
+            tone: Some(tone),
+            ..Self::new(label)
+        }
+    }
+
+    /// Label in the monospace font.
+    pub fn mono(mut self, mono: bool) -> Self {
+        self.mono = mono;
+        self
+    }
+
+    /// Height (18 px by default; 20 for a question header).
+    pub fn height(mut self, height: Pixels) -> Self {
+        self.height = height;
+        self
     }
 }
 
 impl RenderOnce for Badge {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        match self.label {
-            None => div().flex_none().size(px(6.)).rounded(px(3.)).bg(s.error),
-            Some(label) => div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .justify_center()
-                .min_w(px(18.))
-                .h(px(18.))
-                .px(px(5.))
-                .rounded(px(9.))
-                .bg(s.tertiary_container)
-                .text_color(s.on_tertiary_container)
-                .font_family(FONT_FAMILY)
-                .text_size(px(11.))
-                .font_weight(FontWeight(700.))
-                .child(label),
-        }
+        let Some(label) = self.label else {
+            return div().flex_none().size(px(6.)).rounded(px(3.)).bg(s.error);
+        };
+        let (bg, fg, weight, pad, min_w) = match self.tone {
+            Some(tone) => {
+                let (bg, fg) = tone.colors(&s);
+                (bg, fg, 500., 6., 0.)
+            }
+            None => (s.tertiary_container, s.on_tertiary_container, 700., 5., 18.),
+        };
+        let height = f32::from(self.height);
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .min_w(px(min_w))
+            .h(self.height)
+            .px(px(pad))
+            .rounded(px(height / 2.))
+            .bg(bg)
+            .text_color(fg)
+            .font_family(if self.mono {
+                MONO_FONT_FAMILY
+            } else {
+                FONT_FAMILY
+            })
+            .text_size(px(11.))
+            .font_weight(FontWeight(if self.mono { 400. } else { weight }))
+            .whitespace_nowrap()
+            .child(label)
     }
 }

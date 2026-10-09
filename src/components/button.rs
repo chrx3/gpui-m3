@@ -5,6 +5,7 @@
 //! from a pill to rounded corners.
 
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
 
@@ -30,10 +31,15 @@ pub enum ButtonVariant {
     Outlined,
     /// Text only.
     Text,
+    /// Quiet action in the outline color that fills with the secondary container on hover
+    /// (a message's "Copy").
+    Ghost,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonSize {
+    /// 28 px tall, 9 px padding (inline actions such as "Copy").
+    Tiny,
     /// 30 px tall.
     Small,
     /// 32 px tall, 14 px padding (the composer's model button).
@@ -51,6 +57,7 @@ impl ButtonSize {
     /// Height, horizontal padding, text size, selected radius and pressed radius.
     fn metrics(self) -> (f32, f32, f32, f32, f32) {
         match self {
+            ButtonSize::Tiny => (28., 9., 11.5, 8., 8.),
             ButtonSize::Small => (30., 12., 12.5, 10., 8.),
             ButtonSize::Compact => (32., 14., 12.5, 12., 8.),
             ButtonSize::Medium => (36., 18., 13.5, 12., 8.),
@@ -107,6 +114,7 @@ fn palette(
             Some(s.outline_variant),
         ),
         (ButtonVariant::Text, _) => (alpha(s.on_surface, 0.), s.primary, None),
+        (ButtonVariant::Ghost, _) => (alpha(s.secondary_container, 0.), s.outline, None),
     }
 }
 
@@ -123,6 +131,8 @@ pub struct Button {
     open: bool,
     disabled: bool,
     trailing: Option<AnyElement>,
+    confirm: Option<(SharedString, Duration)>,
+    label_on_hover: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -139,8 +149,23 @@ impl Button {
             open: false,
             disabled: false,
             trailing: None,
+            confirm: None,
+            label_on_hover: false,
             on_click: None,
         }
+    }
+
+    /// After a click, shows a check, `label` and the primary container for `duration`
+    /// ("Copied").
+    pub fn confirm(mut self, label: impl Into<SharedString>, duration: Duration) -> Self {
+        self.confirm = Some((label.into(), duration));
+        self
+    }
+
+    /// The label stays folded away and slides out on hover (and while confirming).
+    pub fn label_on_hover(mut self, on_hover: bool) -> Self {
+        self.label_on_hover = on_hover;
+        self
     }
 
     /// Secondary text after the label (opacity 0.75, weight 500), e.g. the effort level.
@@ -214,9 +239,21 @@ impl RenderOnce for Button {
         let (height, pad, font, selected_radius, pressed_radius) = self.size.metrics();
         let enabled = !self.disabled;
         let state = use_interaction(&self.id, window, cx);
-        let pressed = state.read(cx).pressed && enabled;
+        let (hovered, pressed) = {
+            let st = state.read(cx);
+            (st.hovered && enabled, st.pressed && enabled)
+        };
+        let confirmed_at = self
+            .confirm
+            .as_ref()
+            .map(|_| window.use_keyed_state(key(&self.id, "confirm"), cx, |_, _| None::<Instant>));
+        let confirming = match (&confirmed_at, &self.confirm) {
+            (Some(at), Some((_, duration))) => at.read(cx).is_some_and(|t| t.elapsed() < *duration),
+            _ => false,
+        };
+        let ghost_on = self.variant == ButtonVariant::Ghost && (hovered || confirming);
 
-        let radius_target = if pressed {
+        let radius_target = if pressed || ghost_on {
             pressed_radius
         } else if self.selected == Some(true) || self.open {
             selected_radius
@@ -230,7 +267,15 @@ impl RenderOnce for Button {
             window,
             cx,
         ));
-        let (bg, fg, border) = palette(cx, self.variant, self.selected, enabled);
+        let (bg, fg, border) = if confirming {
+            let s = Theme::of(cx);
+            (s.primary_container, s.on_primary_container, None)
+        } else if ghost_on {
+            let s = Theme::of(cx);
+            (s.secondary_container, s.on_secondary_container, None)
+        } else {
+            palette(cx, self.variant, self.selected, enabled)
+        };
         let bg = animate_color(key(&self.id, "bg"), Spring::EFFECTS, bg, window, cx);
         let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
         let layer = state_layer(&self.id, &state, all(radius), fg, window, cx);
@@ -273,7 +318,13 @@ impl RenderOnce for Button {
             .flex_none()
             .items_center()
             .justify_center()
-            .gap_2()
+            .gap(px(if self.label_on_hover {
+                0.
+            } else if self.size == ButtonSize::Tiny {
+                5.
+            } else {
+                8.
+            }))
             .h(px(height))
             .px(px(if self.icon.is_some() { pad - 2. } else { pad }))
             .corners(all(radius))
@@ -287,11 +338,46 @@ impl RenderOnce for Button {
         if let Some(border) = border {
             el = el.border_1().border_color(border);
         }
-        if let Some(icon) = self.icon {
-            el = el.child(Icon::new(icon).size(px(font + 4.)).color(fg));
+        let icon = if confirming {
+            Some(SharedString::from("check"))
+        } else {
+            self.icon
+        };
+        if let Some(icon) = icon {
+            let size = if self.size == ButtonSize::Tiny {
+                14.
+            } else {
+                font + 4.
+            };
+            el = el.child(Icon::new(icon).size(px(size)).color(fg));
         }
-        if let Some(label) = self.label {
-            el = el.child(label);
+        let label = match (&self.confirm, confirming) {
+            (Some((label, _)), true) => Some(label.clone()),
+            _ => self.label,
+        };
+        if let Some(label) = label {
+            if self.label_on_hover {
+                // Slides out by animating its maximum width.
+                let shown = animate_f32(
+                    key(&self.id, "label"),
+                    Spring::EFFECTS,
+                    if hovered || confirming { 1. } else { 0. },
+                    window,
+                    cx,
+                )
+                .clamp(0., 1.);
+                el = el.child(
+                    div()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .max_w(px(80. * shown))
+                        .pl(px(5. * shown))
+                        .opacity(shown)
+                        .child(label),
+                );
+            } else {
+                el = el.child(label);
+            }
         }
         if let Some(sub) = self.sublabel {
             el = el.child(
@@ -306,8 +392,28 @@ impl RenderOnce for Button {
             el = el.child(trailing);
         }
         let mut el = interactive(el, &state, enabled, true);
-        if let (Some(f), true) = (self.on_click, enabled) {
-            el = el.on_click(move |e, w, cx| f(e, w, cx));
+        if enabled && (self.on_click.is_some() || confirmed_at.is_some()) {
+            let f = self.on_click;
+            let duration = self.confirm.as_ref().map(|(_, d)| *d);
+            el = el.on_click(move |e, w, cx| {
+                if let (Some(at), Some(duration)) = (&confirmed_at, duration) {
+                    at.update(cx, |at, cx| {
+                        *at = Some(Instant::now());
+                        cx.notify();
+                    });
+                    // Redraw once more when the confirmation ends.
+                    let at = at.clone();
+                    let timer = cx.background_executor().timer(duration);
+                    cx.spawn(async move |cx| {
+                        timer.await;
+                        at.update(cx, |_, cx| cx.notify()).ok();
+                    })
+                    .detach();
+                }
+                if let Some(f) = &f {
+                    f(e, w, cx);
+                }
+            });
         }
         el
     }

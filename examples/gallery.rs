@@ -10,16 +10,17 @@ use gpui::{
     deferred, div, point, prelude::FluentBuilder, px, size,
 };
 use gpui_m3::{
-    Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, Card, Chip, ChipSize, Dialog, DotShape,
-    Fab, IconButton, IconTab, IconTabs, LinearProgress, ListGroup, LoadingIndicator, Menu,
-    MenuItem, MorphDot, MotionSettings, NavItem, PopDirection, Popover, RailItem, Ring, Segment,
-    SegmentedButtons, Shape, ShapeName, SplitButton, Spring, StopSlider, Switch, TextField,
-    TextFieldEvent, Theme, Toast, Tone, WavyProgress, context_menu,
-    motion::{animate_f32, key},
+    Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip, ChipSize,
+    ChoiceRow, Dialog, DotShape, ExpandableCard, Fab, Icon, IconButton, IconTab, IconTabs,
+    LinearProgress, ListGroup, LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem,
+    PopDirection, Popover, RailItem, Ring, Segment, SegmentedButtons, Shape, ShapeName,
+    SplitButton, Spring, StopSlider, Switch, TextField, TextFieldEvent, Theme, Toast, Tone,
+    WavyProgress, context_menu,
+    motion::{animate_f32, key, pulse},
     theme::{FONT_FAMILY, alpha, hex},
 };
 
-const SECTIONS: [(&str, &str); 10] = [
+const SECTIONS: [(&str, &str); 11] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -29,6 +30,7 @@ const SECTIONS: [(&str, &str); 10] = [
     ("Surfaces", "blocks"),
     ("Text and feedback", "chat"),
     ("Composer", "up"),
+    ("Conversation", "diff"),
     ("Motion", "refresh"),
 ];
 
@@ -85,6 +87,11 @@ struct Demos {
     mode: usize,
     agents_live: bool,
     usage_open: bool,
+    answer: usize,
+    answers: [bool; 3],
+    tool_open: bool,
+    thinking_open: bool,
+    permission_shown: bool,
     name: Entity<TextField>,
     submitted: SharedString,
     dialog_open: bool,
@@ -174,6 +181,11 @@ impl Demos {
             mode: 0,
             agents_live: true,
             usage_open: false,
+            answer: 0,
+            answers: [true, false, false],
+            tool_open: true,
+            thinking_open: false,
+            permission_shown: true,
             name,
             submitted: SharedString::default(),
             dialog_open: false,
@@ -344,6 +356,7 @@ impl Render for Demos {
             6 => self.surfaces(cx),
             7 => self.inputs(cx),
             8 => self.composer(cx),
+            9 => self.conversation(window, cx),
             _ => self.motion(window, cx),
         };
         div()
@@ -1412,6 +1425,158 @@ impl Demos {
                 "Composer chips",
                 "Muted static chips, a tonal mode chip with a morphing dot (click to cycle), a filter that keeps its icon and pulses, a tonal file chip and a small mono chip.",
                 under,
+            ))
+            .into_any_element()
+    }
+
+    fn conversation(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let s = *Theme::of(cx);
+        let options = [
+            (
+                "Keep the current API",
+                "Add the new builders next to the old ones.",
+            ),
+            ("Break it", "Rename everything now, before 0.1."),
+            ("Ask me later", ""),
+        ];
+        let mut single = column().w(px(460.)).gap(px(4.));
+        let mut multi = column().w(px(460.)).gap(px(4.));
+        for (i, (label, description)) in options.into_iter().enumerate() {
+            let mut radio = ChoiceRow::radio(("answer", i), label, self.answer == i)
+                .on_click(click(cx, move |this, _| this.answer = i));
+            let mut check = ChoiceRow::checkbox(("answers", i), label, self.answers[i])
+                .on_click(click(cx, move |this, _| this.answers[i] = !this.answers[i]));
+            if !description.is_empty() {
+                radio = radio.description(description);
+                check = check.description(description);
+            }
+            single = single.child(radio);
+            multi = multi.child(check);
+        }
+
+        let tool = ExpandableCard::new("tool-edit")
+            .open(self.tool_open)
+            .on_toggle(update(cx, |this, open: bool, _| this.tool_open = open))
+            .header(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(7.))
+                    .child(Icon::new("check").size(px(13.)).color(s.success))
+                    .child(div().font_weight(FontWeight(600.)).child("Edit"))
+                    .child(div().text_color(s.on_surface_variant).child("theme.rs"))
+                    .child(Badge::tonal(Tone::Secondary, "3 changes"))
+                    .child(Badge::tonal(Tone::Tertiary, "all")),
+            )
+            .child(
+                div()
+                    .p(px(10.))
+                    .rounded(px(12.))
+                    .bg(s.surface)
+                    .text_color(s.on_surface_variant)
+                    .child("- primary: hex(0x6750a4)\n+ primary: hex(0x65558f)"),
+            );
+        let subagent = ExpandableCard::new("tool-agent")
+            .tone(Tone::Secondary)
+            .header(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(7.))
+                    .child(LoadingIndicator::new().size(px(14.)))
+                    .child(div().font_weight(FontWeight(600.)).child("Subagent"))
+                    .child("Explore"),
+            )
+            .under(
+                row()
+                    .gap(px(4.))
+                    .pl(px(33.))
+                    .pb(px(7.))
+                    .child(Badge::tonal(Tone::Primary, "Grep").mono(true))
+                    .child(Badge::tonal(Tone::Primary, "Read").mono(true)),
+            )
+            .child("Summary of what the subagent found.");
+        let thinking = ExpandableCard::new("thinking")
+            .plain(true)
+            .open(self.thinking_open)
+            .on_toggle(update(cx, |this, open: bool, _| this.thinking_open = open))
+            .header(div().opacity(pulse(1.6, window, cx)).child("Reasoning…"))
+            .child(
+                "The user wants a 1:1 copy, so the card radius should be 16 on the high container.",
+            );
+
+        let permission = Card::tonal(Tone::Tertiary)
+            .id(("permission", self.permission_shown as u64))
+            .entrance(true)
+            .padding_xy(px(18.), px(16.))
+            .gap(px(10.))
+            .child(
+                div()
+                    .text_size(px(14.))
+                    .font_weight(FontWeight(600.))
+                    .child("Claude wants to run a command"),
+            )
+            .child(
+                div()
+                    .p(px(10.))
+                    .rounded(px(16.))
+                    .bg(s.surface)
+                    .text_color(s.on_surface)
+                    .child("$ cargo test"),
+            )
+            .child(
+                row()
+                    .gap(px(6.))
+                    .child(
+                        Button::new("perm-allow", "Allow")
+                            .filled()
+                            .size(ButtonSize::Comfortable),
+                    )
+                    .child(Button::new("perm-always", "Always allow").size(ButtonSize::Comfortable))
+                    .child(
+                        Button::new("perm-deny", "Deny")
+                            .outlined()
+                            .size(ButtonSize::Comfortable),
+                    ),
+            );
+
+        page()
+            .child(demo(
+                "Choice rows",
+                "AskUserQuestion options: radio or checkbox mark, label and description; selected rows fill with the primary color.",
+                row().items_start().gap(px(24.)).child(single).child(multi),
+            ))
+            .child(demo(
+                "Expandable cards",
+                "Tool card (radius 16, chevron rotates, corners tighten on press while closed), a tonal subagent card with an always-visible row, and the plain reasoning disclosure with pulsing text.",
+                column().w(px(520.)).gap(px(8.)).child(tool).child(subagent).child(thinking),
+            ))
+            .child(demo(
+                "Permission card",
+                "Tonal card with the shape entrance (corners 48 → 28, rises 24 px) and 40 px buttons.",
+                column()
+                    .w(px(520.))
+                    .items_start()
+                    .child(permission)
+                    .child(
+                        Button::new("perm-replay", "Replay entrance")
+                            .text()
+                            .size(ButtonSize::Small)
+                            .on_click(click(cx, |this, _| this.permission_shown = !this.permission_shown)),
+                    ),
+            ))
+            .child(demo(
+                "Copy action",
+                "Ghost button whose label slides out on hover and confirms with a check for 1.4 s.",
+                row().child(
+                    Button::new("copy", "Copy")
+                        .variant(ButtonVariant::Ghost)
+                        .size(ButtonSize::Tiny)
+                        .icon("copy")
+                        .label_on_hover(true)
+                        .confirm("Copied", std::time::Duration::from_millis(1400))
+                        .on_click(|_, _, _| {}),
+                ),
             ))
             .into_any_element()
     }
