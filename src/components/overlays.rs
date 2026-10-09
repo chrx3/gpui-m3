@@ -22,6 +22,9 @@ pub struct Dialog {
     title: Option<SharedString>,
     icon: Option<SharedString>,
     width: Pixels,
+    height: Option<Pixels>,
+    padding: Pixels,
+    radius: Pixels,
     children: Vec<AnyElement>,
     actions: Vec<AnyElement>,
     on_dismiss: Option<ClickHandler>,
@@ -34,6 +37,9 @@ impl Dialog {
             title: None,
             icon: None,
             width: px(400.),
+            height: None,
+            padding: px(24.),
+            radius: px(28.),
             children: Vec::new(),
             actions: Vec::new(),
             on_dismiss: None,
@@ -53,6 +59,26 @@ impl Dialog {
 
     pub fn width(mut self, width: Pixels) -> Self {
         self.width = width;
+        self
+    }
+
+    /// Fixed size with free layout (a settings window): pair it with `.padding(px(0.))` and
+    /// lay out the children yourself. The dialog shrinks to fit small windows.
+    pub fn sized(mut self, width: Pixels, height: Pixels) -> Self {
+        self.width = width;
+        self.height = Some(height);
+        self
+    }
+
+    /// Inner padding (24 px by default).
+    pub fn padding(mut self, padding: Pixels) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    /// Corner radius (28 px by default).
+    pub fn radius(mut self, radius: Pixels) -> Self {
+        self.radius = radius;
         self
     }
 
@@ -85,8 +111,14 @@ impl RenderOnce for Dialog {
             .flex_col()
             .gap(px(16.))
             .w(self.width)
-            .p(px(24.))
-            .rounded(px(28.))
+            .max_w(window.viewport_size().width - px(48.))
+            .when_some(self.height, |d, h| {
+                d.h(h)
+                    .max_h(window.viewport_size().height - px(48.))
+                    .overflow_hidden()
+            })
+            .p(self.padding)
+            .rounded(self.radius)
             .bg(s.surface_container_high)
             .text_color(s.on_surface_variant)
             .text_size(px(13.5))

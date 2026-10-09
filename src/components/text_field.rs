@@ -100,6 +100,7 @@ pub struct TextField {
     icon: Option<SharedString>,
     style: TextFieldStyle,
     height: Option<Pixels>,
+    font_size: Option<Pixels>,
     select_all_on_focus: bool,
     restore_on_cancel: bool,
     was_focused: bool,
@@ -130,6 +131,7 @@ impl TextField {
             icon: None,
             style: TextFieldStyle::Pill,
             height: None,
+            font_size: None,
             select_all_on_focus: false,
             restore_on_cancel: false,
             was_focused: false,
@@ -147,6 +149,15 @@ impl TextField {
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.placeholder = placeholder.into();
         self
+    }
+
+    pub fn set_placeholder(
+        &mut self,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        self.placeholder = placeholder.into();
+        cx.notify();
     }
 
     /// Leading icon (see [`crate::Assets::icon_names`]).
@@ -179,6 +190,12 @@ impl TextField {
     /// Overrides the style's height (44 / 38 / 34 / 26 px).
     pub fn height(mut self, height: Pixels) -> Self {
         self.height = Some(height);
+        self
+    }
+
+    /// Overrides the style's text size.
+    pub fn text_size(mut self, size: Pixels) -> Self {
+        self.font_size = Some(size);
         self
     }
 
@@ -744,6 +761,7 @@ impl Render for TextField {
             TextFieldStyle::Bare => (26., 0., 6., 16., 13.5, 0., 0.),
         };
         let height = self.height.map_or(height, f32::from);
+        let text_size = self.font_size.map_or(text_size, f32::from);
         // Like the reference design's composer and search fields: the pill deepens and its corners open up on focus.
         let radius = px(animate_f32(
             key(&id, "radius"),

@@ -11,12 +11,12 @@ use gpui::{
 };
 use gpui_m3::{
     Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip, ChipSize,
-    ChoiceRow, Dialog, DotShape, ExpandableCard, Fab, Icon, IconButton, IconTab, IconTabs,
-    LinearProgress, ListGroup, ListItem, LoadingIndicator, Menu, MenuItem, MorphDot,
-    MotionSettings, NavItem, PopDirection, Popover, RailItem, Ring, Segment, SegmentedButtons,
-    Shape, ShapeName, Slider, SplitButton, Spring, StopSlider, Switch, Tab, TabStrip, TextArea,
-    TextAreaEvent, TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress,
-    context_menu,
+    ChoiceRow, Command, CommandPalette, CommandPaletteEvent, Dialog, DotShape, ExpandableCard, Fab,
+    Icon, IconButton, IconTab, IconTabs, LinearProgress, ListGroup, ListItem, LoadingIndicator,
+    Menu, MenuItem, MorphDot, MotionSettings, NavItem, PopDirection, Popover, RailItem, Ring,
+    Segment, SegmentedButtons, Shape, ShapeName, Slider, SplitButton, Spring, StopSlider, Switch,
+    Tab, TabStrip, TextArea, TextAreaEvent, TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow,
+    WavyProgress, context_menu,
     motion::{animate_color, animate_f32, key, pulse},
     theme::{FONT_FAMILY, alpha, hex},
 };
@@ -102,6 +102,9 @@ struct Demos {
     nav_unread: bool,
     deleted: usize,
     dot_key: u64,
+    palette: Entity<CommandPalette>,
+    palette_open: bool,
+    palette_ran: SharedString,
     name: Entity<TextField>,
     submitted: SharedString,
     dialog_open: bool,
@@ -176,6 +179,33 @@ impl Demos {
             })
             .detach();
         }
+        let palette = cx.new(|cx| {
+            let mut palette =
+                CommandPalette::new(cx).placeholder("Search for a command or a chat…", cx);
+            palette.set_commands(
+                vec![
+                    Command::new("plus", "New conversation").hint("Ctrl+N"),
+                    Command::new("chat", "New chat without a project"),
+                    Command::new("folder-open", "Open workspace…").hint("Ctrl+O"),
+                    Command::new("history", "Conversation history"),
+                    Command::new("gear", "Settings").hint("Ctrl+,"),
+                    Command::new("spark", "Theme migration").hint("Conversation"),
+                ],
+                cx,
+            );
+            palette
+        });
+        cx.subscribe(
+            &palette,
+            |this: &mut Demos, _, event: &CommandPaletteEvent, cx| {
+                if let CommandPaletteEvent::Run(i) = event {
+                    this.palette_ran = format!("Ran command #{i}").into();
+                }
+                this.palette_open = false;
+                cx.notify();
+            },
+        )
+        .detach();
         let filter = cx.new(|cx| {
             TextField::new(cx)
                 .compact()
@@ -225,6 +255,9 @@ impl Demos {
             nav_unread: true,
             deleted: 0,
             dot_key: 0,
+            palette,
+            palette_open: false,
+            palette_ran: SharedString::default(),
             name,
             submitted: SharedString::default(),
             dialog_open: false,
@@ -1822,6 +1855,24 @@ impl Demos {
                     .items_start()
                     .child(menu)
                     .child(div().text_color(s.on_surface_variant).child(format!("Deleted {} times", self.deleted))),
+            ))
+            .child(demo(
+                "Command palette",
+                "Modal near the top: type to filter, ↑/↓ to move, Enter to run, Escape or a click outside to close.",
+                row()
+                    .child(
+                        Button::new("open-palette", "Open palette")
+                            .filled()
+                            .icon("search")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.palette_open = true;
+                                this.palette.update(cx, |p, cx| p.reset(cx));
+                                this.palette.read(cx).focus(window, cx);
+                                cx.notify();
+                            })),
+                    )
+                    .child(div().text_color(s.on_surface_variant).child(self.palette_ran.clone()))
+                    .when(self.palette_open, |d| d.child(self.palette.clone())),
             ))
             .child(demo(
                 "Bubbles",

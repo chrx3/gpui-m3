@@ -36,6 +36,7 @@ pub fn init(cx: &mut App) {
     }
     components::bind_text_field_keys(cx);
     components::bind_text_area_keys(cx);
+    components::bind_command_palette_keys(cx);
     if !cx.has_global::<MotionSettings>() {
         cx.set_global(MotionSettings::default());
     }
