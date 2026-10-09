@@ -7,6 +7,7 @@ mod segmented;
 mod slider;
 mod surfaces;
 mod switch;
+mod text_area;
 mod text_field;
 mod visual;
 
@@ -19,6 +20,7 @@ pub use segmented::*;
 pub use slider::*;
 pub use surfaces::*;
 pub use switch::*;
+pub use text_area::*;
 pub use text_field::*;
 pub use visual::*;
 

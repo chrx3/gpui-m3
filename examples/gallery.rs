@@ -13,8 +13,9 @@ use gpui_m3::{
     Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, Card, Chip, Dialog, Fab, IconButton,
     IconTab, IconTabs, LinearProgress, ListGroup, LoadingIndicator, Menu, MenuItem, MotionSettings,
     NavItem, RailItem, Ring, Segment, SegmentedButtons, Shape, ShapeName, SplitButton, Spring,
-    StopSlider, Switch, TextField, TextFieldEvent, Theme, Toast, Tone, WavyProgress, context_menu,
-    motion::{animate_f32, key},
+    StopSlider, Switch, TextArea, TextAreaEvent, TextField, TextFieldEvent, Theme, Toast, Tone,
+    WavyProgress, context_menu,
+    motion::{animate_color, animate_f32, key},
     theme::{FONT_FAMILY, alpha, hex},
 };
 
@@ -79,6 +80,8 @@ struct Demos {
     dialog_open: bool,
     toast_open: bool,
     context_menu: Option<Point<Pixels>>,
+    composer: Entity<TextArea>,
+    sent: SharedString,
 }
 
 /// The animated logo, in its own view: its continuous animation does not rebuild the content.
@@ -146,7 +149,26 @@ impl Demos {
             })
             .detach();
         }
+        let composer = cx.new(|cx| {
+            TextArea::new(cx)
+                .placeholder("Ask anything · @ to mention · / for actions")
+                .min_rows(2)
+                .max_height(px(240.))
+        });
+        cx.subscribe(
+            &composer,
+            |this: &mut Demos, composer, event: &TextAreaEvent, cx| {
+                if let TextAreaEvent::Submit(text) = event {
+                    this.sent = text.clone();
+                    composer.update(cx, |composer, cx| composer.clear(cx));
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
         Self {
+            composer,
+            sent: SharedString::default(),
             search,
             name,
             submitted: SharedString::default(),
@@ -316,7 +338,7 @@ impl Render for Demos {
             4 => self.shapes(cx),
             5 => self.progress(cx),
             6 => self.surfaces(cx),
-            7 => self.inputs(cx),
+            7 => self.inputs(window, cx),
             _ => self.motion(window, cx),
         };
         div()
@@ -1072,8 +1094,25 @@ impl Demos {
             .into_any_element()
     }
 
-    fn inputs(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn inputs(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let s = *Theme::of(cx);
+        let composer_focused = self.composer.read(cx).is_focused(window);
+        let composer_bg = animate_color(
+            "composer-bg",
+            Spring::EFFECTS,
+            if composer_focused {
+                s.surface_container_highest
+            } else {
+                s.surface_container_high
+            },
+            window,
+            cx,
+        );
+        let sent = if self.sent.is_empty() {
+            "Enter sends, Shift+Enter adds a line.".to_string()
+        } else {
+            format!("Sent: {}", self.sent)
+        };
         let submitted = if self.submitted.is_empty() {
             "Type and press Enter.".to_string()
         } else {
@@ -1089,6 +1128,22 @@ impl Demos {
                     .child(self.search.clone())
                     .child(self.name.clone())
                     .child(div().text_size(px(12.5)).text_color(s.on_surface_variant).child(submitted)),
+            ))
+            .child(demo(
+                "Text area",
+                "The composer: grows with its text up to 240 px and then scrolls. Wraps lines, moves by row with the arrows.",
+                column()
+                    .w(px(560.))
+                    .child(
+                        div()
+                            .pt(px(15.))
+                            .px(px(20.))
+                            .pb(px(12.))
+                            .rounded(px(26.))
+                            .bg(composer_bg)
+                            .child(self.composer.clone()),
+                    )
+                    .child(div().text_size(px(12.5)).text_color(s.on_surface_variant).child(sent)),
             ))
             .child(demo(
                 "Tooltips",
