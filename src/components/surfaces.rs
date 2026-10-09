@@ -140,9 +140,11 @@ impl RenderOnce for Menu {
             }
             match self.max_height {
                 Some(max_height) => div().child(
-                    col.id(child_id(&self.id, "scroll"))
+                    div()
+                        .id(child_id(&self.id, "scroll"))
                         .max_h(max_height)
-                        .overflow_y_scroll(),
+                        .overflow_y_scroll()
+                        .child(col.flex_none()),
                 ),
                 None => col,
             }
@@ -161,10 +163,11 @@ impl RenderOnce for Menu {
                 .shadow(shadow_pop(&s));
             let card = match self.max_height {
                 Some(max_height) => card.child(
-                    content
+                    div()
                         .id(child_id(&self.id, "scroll"))
                         .max_h(max_height)
-                        .overflow_y_scroll(),
+                        .overflow_y_scroll()
+                        .child(content.flex_none()),
                 ),
                 None => card.child(content),
             };
