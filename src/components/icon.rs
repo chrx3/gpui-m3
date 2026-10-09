@@ -2,7 +2,7 @@ use gpui::{
     Hsla, IntoElement, Pixels, Radians, RenderOnce, SharedString, Styled, Transformation, px, svg,
 };
 
-/// Stroke icon from the library (`icons/<name>.svg`, see [`crate::Assets::icon_names`]).
+/// Stroke icon from the library (`m3/icons/<name>.svg`, see [`crate::Assets::icon_names`]).
 #[derive(IntoElement)]
 pub struct Icon {
     name: SharedString,
@@ -49,7 +49,7 @@ impl Icon {
 impl RenderOnce for Icon {
     fn render(self, _: &mut gpui::Window, _: &mut gpui::App) -> impl IntoElement {
         let mut el = svg()
-            .path(format!("icons/{}.svg", self.name))
+            .path(format!("{}{}.svg", crate::assets::ICON_PREFIX, self.name))
             .size(self.size)
             .flex_none();
         if let Some(color) = self.color {

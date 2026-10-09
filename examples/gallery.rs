@@ -36,6 +36,8 @@ const SEEDS: [&str; 9] = [
     "#00639b",
 ];
 
+const MODELS: [&str; 3] = ["Opus 4.1", "Sonnet 4.5", "Haiku 4.5"];
+
 const EFFORTS: [&str; 5] = ["Low", "Medium", "High", "Very high", "Max"];
 
 /// Window root: sidebar and toolbar. The content lives in a separate cached view, so the
@@ -57,7 +59,10 @@ struct Demos {
     segment: usize,
     icon_segment: usize,
     effort: usize,
+    default_effort: Option<usize>,
     filters: [bool; 3],
+    attachments: Vec<&'static str>,
+    model: usize,
     split_open: bool,
     nav: usize,
     rail: usize,
@@ -155,7 +160,10 @@ impl Demos {
             segment: 1,
             icon_segment: 0,
             effort: 2,
+            default_effort: None,
             filters: [true, false, false],
+            attachments: vec!["theme.rs", "screenshot.png", "notes.md"],
+            model: 0,
             split_open: false,
             nav: 1,
             rail: 0,
@@ -398,11 +406,13 @@ impl Demos {
         let labels = ["Files", "Changes", "Terminal", "History"];
         let mut toggles = row();
         for (i, label) in labels.iter().enumerate() {
-            toggles = toggles.child(
-                Button::new(("toggle", i), *label)
-                    .selected(self.toggles[i])
-                    .on_click(click(cx, move |this, _| this.toggles[i] = !this.toggles[i])),
-            );
+            let mut toggle = Button::new(("toggle", i), *label)
+                .selected(self.toggles[i])
+                .on_click(click(cx, move |this, _| this.toggles[i] = !this.toggles[i]));
+            if i == 1 {
+                toggle = toggle.trailing(Badge::new("98"));
+            }
+            toggles = toggles.child(toggle);
         }
         page()
             .child(demo(
@@ -446,7 +456,8 @@ impl Demos {
                             .on_click(click(cx, |this, _| this.icon_toggle = !this.icon_toggle)),
                     )
                     .child(IconButton::new("i-send", "up").filled().hover_morph(true).size(px(36.)))
-                    .child(IconButton::new("i-send-off", "up").filled().size(px(36.)).disabled(true)),
+                    .child(IconButton::new("i-send-off", "up").filled().size(px(36.)).disabled(true))
+                    .child(IconButton::new("i-stop", "stop").filled().size(px(36.))),
             ))
             .child(demo(
                 "FAB",
@@ -457,6 +468,24 @@ impl Demos {
     }
 
     fn selection(&self, cx: &mut Context<Self>) -> AnyElement {
+        let model_item = |i: usize, label: &'static str, sub: &'static str, icon: &'static str| {
+            MenuItem::new(("model", i), label)
+                .sublabel(sub)
+                .icon(icon)
+                .selected(self.model == i)
+                .on_click(click(cx, move |this, _| {
+                    this.model = i;
+                    this.split_open = false;
+                }))
+        };
+        let mut attachments = row();
+        for (i, name) in self.attachments.iter().enumerate() {
+            let name = *name;
+            attachments =
+                attachments.child(Chip::input(("attachment", i), name).icon("file").on_remove(
+                    click(cx, move |this, _| this.attachments.retain(|n| *n != name)),
+                ));
+        }
         let mut switches = row();
         for (i, label) in ["Notifications", "Compact mode", "Sounds"]
             .iter()
@@ -533,6 +562,26 @@ impl Demos {
                     .child(StopSlider::new("effort-compact", 5, self.effort).compact(true).on_change(update(cx, |this, i: usize, _| this.effort = i))),
             ))
             .child(demo(
+                "Slider without a value",
+                "With `None` no stop is marked; picking one sets it.",
+                row()
+                    .child(
+                        StopSlider::new("effort-default", 5, self.default_effort)
+                            .on_change(update(cx, |this, i: usize, _| this.default_effort = Some(i))),
+                    )
+                    .child(
+                        div()
+                            .text_color(Theme::of(cx).on_surface_variant)
+                            .child(self.default_effort.map_or("Default", |i| EFFORTS[i])),
+                    )
+                    .child(
+                        Button::new("effort-reset", "Reset")
+                            .text()
+                            .size(ButtonSize::Small)
+                            .on_click(click(cx, |this, _| this.default_effort = None)),
+                    ),
+            ))
+            .child(demo(
                 "Chips",
                 "32 px with 8 px corners; they round when pressed. Toggleable chips become pills when selected.",
                 column()
@@ -540,9 +589,14 @@ impl Demos {
                         row()
                             .child(Chip::new("c-assist", "Explain this code").icon("spark"))
                             .child(Chip::new("c-assist2", "Write tests").icon("check"))
-                            .child(Chip::new("c-project", "demo").icon("folder").filled()),
+                            .child(Chip::new("c-project", "demo").icon("folder").filled())
+                            .child(
+                                Chip::new("c-dot", "Running")
+                                    .leading(div().size(px(8.)).rounded(px(4.)).bg(Theme::of(cx).success)),
+                            ),
                     )
-                    .child(filters),
+                    .child(filters)
+                    .child(attachments),
             ))
             .child(demo(
                 "Split button",
@@ -552,7 +606,7 @@ impl Demos {
                     .flex_col()
                     .gap(px(6.))
                     .child(
-                        SplitButton::new("split", "Opus 4.1")
+                        SplitButton::new("split", MODELS[self.model])
                             .sublabel(EFFORTS[self.effort])
                             .open(self.split_open)
                             .on_toggle(click(cx, |this, _| this.split_open = !this.split_open)),
@@ -561,10 +615,13 @@ impl Demos {
                         d.child(
                             Menu::new("split-menu")
                                 .width(240.)
+                                .max_h(px(200.))
                                 .section("Model")
-                                .item(MenuItem::new("m-opus", "Opus 4.1").sublabel("Most capable").icon("brain"))
-                                .item(MenuItem::new("m-sonnet", "Sonnet 4.5").sublabel("Balanced").icon("bolt"))
-                                .item(MenuItem::new("m-haiku", "Haiku 4.5").sublabel("Fastest").icon("spark")),
+                                .item(model_item(0, "Opus 4.1", "Most capable", "brain"))
+                                .item(model_item(1, "Sonnet 4.5", "Balanced", "bolt"))
+                                .item(model_item(2, "Haiku 4.5", "Fastest", "spark"))
+                                .section("Legacy")
+                                .item(MenuItem::new("m-old", "Opus 3").sublabel("Retired").icon("history").disabled(true)),
                         )
                     }),
             ))
@@ -998,7 +1055,19 @@ impl Demos {
                     .child(Bubble::new(
                         BubbleKind::Notice,
                         "Claude asked for permission to edit 3 files.",
-                    )),
+                    ))
+                    .child(
+                        div().flex().justify_end().w(px(520.)).child(
+                            Bubble::custom(BubbleKind::User)
+                                .max_w(px(300.))
+                                .child("Here is the screenshot:")
+                                .child(
+                                    div()
+                                        .pt(px(8.))
+                                        .child(Chip::new("b-file", "screenshot.png").icon("file")),
+                                ),
+                        ),
+                    ),
             ))
             .into_any_element()
     }

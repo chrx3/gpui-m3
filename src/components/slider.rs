@@ -11,22 +11,23 @@ use crate::motion::{Spring, animate, animate_color, key};
 use crate::theme::Theme;
 
 /// Stepped slider (the reference design's effort picker): the current stop becomes a vertical bar
-/// and the preceding stops are filled with the primary color.
+/// and the preceding stops are filled with the primary color. With no value (`None`) no stop
+/// is marked, e.g. for a "default" state.
 #[derive(IntoElement)]
 pub struct StopSlider {
     id: ElementId,
     stops: usize,
-    value: usize,
+    value: Option<usize>,
     compact: bool,
     on_change: Option<ChangeHandler<usize>>,
 }
 
 impl StopSlider {
-    pub fn new(id: impl Into<ElementId>, stops: usize, value: usize) -> Self {
+    pub fn new(id: impl Into<ElementId>, stops: usize, value: impl Into<Option<usize>>) -> Self {
         Self {
             id: id.into(),
             stops,
-            value,
+            value: value.into(),
             compact: false,
             on_change: None,
         }
@@ -57,7 +58,7 @@ impl RenderOnce for StopSlider {
             let id = ElementId::NamedInteger(format!("{}-stop", self.id).into(), i as u64);
             let state = use_interaction(&id, window, cx);
             let hovered = state.read(cx).hovered;
-            let current = i == self.value;
+            let current = self.value == Some(i);
             let (first, last) = (i == 0, i + 1 == self.stops);
             // (width, height, side margin, radii)
             let (w, h, margin, r) = if current {
@@ -79,7 +80,7 @@ impl RenderOnce for StopSlider {
                 window,
                 cx,
             );
-            let color = if i <= self.value {
+            let color = if self.value.is_some_and(|value| i <= value) {
                 s.primary
             } else {
                 s.secondary_container

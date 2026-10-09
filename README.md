@@ -61,7 +61,7 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
 | Group | Components |
 |---|---|
 | Buttons | `Button` (filled, tonal, outlined, text; 3 sizes; toggle), `IconButton` (with tooltip), `Fab` (regular and extended) |
-| Selection | `Switch`, `SegmentedButtons`, `StopSlider`, `Chip` (assist, filled, filter), `SplitButton`, `Badge` |
+| Selection | `Switch`, `SegmentedButtons`, `StopSlider`, `Chip` (assist, filled, filter, input), `SplitButton`, `Badge` |
 | Navigation | `NavItem` (drawer rows), `RailItem` (navigation rail), `IconTabs` |
 | Text & feedback | `TextField`, `Dialog`, `Toast`, `Tooltip`, `context_menu` |
 | Surfaces | `Menu` (single surface or grouped), `MenuItem`, `Card`, `ListGroup`, `Bubble` |

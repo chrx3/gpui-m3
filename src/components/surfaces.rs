@@ -2,13 +2,14 @@
 
 use std::rc::Rc;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, BoxShadow, ClickEvent, Div, ElementId, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Window, div, point, px,
+    IntoElement, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Window, div, point, px,
 };
 
-use super::{ClickHandler, Icon, RoundedExt, all, corners};
+use super::{ClickHandler, Icon, RoundedExt, all, child_id, corners};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, entrance, key};
 use crate::shapes::Tone;
@@ -48,6 +49,7 @@ pub struct Menu {
     groups: Vec<Vec<AnyElement>>,
     grouped: bool,
     width: f32,
+    max_height: Option<Pixels>,
 }
 
 impl Menu {
@@ -57,11 +59,18 @@ impl Menu {
             groups: vec![Vec::new()],
             grouped: false,
             width: 260.,
+            max_height: None,
         }
     }
 
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
+        self
+    }
+
+    /// Limits the height; sections and items scroll inside the menu.
+    pub fn max_h(mut self, max_height: Pixels) -> Self {
+        self.max_height = Some(max_height);
         self
     }
 
@@ -129,19 +138,36 @@ impl RenderOnce for Menu {
                     .children(group);
                 col = col.child(pop_in(card, &gid, i as f32 * 0.035, window, cx));
             }
-            col
+            match self.max_height {
+                Some(max_height) => div().child(
+                    col.id(child_id(&self.id, "scroll"))
+                        .max_h(max_height)
+                        .overflow_y_scroll(),
+                ),
+                None => col,
+            }
         } else {
-            let mut card = base
-                .p(px(6.))
+            let mut content = div().flex().flex_col().p(px(6.));
+            for (i, group) in self.groups.into_iter().enumerate() {
+                if i > 0 {
+                    content =
+                        content.child(div().my(px(4.)).mx(px(10.)).h(px(1.)).bg(s.outline_variant));
+                }
+                content = content.children(group);
+            }
+            let card = base
                 .rounded(px(24.))
                 .bg(s.surface_container)
                 .shadow(shadow_pop(&s));
-            for (i, group) in self.groups.into_iter().enumerate() {
-                if i > 0 {
-                    card = card.child(div().my(px(4.)).mx(px(10.)).h(px(1.)).bg(s.outline_variant));
-                }
-                card = card.children(group);
-            }
+            let card = match self.max_height {
+                Some(max_height) => card.child(
+                    content
+                        .id(child_id(&self.id, "scroll"))
+                        .max_h(max_height)
+                        .overflow_y_scroll(),
+                ),
+                None => card.child(content),
+            };
             pop_in(card, &self.id, 0., window, cx)
         }
     }
@@ -154,7 +180,10 @@ pub struct MenuItem {
     label: SharedString,
     sublabel: Option<SharedString>,
     icon: Option<SharedString>,
+    leading: Option<AnyElement>,
     trailing: Option<AnyElement>,
+    selected: bool,
+    disabled: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -165,13 +194,34 @@ impl MenuItem {
             label: label.into(),
             sublabel: None,
             icon: None,
+            leading: None,
             trailing: None,
+            selected: false,
+            disabled: false,
             on_click: None,
         }
     }
 
     pub fn icon(mut self, icon: impl Into<SharedString>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// Leading element instead of the icon (a color dot, an [`super::Avatar`]…).
+    pub fn leading(mut self, el: impl IntoElement) -> Self {
+        self.leading = Some(el.into_any_element());
+        self
+    }
+
+    /// Current option of a single-choice list: tonal background and a trailing check
+    /// (unless a trailing element is set).
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 
@@ -196,26 +246,37 @@ impl RenderOnce for MenuItem {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let state = use_interaction(&self.id, window, cx);
-        let hovered = state.read(cx).hovered;
+        let enabled = !self.disabled;
+        let hovered = state.read(cx).hovered && enabled;
         let radius = px(animate_f32(
             key(&self.id, "radius"),
             Spring::SPATIAL_FAST,
-            if hovered { 18. } else { 10. },
+            if hovered || self.selected { 18. } else { 10. },
             window,
             cx,
         ));
-        let bg = animate_color(
-            key(&self.id, "bg"),
-            Spring::EFFECTS,
-            if hovered {
-                s.surface_container_highest
-            } else {
-                alpha(s.surface_container_highest, 0.)
-            },
-            window,
-            cx,
-        );
-        let layer = state_layer(&self.id, &state, all(radius), s.on_surface, window, cx);
+        let (bg, fg, muted) = if self.selected {
+            (
+                s.secondary_container,
+                s.on_secondary_container,
+                s.on_secondary_container,
+            )
+        } else if hovered {
+            (
+                s.surface_container_highest,
+                s.on_surface,
+                s.on_surface_variant,
+            )
+        } else {
+            (
+                alpha(s.surface_container_highest, 0.),
+                s.on_surface,
+                s.on_surface_variant,
+            )
+        };
+        let bg = animate_color(key(&self.id, "bg"), Spring::EFFECTS, bg, window, cx);
+        let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
+        let layer = state_layer(&self.id, &state, all(radius), fg, window, cx);
 
         let mut row = div()
             .id(self.id.clone())
@@ -228,30 +289,41 @@ impl RenderOnce for MenuItem {
             .py(px(4.))
             .corners(all(radius))
             .bg(bg)
+            .text_color(fg)
+            .when(self.selected, |d| d.font_weight(FontWeight(600.)))
+            .when(!enabled, |d| d.opacity(0.38))
             .child(layer);
-        if let Some(icon) = self.icon {
-            row = row.child(Icon::new(icon).size(px(17.)).color(s.on_surface_variant));
+        if let Some(leading) = self.leading {
+            row = row.child(leading);
+        } else if let Some(icon) = self.icon {
+            row = row.child(Icon::new(icon).size(px(17.)).color(muted));
         }
         let mut text = div().flex().flex_col().flex_1().child(self.label);
         if let Some(sub) = self.sublabel {
             text = text.child(
                 div()
                     .text_size(px(11.5))
-                    .text_color(s.on_surface_variant)
+                    .font_weight(FontWeight(400.))
+                    .text_color(muted)
                     .child(sub),
             );
         }
         row = row.child(text);
-        if let Some(trailing) = self.trailing {
-            row = row.child(
-                div()
-                    .text_size(px(11.5))
-                    .text_color(s.on_surface_variant)
-                    .child(trailing),
-            );
+        let trailing = match (self.trailing, self.selected) {
+            (Some(trailing), _) => Some(trailing),
+            (None, true) => Some(
+                Icon::new("check")
+                    .size(px(17.))
+                    .color(fg)
+                    .into_any_element(),
+            ),
+            (None, false) => None,
+        };
+        if let Some(trailing) = trailing {
+            row = row.child(div().text_size(px(11.5)).text_color(muted).child(trailing));
         }
-        let mut row = interactive(row, &state, true, true);
-        if let Some(f) = self.on_click {
+        let mut row = interactive(row, &state, enabled, enabled);
+        if let (Some(f), true) = (self.on_click, enabled) {
             row = row.on_click(move |e, w, cx| f(e, w, cx));
         }
         row
@@ -261,7 +333,10 @@ impl RenderOnce for MenuItem {
 /// Color card (the reference design's version card): 28 px corners and a tonal container.
 #[derive(IntoElement)]
 pub struct Card {
+    id: Option<ElementId>,
     tone: Option<Tone>,
+    padding: Pixels,
+    on_click: Option<ClickHandler>,
     children: Vec<AnyElement>,
 }
 
@@ -269,7 +344,10 @@ impl Card {
     /// Card with a tonal container.
     pub fn tonal(tone: Tone) -> Self {
         Self {
+            id: None,
             tone: Some(tone),
+            padding: px(22.),
+            on_click: None,
             children: Vec::new(),
         }
     }
@@ -277,9 +355,30 @@ impl Card {
     /// Neutral card (surface container with a hint of the primary color).
     pub fn plain() -> Self {
         Self {
+            id: None,
             tone: None,
+            padding: px(22.),
+            on_click: None,
             children: Vec::new(),
         }
+    }
+
+    /// Inner padding (22 px by default).
+    pub fn padding(mut self, padding: Pixels) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    /// Id unique within the view; required by [`Card::on_click`].
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// Makes the card clickable, with hover and ripple. Set an [`Card::id`] too.
+    pub fn on_click(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_click = Some(Rc::new(f));
+        self
     }
 }
 
@@ -290,22 +389,35 @@ impl ParentElement for Card {
 }
 
 impl RenderOnce for Card {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let (bg, fg) = match self.tone {
             Some(tone) => tone.colors(&s),
             None => (mix(s.primary, s.surface_container, 0.06), s.on_surface),
         };
-        div()
+        let card = div()
+            .relative()
             .flex()
             .flex_col()
             .gap(px(12.))
-            .p(px(22.))
+            .p(self.padding)
             .rounded(px(28.))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
-            .children(self.children)
+            .font_family(FONT_FAMILY);
+        debug_assert!(
+            self.on_click.is_none() || self.id.is_some(),
+            "Card::on_click needs Card::id"
+        );
+        let (Some(id), Some(f)) = (self.id, self.on_click) else {
+            return card.children(self.children).into_any_element();
+        };
+        let state = use_interaction(&id, window, cx);
+        let layer = state_layer(&id, &state, all(px(28.)), fg, window, cx);
+        let card = card.id(id).child(layer).children(self.children);
+        interactive(card, &state, true, true)
+            .on_click(move |e, w, cx| f(e, w, cx))
+            .into_any_element()
     }
 }
 
@@ -412,15 +524,34 @@ pub enum BubbleKind {
 #[derive(IntoElement)]
 pub struct Bubble {
     kind: BubbleKind,
-    text: SharedString,
+    max_width: Pixels,
+    children: Vec<AnyElement>,
 }
 
 impl Bubble {
     pub fn new(kind: BubbleKind, text: impl Into<SharedString>) -> Self {
+        Self::custom(kind).child(text.into())
+    }
+
+    /// Empty bubble for arbitrary content (markdown, attachments…).
+    pub fn custom(kind: BubbleKind) -> Self {
         Self {
             kind,
-            text: text.into(),
+            max_width: px(420.),
+            children: Vec::new(),
         }
+    }
+
+    /// Maximum width (420 px by default).
+    pub fn max_w(mut self, max_width: Pixels) -> Self {
+        self.max_width = max_width;
+        self
+    }
+}
+
+impl ParentElement for Bubble {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
     }
 }
 
@@ -440,7 +571,7 @@ impl RenderOnce for Bubble {
             ),
         };
         div()
-            .max_w(px(420.))
+            .max_w(self.max_width)
             .px(px(14.))
             .py(px(10.))
             .corners(corners(r))
@@ -448,6 +579,6 @@ impl RenderOnce for Bubble {
             .text_color(fg)
             .font_family(FONT_FAMILY)
             .text_size(px(13.5))
-            .child(self.text)
+            .children(self.children)
     }
 }

@@ -13,5 +13,7 @@ First release.
   `SplitButton`, `Badge`, `NavItem`, `RailItem`, `IconTabs`, `Menu`, `MenuItem`, `Card`,
   `ListGroup`, `Bubble`, `Shape`, `Avatar`, `LoadingIndicator`, `WavyProgress`, `Ring`,
   `LinearProgress`, `TextField`, `Dialog`, `Toast`, `Tooltip`, `context_menu`.
+- Icons are served as `m3/icons/<name>.svg` (`ICON_PREFIX`) so they never clash with the host
+  app's own `icons/`.
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
 - Gallery example to try every component in light and dark, with any seed color and slow motion.

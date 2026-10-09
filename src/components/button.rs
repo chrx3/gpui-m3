@@ -9,9 +9,9 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder as _;
 
 use gpui::{
-    App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
-    relative,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, relative,
 };
 
 use super::{ClickHandler, Icon, RoundedExt, all};
@@ -114,6 +114,7 @@ pub struct Button {
     size: ButtonSize,
     selected: Option<bool>,
     disabled: bool,
+    trailing: Option<AnyElement>,
     on_click: Option<ClickHandler>,
 }
 
@@ -127,8 +128,15 @@ impl Button {
             size: ButtonSize::default(),
             selected: None,
             disabled: false,
+            trailing: None,
             on_click: None,
         }
+    }
+
+    /// Element after the label, such as a [`super::Badge`] ("Changes 98").
+    pub fn trailing(mut self, el: impl IntoElement) -> Self {
+        self.trailing = Some(el.into_any_element());
+        self
     }
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
@@ -262,6 +270,9 @@ impl RenderOnce for Button {
         }
         if let Some(label) = self.label {
             el = el.child(label);
+        }
+        if let Some(trailing) = self.trailing {
+            el = el.child(trailing);
         }
         let mut el = interactive(el, &state, enabled, true);
         if let (Some(f), true) = (self.on_click, enabled) {

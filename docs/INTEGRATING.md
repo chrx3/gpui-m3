@@ -30,8 +30,9 @@ creating the `Application` and before opening windows.
 
 ### Assets
 
-Icons are loaded through GPUI's asset source as `icons/<name>.svg`. If your app already has an
-`AssetSource`, delegate those paths:
+Icons are loaded through GPUI's asset source as `m3/icons/<name>.svg` (`gpui_m3::ICON_PREFIX`), so
+they never clash with your app's own `icons/`. If your app already has an `AssetSource`, delegate
+those paths:
 
 ```rust
 impl AssetSource for MyAssets {
@@ -44,8 +45,6 @@ impl AssetSource for MyAssets {
     // ...
 }
 ```
-
-If your app keeps its own icons under `icons/`, rename one of the two prefixes to avoid clashes.
 
 ## 3. Map your tokens to a `Scheme`
 
@@ -127,8 +126,11 @@ Rules of thumb:
 ## 5. Keep it fast
 
 - Animated components request frames only while they move; when everything is still, nothing redraws.
-- `LoadingIndicator`, `WavyProgress` and breathing/spinning `Shape`s animate continuously. Put them in
-  small views, and wrap large static siblings in `AnyView::from(entity).cached(style)`.
+- `LoadingIndicator`, `WavyProgress` and breathing/spinning `Shape`s animate continuously. Each frame
+  GPUI re-renders the view that contains them **and every ancestor view**, so wrapping the indicator
+  in its own view does not help by itself. What helps is keeping heavy content (message lists, file
+  trees) in separate views rendered with `AnyView::from(entity).cached(style)`: cached views that did
+  not change are reused while their parent re-renders.
 - Respect the user's reduced-motion preference with
   `cx.set_global(MotionSettings { time_scale: 1., reduced: true })`.
 

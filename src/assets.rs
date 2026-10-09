@@ -1,17 +1,18 @@
 //! Icons embedded in the binary (24 px strokes, the same set as the reference design).
-//! They are requested as `icons/<name>.svg`; see [`crate::Icon`].
+//! They are requested as `m3/icons/<name>.svg`, so they never clash with the host app's
+//! own `icons/`; see [`crate::Icon`].
 
 use std::borrow::Cow;
 
 use gpui::{AssetSource, Result, SharedString};
 
 /// The library's asset source. To combine it with your app's, delegate
-/// `icons/…` paths to it or use [`Assets::load_icon`].
+/// `m3/…` paths to it or use [`Assets::load_icon`].
 pub struct Assets;
 
 impl Assets {
     pub fn load_icon(path: &str) -> Option<&'static [u8]> {
-        let name = path.strip_prefix("icons/")?.strip_suffix(".svg")?;
+        let name = path.strip_prefix(ICON_PREFIX)?.strip_suffix(".svg")?;
         ICONS
             .iter()
             .find(|(n, _)| *n == name)
@@ -30,16 +31,19 @@ impl AssetSource for Assets {
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        Ok(if path.starts_with("icons") {
+        Ok(if path.starts_with("m3") {
             ICONS
                 .iter()
-                .map(|(n, _)| format!("icons/{n}.svg").into())
+                .map(|(n, _)| format!("{ICON_PREFIX}{n}.svg").into())
                 .collect()
         } else {
             Vec::new()
         })
     }
 }
+
+/// Asset path prefix of the library icons.
+pub const ICON_PREFIX: &str = "m3/icons/";
 
 const ICONS: &[(&str, &[u8])] = &[
     (
@@ -111,6 +115,7 @@ const ICONS: &[(&str, &[u8])] = &[
     ("slash", include_bytes!("../assets/icons/slash.svg")),
     ("spark", include_bytes!("../assets/icons/spark.svg")),
     ("star", include_bytes!("../assets/icons/star.svg")),
+    ("stop", include_bytes!("../assets/icons/stop.svg")),
     ("sun", include_bytes!("../assets/icons/sun.svg")),
     ("terminal", include_bytes!("../assets/icons/terminal.svg")),
     ("trash", include_bytes!("../assets/icons/trash.svg")),

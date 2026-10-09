@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
+    MouseButton, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, px,
 };
 
 use super::{ClickHandler, Icon, RoundedExt, all};
@@ -19,6 +20,8 @@ pub enum ChipKind {
     Filled,
     /// Toggleable: when activated it goes from 8 px corners to a pill and fills in.
     Filter,
+    /// Outlined, with a trailing "x" that calls [`Chip::on_remove`] (attachments, tags).
+    Input,
 }
 
 /// 32 px chip with 8 px corners (per M3). It rounds with the spring on press.
@@ -27,9 +30,11 @@ pub struct Chip {
     id: ElementId,
     label: SharedString,
     icon: Option<SharedString>,
+    leading: Option<AnyElement>,
     kind: ChipKind,
     selected: bool,
     on_click: Option<ClickHandler>,
+    on_remove: Option<ClickHandler>,
 }
 
 impl Chip {
@@ -38,14 +43,27 @@ impl Chip {
             id: id.into(),
             label: label.into(),
             icon: None,
+            leading: None,
             kind: ChipKind::Assist,
             selected: false,
             on_click: None,
+            on_remove: None,
         }
+    }
+
+    /// Input chip: outlined, with a trailing "x" (see [`Chip::on_remove`]).
+    pub fn input(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+        Self::new(id, label).kind(ChipKind::Input)
     }
 
     pub fn icon(mut self, icon: impl Into<SharedString>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// Leading element instead of the icon (a color dot, an [`super::Avatar`]…).
+    pub fn leading(mut self, el: impl IntoElement) -> Self {
+        self.leading = Some(el.into_any_element());
         self
     }
 
@@ -67,6 +85,12 @@ impl Chip {
 
     pub fn on_click(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Rc::new(f));
+        self
+    }
+
+    /// Called by the "x" of an input chip.
+    pub fn on_remove(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_remove = Some(Rc::new(f));
         self
     }
 }
@@ -99,7 +123,7 @@ impl RenderOnce for Chip {
         );
 
         let (bg, fg, border, icon_color, weight) = match self.kind {
-            ChipKind::Assist => (
+            ChipKind::Assist | ChipKind::Input => (
                 alpha(s.surface, 0.),
                 s.on_surface,
                 s.outline_variant,
@@ -139,8 +163,16 @@ impl RenderOnce for Chip {
             .items_center()
             .gap(px(7.))
             .h(px(32. - shrink * 2.))
-            .pl(px(if self.icon.is_some() || on { 8. } else { 12. }))
-            .pr(px(12.))
+            .pl(px(if self.icon.is_some() || self.leading.is_some() || on {
+                8.
+            } else {
+                12.
+            }))
+            .pr(px(if self.kind == ChipKind::Input {
+                4.
+            } else {
+                12.
+            }))
             .corners(all(radius))
             .bg(bg)
             .border_1()
@@ -152,10 +184,37 @@ impl RenderOnce for Chip {
             .child(layer);
         if on {
             face = face.child(Icon::new("check").size(px(16.)).color(fg));
+        } else if let Some(leading) = self.leading {
+            face = face.child(leading);
         } else if let Some(icon) = self.icon {
             face = face.child(Icon::new(icon).size(px(16.)).color(icon_color));
         }
         face = face.child(self.label);
+        if self.kind == ChipKind::Input {
+            let remove_id = super::child_id(&self.id, "remove");
+            let remove_state = use_interaction(&remove_id, window, cx);
+            let remove_layer = state_layer(&remove_id, &remove_state, all(px(12.)), fg, window, cx);
+            let remove = div()
+                .id(remove_id)
+                .relative()
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(px(24.))
+                .rounded(px(12.))
+                .child(remove_layer)
+                .child(Icon::new("x").size(px(14.)).color(s.on_surface_variant))
+                // Keeps the press from also rippling the whole chip.
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+            let mut remove = interactive(remove, &remove_state, true, true);
+            if let Some(f) = self.on_remove {
+                remove = remove.on_click(move |e, w, cx| {
+                    cx.stop_propagation();
+                    f(e, w, cx)
+                });
+            }
+            face = face.child(remove);
+        }
 
         let el = div()
             .id(self.id.clone())

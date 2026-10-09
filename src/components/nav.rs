@@ -24,6 +24,8 @@ pub struct NavItem {
     trailing: Option<AnyElement>,
     selected: bool,
     dense: bool,
+    muted: bool,
+    group: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
 
@@ -37,6 +39,8 @@ impl NavItem {
             trailing: None,
             selected: false,
             dense: false,
+            muted: false,
+            group: None,
             on_click: None,
         }
     }
@@ -60,6 +64,19 @@ impl NavItem {
 
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    /// Dimmed label (archived or inactive rows). Ignored while selected.
+    pub fn muted(mut self, muted: bool) -> Self {
+        self.muted = muted;
+        self
+    }
+
+    /// Names the row as a GPUI hover group, so trailing elements can use
+    /// `group_hover(name, ..)` to appear on hover.
+    pub fn group(mut self, name: impl Into<SharedString>) -> Self {
+        self.group = Some(name.into());
         self
     }
 
@@ -92,6 +109,8 @@ impl RenderOnce for NavItem {
         );
         let fg = if self.selected {
             s.on_secondary_container
+        } else if self.muted {
+            s.on_surface_variant
         } else {
             s.on_surface
         };
@@ -117,6 +136,9 @@ impl RenderOnce for NavItem {
             .font_family(FONT_FAMILY)
             .text_size(px(font))
             .font_weight(FontWeight(if self.selected { 700. } else { 500. }));
+        if let Some(group) = self.group {
+            row = row.group(group);
+        }
         if self.selected {
             row = row.child(
                 div()

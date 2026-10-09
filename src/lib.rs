@@ -18,7 +18,7 @@ use std::borrow::Cow;
 
 use gpui::App;
 
-pub use assets::Assets;
+pub use assets::{Assets, ICON_PREFIX};
 pub use components::*;
 pub use motion::{MotionSettings, Spring};
 pub use shapes::{Morph, ShapeName, Tone};
