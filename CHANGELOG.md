@@ -15,5 +15,18 @@ First release.
   `LinearProgress`, `TextField`, `Dialog`, `Toast`, `Tooltip`, `context_menu`.
 - Icons are served as `m3/icons/<name>.svg` (`ICON_PREFIX`) so they never clash with the host
   app's own `icons/`.
+- Added while porting a full app (Atic Code):
+  - Text: multi-line `TextArea`, `CommandPalette`, `TextField` styles, labels, trailing content
+    and `restore_on_cancel`.
+  - Menus and surfaces: dense, radio, highlighted, static and danger (two-step) `MenuItem`s;
+    `Menu` header, back row, direction and content transitions; anchored `Popover`;
+    `ExpandableCard`; configurable `Card` with a shape entrance; adjustable `Bubble`.
+  - Selection: `Radio`, `Checkbox`, `ChoiceRow`, continuous `Slider`, `MorphDot`; tonal, muted,
+    small, mono and input `Chip`s; tonal, strong and popping `Badge`s.
+  - Buttons: sublabel, `open`, `Tiny`/`Compact`/`Comfortable` sizes, `Ghost` with confirmation,
+    `IconButton::launch`, `FavStar`.
+  - Panels: `TreeRow`, `ListItem`, `TabStrip`, `NavItem` emphasis, meta and large rows.
+  - Appearance: `SelectCard`, `ColorSwatches`, `HsvPicker`.
+  - `Scheme::error_container` / `on_error_container`; `motion::replay` and `motion::pulse`.
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
 - Gallery example to try every component in light and dark, with any seed color and slow motion.

@@ -60,12 +60,13 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
 
 | Group | Components |
 |---|---|
-| Buttons | `Button` (filled, tonal, outlined, text; 3 sizes; toggle), `IconButton` (with tooltip), `Fab` (regular and extended) |
-| Selection | `Switch`, `SegmentedButtons`, `StopSlider`, `Chip` (assist, filled, filter, input), `SplitButton`, `Badge` |
-| Navigation | `NavItem` (drawer rows), `RailItem` (navigation rail), `IconTabs` |
-| Text & feedback | `TextField`, `Dialog`, `Toast`, `Tooltip`, `context_menu` |
-| Surfaces | `Menu` (single surface or grouped), `MenuItem`, `Card`, `ListGroup`, `Bubble` |
+| Buttons | `Button` (filled, tonal, outlined, text, ghost; 6 sizes; toggle, sublabel, confirmation), `IconButton` (tooltip, launch), `Fab`, `FavStar` |
+| Selection | `Switch`, `SegmentedButtons`, `StopSlider`, `Slider`, `Chip` (assist, filled, filter, input, tonal, small), `SplitButton`, `Badge`, `Radio`, `Checkbox`, `ChoiceRow`, `MorphDot` |
+| Navigation | `NavItem` (drawer rows), `RailItem`, `IconTabs`, `TabStrip`, `TreeRow`, `ListItem` |
+| Text & feedback | `TextField` (pill, compact, inline, bare, filled, outlined), `TextArea` (multi-line), `CommandPalette`, `Dialog`, `Toast`, `Tooltip`, `context_menu` |
+| Surfaces | `Menu` (header, back row, scrolling), `MenuItem` (dense, radio, danger, shortcuts), `Popover`, `Card`, `ExpandableCard`, `ListGroup`, `Bubble` |
 | Shapes & progress | `Shape` (14 shapes, breathe, spin), `Avatar`, `LoadingIndicator`, `WavyProgress`, `Ring`, `LinearProgress` |
+| Appearance | `SelectCard`, `ColorSwatches`, `HsvPicker` |
 | Foundations | `theme` (`Scheme`, `Theme`, `corner`), `motion` (`Spring`, `animate*`, `entrance`), `shapes`, `interaction` |
 
 ## Theming
@@ -116,7 +117,16 @@ With nothing animating, the gallery does not redraw at all.
   component's rounded rectangle.
 - `material-colors` 0.4 implements the 2021 dynamic color spec (0.5 requires Rust 1.97).
 - Roboto ships as a variable font with weights; width axes (`font-stretch`) are not available in GPUI.
-- `TextField` is single-line. A multi-line text area is planned.
+- Monospace text uses the platform font (Consolas, Menlo or DejaVu Sans Mono); none is bundled.
+
+## Roadmap
+
+- `ReorderList`: drag to reorder rows, with groups (favorites) and an insertion line.
+- `Shape::image` (a photo clipped to a shape through a cached raster mask), `UserAvatar` and
+  `breathe_on_hover`.
+- A circular theme transition (`theme_reveal`).
+- `CommandPalette`: the mouse moves the selection; `ExpandableCard`: keyboard toggling and a
+  focus ring.
 
 ## Status
 
