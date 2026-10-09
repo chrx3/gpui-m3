@@ -1,6 +1,7 @@
 mod button;
 mod chip;
 mod choice;
+mod color;
 mod disclosure;
 mod icon;
 mod lists;
@@ -18,6 +19,7 @@ mod visual;
 pub use button::*;
 pub use chip::*;
 pub use choice::*;
+pub use color::*;
 pub use disclosure::*;
 pub use icon::*;
 pub use lists::*;

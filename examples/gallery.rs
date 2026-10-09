@@ -11,17 +11,17 @@ use gpui::{
 };
 use gpui_m3::{
     Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip, ChipSize,
-    ChoiceRow, Command, CommandPalette, CommandPaletteEvent, Dialog, DotShape, ExpandableCard, Fab,
-    Icon, IconButton, IconTab, IconTabs, LinearProgress, ListGroup, ListItem, LoadingIndicator,
-    Menu, MenuItem, MorphDot, MotionSettings, NavItem, PopDirection, Popover, RailItem, Ring,
-    Segment, SegmentedButtons, Shape, ShapeName, Slider, SplitButton, Spring, StopSlider, Switch,
-    Tab, TabStrip, TextArea, TextAreaEvent, TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow,
-    WavyProgress, context_menu,
+    ChoiceRow, ColorSwatches, Command, CommandPalette, CommandPaletteEvent, Dialog, DotShape,
+    ExpandableCard, Fab, FavStar, HsvPicker, Icon, IconButton, IconTab, IconTabs, LinearProgress,
+    ListGroup, ListItem, LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem,
+    PopDirection, Popover, RailItem, Ring, Segment, SegmentedButtons, SelectCard, Shape, ShapeName,
+    Slider, SplitButton, Spring, StopSlider, Switch, Tab, TabStrip, TextArea, TextAreaEvent,
+    TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress, context_menu,
     motion::{animate_color, animate_f32, key, pulse},
     theme::{FONT_FAMILY, alpha, hex},
 };
 
-const SECTIONS: [(&str, &str); 12] = [
+const SECTIONS: [(&str, &str); 13] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -33,6 +33,7 @@ const SECTIONS: [(&str, &str); 12] = [
     ("Composer", "up"),
     ("Conversation", "diff"),
     ("Panels", "panel-right"),
+    ("Appearance", "palette"),
     ("Motion", "refresh"),
 ];
 
@@ -105,6 +106,13 @@ struct Demos {
     palette: Entity<CommandPalette>,
     palette_open: bool,
     palette_ran: SharedString,
+    favorites: [bool; 3],
+    style_choice: usize,
+    accent: Hsla,
+    picker_open: bool,
+    filled_field: Entity<TextField>,
+    outlined_field: Entity<TextField>,
+    rename_field: Entity<TextField>,
     name: Entity<TextField>,
     submitted: SharedString,
     dialog_open: bool,
@@ -258,6 +266,30 @@ impl Demos {
             palette,
             palette_open: false,
             palette_ran: SharedString::default(),
+            favorites: [true, false, false],
+            style_choice: 1,
+            accent: hex("#6750a4"),
+            picker_open: false,
+            filled_field: cx.new(|cx| {
+                TextField::new(cx)
+                    .filled()
+                    .label("Name")
+                    .placeholder("Your name")
+            }),
+            outlined_field: cx.new(|cx| {
+                TextField::new(cx)
+                    .outlined()
+                    .label("Name")
+                    .placeholder("My project")
+            }),
+            rename_field: cx.new(|cx| {
+                let mut field = TextField::new(cx)
+                    .inline()
+                    .select_all_on_focus(true)
+                    .restore_on_cancel(true);
+                field.set_text("Theme migration", cx);
+                field
+            }),
             name,
             submitted: SharedString::default(),
             dialog_open: false,
@@ -430,6 +462,7 @@ impl Render for Demos {
             8 => self.composer(cx),
             9 => self.conversation(window, cx),
             10 => self.panels(cx),
+            11 => self.appearance(cx),
             _ => self.motion(window, cx),
         };
         div()
@@ -1889,6 +1922,90 @@ impl Demos {
                         Bubble::new(BubbleKind::Error, "The process exited with code 101.")
                             .entrance(("bubble-error", self.dot_key), 0.12),
                     ),
+            ))
+            .into_any_element()
+    }
+
+    fn appearance(&self, cx: &mut Context<Self>) -> AnyElement {
+        let s = *Theme::of(cx);
+        let mut projects = column().w(px(280.)).gap(px(2.));
+        for (i, name) in ["gpui-m3", "demo", "atic"].into_iter().enumerate() {
+            let group: SharedString = format!("project-{i}").into();
+            projects = projects.child(
+                NavItem::new(("project", i), name)
+                    .icon("folder")
+                    .group(group.clone())
+                    .trailing(
+                        FavStar::new(("fav", i), self.favorites[i])
+                            .hover_group(group)
+                            .on_toggle(update(cx, move |this, on: bool, _| this.favorites[i] = on)),
+                    ),
+            );
+        }
+
+        let styles = [
+            ("Formal", "Sober, dense and fast"),
+            ("Material 3 Expressive", "Color, shapes and motion"),
+            ("Liquid Glass", "Glass, light and depth"),
+        ];
+        let mut cards = div().flex().gap(px(8.)).w(px(420.));
+        for (i, (title, hint)) in styles.into_iter().enumerate() {
+            cards = cards.child(
+                div().flex_1().child(
+                    SelectCard::new(("style", i), title)
+                        .hint(hint)
+                        .preview(
+                            div()
+                                .h(px(52.))
+                                .rounded(px(14.))
+                                .bg(s.surface_container)
+                                .p(px(6.))
+                                .flex()
+                                .gap(px(5.))
+                                .child(div().flex_1().rounded(px(10.)).bg(s.primary_container))
+                                .child(div().w(px(20.)).rounded(px(10.)).bg(s.primary)),
+                        )
+                        .selected(self.style_choice == i)
+                        .on_click(click(cx, move |this, _| this.style_choice = i)),
+                ),
+            );
+        }
+
+        let presets = SEEDS.map(hex);
+        page()
+            .child(demo(
+                "Favorite star",
+                "Hover a row to reveal its star; turning it on spins it in and throws a burst.",
+                projects,
+            ))
+            .child(demo("Select cards", "The style picker: a preview, a title and a hint.", cards))
+            .child(demo(
+                "Accent swatches",
+                "The chosen swatch turns into a rounded diamond with a double ring; the wheel opens an HSV picker.",
+                column()
+                    .items_start()
+                    .child(
+                        ColorSwatches::new("accents", presets)
+                            .current(self.accent)
+                            .custom(click(cx, |this, _| this.picker_open = !this.picker_open))
+                            .on_change(update(cx, |this, color: Hsla, _| this.accent = color)),
+                    )
+                    .when(self.picker_open, |d| {
+                        d.child(
+                            HsvPicker::new("accent-picker", self.accent)
+                                .on_change(update(cx, |this, color: Hsla, _| this.accent = color)),
+                        )
+                    }),
+            ))
+            .child(demo(
+                "Form fields",
+                "Filled with a label and an underline, outlined, and the inline rename pill (select-all on focus, Escape restores).",
+                column()
+                    .w(px(320.))
+                    .gap(px(14.))
+                    .child(self.filled_field.clone())
+                    .child(self.outlined_field.clone())
+                    .child(self.rename_field.clone()),
             ))
             .into_any_element()
     }

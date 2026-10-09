@@ -8,15 +8,16 @@ use std::ops::Range;
 use std::time::Instant;
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId,
-    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Render, ShapedLine, SharedString, Style, TextRun, UTF16Selection,
-    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, size,
+    AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
+    FontWeight, GlobalElementId, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Render, ShapedLine, SharedString,
+    Style, TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*,
+    px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::{Icon, RoundedExt, all};
+use super::{Icon, RoundedExt, all, corners};
 use crate::motion::{Spring, animate_color, animate_f32, continuous_at, key};
 use crate::theme::{FONT_FAMILY, Theme, alpha};
 
@@ -87,11 +88,18 @@ pub enum TextFieldStyle {
     Pill,
     /// 38 px tonal pill with fixed corners (a menu's filter).
     Compact,
-    /// In-place editing (renaming a row): surface background and a 1.5 px primary border.
+    /// In-place editing (renaming a row): 34 px pill with a 1.5 px primary border.
     Inline,
     /// Text only: no background, border or padding ("Other…" answers, tab renames).
     Bare,
+    /// M3 filled field: 40 px, top corners rounded, an underline that thickens on focus.
+    Filled,
+    /// Form field: 36 px, 14 px corners and a 1 px border that turns into a 2 px primary one.
+    Outlined,
 }
+
+/// Builds the trailing content of a [`TextField`] on each render (e.g. a clear button).
+type TrailingBuilder = Box<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
 pub struct TextField {
     focus_handle: FocusHandle,
@@ -101,6 +109,10 @@ pub struct TextField {
     style: TextFieldStyle,
     height: Option<Pixels>,
     font_size: Option<Pixels>,
+    background: Option<Hsla>,
+    focus_ring: Option<Pixels>,
+    label: Option<SharedString>,
+    trailing: Option<TrailingBuilder>,
     select_all_on_focus: bool,
     restore_on_cancel: bool,
     was_focused: bool,
@@ -132,6 +144,10 @@ impl TextField {
             style: TextFieldStyle::Pill,
             height: None,
             font_size: None,
+            background: None,
+            focus_ring: None,
+            label: None,
+            trailing: None,
             select_all_on_focus: false,
             restore_on_cancel: false,
             was_focused: false,
@@ -180,6 +196,43 @@ impl TextField {
     /// `restore_on_cancel`.
     pub fn inline(self) -> Self {
         self.style(TextFieldStyle::Inline)
+    }
+
+    /// Shorthand for [`TextFieldStyle::Filled`].
+    pub fn filled(self) -> Self {
+        self.style(TextFieldStyle::Filled)
+    }
+
+    /// Shorthand for [`TextFieldStyle::Outlined`].
+    pub fn outlined(self) -> Self {
+        self.style(TextFieldStyle::Outlined)
+    }
+
+    /// Label above the field (primary for filled fields, muted otherwise).
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Background instead of the style's.
+    pub fn bg(mut self, background: Hsla) -> Self {
+        self.background = Some(background);
+        self
+    }
+
+    /// Inner primary ring of this width while focused (pill and compact styles).
+    pub fn focus_ring(mut self, width: Pixels) -> Self {
+        self.focus_ring = Some(width);
+        self
+    }
+
+    /// Content at the end of the field, built on each render (e.g. a clear button).
+    pub fn trailing(
+        mut self,
+        build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static,
+    ) -> Self {
+        self.trailing = Some(Box::new(build));
+        self
     }
 
     /// Shorthand for [`TextFieldStyle::Bare`].
@@ -757,8 +810,10 @@ impl Render for TextField {
         let (height, pad, gap, icon_size, text_size, rest_r, focus_r) = match self.style {
             TextFieldStyle::Pill => (44., 18., 10., 18., 13.5, 22., 16.),
             TextFieldStyle::Compact => (38., 12., 8., 14., 13., 19., 19.),
-            TextFieldStyle::Inline => (34., 10., 8., 16., 13.5, 10., 10.),
+            TextFieldStyle::Inline => (34., 10., 8., 16., 13.5, 17., 17.),
             TextFieldStyle::Bare => (26., 0., 6., 16., 13.5, 0., 0.),
+            TextFieldStyle::Filled => (40., 12., 8., 16., 13.5, 8., 8.),
+            TextFieldStyle::Outlined => (36., 12., 8., 16., 13.5, 14., 14.),
         };
         let height = self.height.map_or(height, f32::from);
         let text_size = self.font_size.map_or(text_size, f32::from);
@@ -774,8 +829,14 @@ impl Render for TextField {
             TextFieldStyle::Pill | TextFieldStyle::Compact => {
                 (s.surface_container_high, s.surface_container_highest)
             }
-            TextFieldStyle::Inline => (s.surface, s.surface),
+            TextFieldStyle::Inline => (s.surface_container, s.surface_container),
+            TextFieldStyle::Filled => (s.surface_container_high, s.surface_container_high),
+            TextFieldStyle::Outlined => (s.surface, s.surface),
             TextFieldStyle::Bare => (alpha(s.surface, 0.), alpha(s.surface, 0.)),
+        };
+        let (rest_bg, focus_bg) = match self.background {
+            Some(bg) => (bg, bg),
+            None => (rest_bg, focus_bg),
         };
         let bg = animate_color(
             key(&id, "bg"),
@@ -813,16 +874,37 @@ impl Render for TextField {
             .w_full()
             .h(px(height))
             .px(px(pad))
-            .corners(all(radius))
             .bg(bg)
             .text_color(s.on_surface)
             .font_family(FONT_FAMILY)
             .text_size(px(text_size))
             .font_weight(FontWeight(400.))
             .line_height(px(20.));
-        if self.style == TextFieldStyle::Inline {
-            field = field.border(px(1.5)).border_color(s.primary);
-        }
+        field = match self.style {
+            TextFieldStyle::Filled => field
+                .corners(corners([f32::from(radius), f32::from(radius), 0., 0.]))
+                .border_b(px(if focused { 2. } else { 1. }))
+                .border_color(if focused { s.primary } else { s.outline }),
+            TextFieldStyle::Outlined => field
+                .corners(all(radius))
+                .border(px(if focused { 2. } else { 1. }))
+                .border_color(if focused {
+                    s.primary
+                } else {
+                    s.outline_variant
+                }),
+            TextFieldStyle::Inline => field
+                .corners(all(radius))
+                .border(px(1.5))
+                .border_color(s.primary),
+            _ => {
+                let field = field.corners(all(radius));
+                match self.focus_ring {
+                    Some(width) if focused => field.border(width).border_color(s.primary),
+                    _ => field,
+                }
+            }
+        };
         if let Some(icon) = self.icon.clone() {
             field = field.child(Icon::new(icon).size(px(icon_size)).color(if focused {
                 s.primary
@@ -830,11 +912,39 @@ impl Render for TextField {
                 s.on_surface_variant
             }));
         }
-        field.child(
-            div()
-                .flex_1()
-                .overflow_hidden()
-                .child(TextLine { field: cx.entity() }),
-        )
+        let trailing = self.trailing.as_ref().map(|build| build(window, cx));
+        let field = field
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(TextLine { field: cx.entity() }),
+            )
+            .children(trailing);
+        match self.label.clone() {
+            Some(label) => {
+                let filled = self.style == TextFieldStyle::Filled;
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(if filled { 4. } else { 8. }))
+                    .w_full()
+                    .font_family(FONT_FAMILY)
+                    .child(
+                        div()
+                            .text_size(px(if filled { 11.5 } else { 12. }))
+                            .font_weight(FontWeight(600.))
+                            .text_color(if filled {
+                                s.primary
+                            } else {
+                                s.on_surface_variant
+                            })
+                            .child(label),
+                    )
+                    .child(field)
+                    .into_any_element()
+            }
+            None => field.into_any_element(),
+        }
     }
 }

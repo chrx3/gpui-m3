@@ -15,9 +15,11 @@ use gpui::{
     div, px, relative,
 };
 
-use super::{ClickHandler, Icon, RoundedExt, all};
+use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::motion::{Spring, animate_color, animate_f32, animate_on_activate, key, replay};
+use crate::motion::{
+    Spring, animate_color, animate_f32, animate_on_activate, cubic_bezier, key, replay,
+};
 use crate::theme::{FONT_FAMILY, Theme, alpha};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -814,6 +816,130 @@ impl RenderOnce for Fab {
         let mut el = interactive(el, &state, true, true);
         if let Some(f) = self.on_click {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
+        }
+        el
+    }
+}
+
+/// Favorite toggle: a 22 px star that, when turned on, spins in with the slow spatial spring
+/// and throws a burst of five particles.
+#[derive(IntoElement)]
+pub struct FavStar {
+    id: ElementId,
+    on: bool,
+    hover_group: Option<SharedString>,
+    on_toggle: Option<ChangeHandler<bool>>,
+}
+
+impl FavStar {
+    pub fn new(id: impl Into<ElementId>, on: bool) -> Self {
+        Self {
+            id: id.into(),
+            on,
+            hover_group: None,
+            on_toggle: None,
+        }
+    }
+
+    /// While off, the star only shows when the GPUI hover group `name` is hovered (the row
+    /// it belongs to, see `group(..)` on the row).
+    pub fn hover_group(mut self, name: impl Into<SharedString>) -> Self {
+        self.hover_group = Some(name.into());
+        self
+    }
+
+    /// Receives the new state.
+    pub fn on_toggle(mut self, f: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_toggle = Some(Rc::new(f));
+        self
+    }
+}
+
+/// Where the five burst particles end, relative to the star's center.
+const STAR_BURST: [(f32, f32); 5] = [(0., -13.), (12., -4.), (8., 11.), (-8., 11.), (-12., -4.)];
+
+impl RenderOnce for FavStar {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let s = *Theme::of(cx);
+        let state = use_interaction(&self.id, window, cx);
+        let hovered = state.read(cx).hovered;
+        let radius = px(animate_f32(
+            key(&self.id, "radius"),
+            Spring::SPATIAL_FAST,
+            if hovered { 8. } else { 11. },
+            window,
+            cx,
+        ));
+        // Plays only when the state changes, never when the star first appears.
+        let flip = replay(key(&self.id, "flip"), self.on as u64, 0.62, window, cx);
+        let (scale, turn) = match (flip, self.on) {
+            (Some(t), true) => {
+                let p = Spring::SPATIAL_SLOW.step(t);
+                (0.4 + 0.6 * p, -144f32.to_radians() * (1. - p))
+            }
+            (Some(t), false) if t < 0.3 => {
+                let phase = t / 0.3;
+                let w = if phase < 0.4 {
+                    phase / 0.4
+                } else {
+                    (1. - phase) / 0.6
+                };
+                (1. - 0.25 * w, 36f32.to_radians() * w)
+            }
+            _ => (1., 0.),
+        };
+        let color = if self.on {
+            s.primary
+        } else if hovered {
+            s.on_surface
+        } else {
+            s.outline
+        };
+        let color = animate_color(key(&self.id, "color"), Spring::EFFECTS, color, window, cx);
+        let burst = flip
+            .filter(|t| self.on && *t < 0.52)
+            .map(|t| cubic_bezier(0.2, 0., 0., 1.)(t / 0.52));
+
+        let mut el = div()
+            .id(self.id.clone())
+            .relative()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .size(px(22.))
+            .corners(all(radius))
+            .when(hovered, |d| d.bg(s.surface_container_high))
+            .child(
+                Icon::new(if self.on { "star-fill" } else { "star" })
+                    .size(px(15.))
+                    .color(color)
+                    .scale(scale)
+                    .rotate(turn),
+            );
+        if let Some(p) = burst {
+            for (x, y) in STAR_BURST {
+                el = el.child(
+                    div()
+                        .absolute()
+                        .left(px(11. - 1.5 + x * p))
+                        .top(px(11. - 1.5 + y * p))
+                        .size(px(3.))
+                        .rounded(px(1.5))
+                        .bg(alpha(s.primary, 1. - p)),
+                );
+            }
+        }
+        if let (Some(group), false) = (self.hover_group, self.on) {
+            el = el.invisible().group_hover(group, |style| style.visible());
+        }
+        let mut el = interactive(el, &state, true, false);
+        if let Some(f) = self.on_toggle {
+            let on = self.on;
+            el = el.on_click(move |_, w, cx| {
+                cx.stop_propagation();
+                f(!on, w, cx)
+            });
         }
         el
     }
