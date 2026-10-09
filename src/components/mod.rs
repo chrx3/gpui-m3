@@ -1,5 +1,6 @@
 mod button;
 mod chip;
+mod choice;
 mod icon;
 mod nav;
 mod overlays;
@@ -12,6 +13,7 @@ mod visual;
 
 pub use button::*;
 pub use chip::*;
+pub use choice::*;
 pub use icon::*;
 pub use nav::*;
 pub use overlays::*;

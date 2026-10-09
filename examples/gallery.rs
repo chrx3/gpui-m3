@@ -10,15 +10,16 @@ use gpui::{
     deferred, div, point, prelude::FluentBuilder, px, size,
 };
 use gpui_m3::{
-    Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, Card, Chip, Dialog, Fab, IconButton,
-    IconTab, IconTabs, LinearProgress, ListGroup, LoadingIndicator, Menu, MenuItem, MotionSettings,
-    NavItem, RailItem, Ring, Segment, SegmentedButtons, Shape, ShapeName, SplitButton, Spring,
-    StopSlider, Switch, TextField, TextFieldEvent, Theme, Toast, Tone, WavyProgress, context_menu,
+    Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, Card, Chip, ChipSize, Dialog, DotShape,
+    Fab, IconButton, IconTab, IconTabs, LinearProgress, ListGroup, LoadingIndicator, Menu,
+    MenuItem, MorphDot, MotionSettings, NavItem, PopDirection, Popover, RailItem, Ring, Segment,
+    SegmentedButtons, Shape, ShapeName, SplitButton, Spring, StopSlider, Switch, TextField,
+    TextFieldEvent, Theme, Toast, Tone, WavyProgress, context_menu,
     motion::{animate_f32, key},
     theme::{FONT_FAMILY, alpha, hex},
 };
 
-const SECTIONS: [(&str, &str); 9] = [
+const SECTIONS: [(&str, &str); 10] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -27,6 +28,7 @@ const SECTIONS: [(&str, &str); 9] = [
     ("Progress", "gauge"),
     ("Surfaces", "blocks"),
     ("Text and feedback", "chat"),
+    ("Composer", "up"),
     ("Motion", "refresh"),
 ];
 
@@ -74,6 +76,15 @@ struct Demos {
     ring: f32,
     motion_flip: bool,
     search: Entity<TextField>,
+    filter: Entity<TextField>,
+    agent_tab: usize,
+    agent_sub: bool,
+    agent_model: usize,
+    agent_highlight: usize,
+    launches: u64,
+    mode: usize,
+    agents_live: bool,
+    usage_open: bool,
     name: Entity<TextField>,
     submitted: SharedString,
     dialog_open: bool,
@@ -146,8 +157,23 @@ impl Demos {
             })
             .detach();
         }
+        let filter = cx.new(|cx| {
+            TextField::new(cx)
+                .compact()
+                .icon("search")
+                .placeholder("Filter actions or commands…")
+        });
         Self {
             search,
+            filter,
+            agent_tab: 0,
+            agent_sub: false,
+            agent_model: 0,
+            agent_highlight: 0,
+            launches: 0,
+            mode: 0,
+            agents_live: true,
+            usage_open: false,
             name,
             submitted: SharedString::default(),
             dialog_open: false,
@@ -317,6 +343,7 @@ impl Render for Demos {
             5 => self.progress(cx),
             6 => self.surfaces(cx),
             7 => self.inputs(cx),
+            8 => self.composer(cx),
             _ => self.motion(window, cx),
         };
         div()
@@ -1175,6 +1202,217 @@ impl Demos {
                         .on_dismiss(click(cx, |this: &mut Demos, _| this.dialog_open = false)),
                 )
             })
+            .into_any_element()
+    }
+
+    fn composer(&self, cx: &mut Context<Self>) -> AnyElement {
+        let s = *Theme::of(cx);
+        const TABS: [(&str, &str); 6] = [
+            ("clip", "Context"),
+            ("cpu", "Model"),
+            ("palette", "Customize"),
+            ("plug", "Integrations"),
+            ("history", "Session"),
+            ("shield", "Account"),
+        ];
+        const MODES: [(&str, DotShape); 4] = [
+            ("Ask", DotShape::Square),
+            ("Auto edit", DotShape::Circle),
+            ("Plan", DotShape::Diamond),
+            ("Bypass", DotShape::Square),
+        ];
+        let mode_color = [s.outline, s.primary, s.tertiary, s.error][self.mode];
+        let (mode_label, mode_shape) = MODES[self.mode];
+
+        let mut menu = Menu::new("agent-menu")
+            .width(340.)
+            .max_h(px(440.))
+            .content_key(self.agent_tab as u64 + if self.agent_sub { 100 } else { 0 });
+        if self.agent_sub {
+            menu = menu
+                .back("Model", click(cx, |this, _| this.agent_sub = false))
+                .item(
+                    MenuItem::new("am-effort", "Effort")
+                        .dense(true)
+                        .icon("gauge")
+                        .sublabel(EFFORTS[self.effort])
+                        .inline_sublabel(true)
+                        .static_row(true)
+                        .trailing(
+                            StopSlider::new("am-effort-slider", 5, self.effort)
+                                .compact(true)
+                                .on_change(update(cx, |this, i: usize, _| this.effort = i)),
+                        ),
+                )
+                .separator();
+            for (i, (name, sub)) in [
+                ("Opus 4.1", "Most capable"),
+                ("Sonnet 4.5", "Balanced"),
+                ("Haiku 4.5", "Fastest"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                menu = menu.item(
+                    MenuItem::new(("am-model", i), name)
+                        .dense(true)
+                        .radio(self.agent_model == i)
+                        .sublabel(sub)
+                        .on_click(click(cx, move |this, _| this.agent_model = i)),
+                );
+            }
+        } else {
+            let tabs = IconTabs::new(
+                "am-tabs",
+                TABS.iter().map(|(icon, label)| IconTab::new(*icon, *label)),
+                self.agent_tab,
+            )
+            .on_change(update(cx, |this, i: usize, _| this.agent_tab = i));
+            menu = menu.header(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .pb(px(6.))
+                    .child(self.filter.clone())
+                    .child(tabs),
+            );
+            let rows: [(&str, &str, Option<&str>); 5] = [
+                ("clip", "Attach file…", Some("Ctrl+U")),
+                ("at", "Mention project file…", Some("@")),
+                ("trash", "Clear conversation", None),
+                ("history", "Rewind", None),
+                ("export", "Export conversation", None),
+            ];
+            for (i, (icon, label, shortcut)) in rows.into_iter().enumerate() {
+                let mut item = MenuItem::new(("am-row", i), label)
+                    .dense(true)
+                    .icon(icon)
+                    .highlighted(self.agent_highlight == i)
+                    .on_click(click(cx, move |this, _| this.agent_highlight = i));
+                if let Some(shortcut) = shortcut {
+                    item = item.shortcut(shortcut);
+                }
+                menu = menu.item(item);
+            }
+            menu = menu.item(
+                MenuItem::new("am-model-row", "Change model…")
+                    .dense(true)
+                    .icon("cpu")
+                    .trailing(MODELS[self.agent_model])
+                    .on_click(click(cx, |this, _| this.agent_sub = true)),
+            );
+        }
+
+        let launches = self.launches;
+        let bar = div()
+            .flex()
+            .items_center()
+            .gap(px(2.))
+            .w(px(560.))
+            .p(px(8.))
+            .rounded(px(26.))
+            .bg(s.surface_container_high)
+            .child(IconButton::new("cb-attach", "plus").tooltip("Attach (Ctrl+U)"))
+            .child(IconButton::new("cb-actions", "slash").tooltip("Actions (/)"))
+            .child(
+                Button::new("cb-model", MODELS[self.agent_model])
+                    .size(ButtonSize::Compact)
+                    .sublabel(EFFORTS[self.effort])
+                    .open(self.agent_sub)
+                    .on_click(click(cx, |this, _| this.agent_sub = !this.agent_sub)),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id("cb-ring")
+                    .cursor_pointer()
+                    .p(px(8.))
+                    .child(Ring::new("cb-ring-value", 0.42))
+                    .on_click(click(cx, |this, _| this.usage_open = !this.usage_open)),
+            )
+            .child(
+                IconButton::new("cb-send", "up")
+                    .filled()
+                    .hover_morph(true)
+                    .size(px(36.))
+                    .launch(launches)
+                    .on_click(click(cx, |this, _| this.launches += 1)),
+            );
+
+        let under = row()
+            .child(
+                Chip::new("cu-branch", "main")
+                    .icon("branch")
+                    .muted(true)
+                    .inert(true),
+            )
+            .child(
+                Chip::new("cu-mode", mode_label)
+                    .tone(if self.mode == 2 {
+                        Tone::Tertiary
+                    } else {
+                        Tone::Secondary
+                    })
+                    .leading(MorphDot::new("cu-mode-dot", mode_shape).color(mode_color))
+                    .on_click(click(cx, |this, _| this.mode = (this.mode + 1) % 4)),
+            )
+            .child(
+                Chip::new("cu-time", "12m")
+                    .icon("history")
+                    .muted(true)
+                    .inert(true),
+            )
+            .child(
+                Chip::new("cu-agents", "2 agents")
+                    .icon("layers")
+                    .muted(!self.agents_live)
+                    .filter(self.agents_live)
+                    .show_check(false)
+                    .pulse_icon(self.agents_live)
+                    .on_click(click(cx, |this, _| this.agents_live = !this.agents_live)),
+            )
+            .child(
+                Chip::input("cu-file", "src/components/very_long_file_name.rs")
+                    .tone(Tone::Secondary)
+                    .icon("file")
+                    .max_w(px(220.)),
+            )
+            .child(
+                Chip::new("cu-context", "theme.rs")
+                    .icon("file")
+                    .mono(true)
+                    .sublabel(":12-30")
+                    .size(ChipSize::Small),
+            );
+
+        page()
+            .child(demo(
+                "Agent menu",
+                "Fixed filter and tabs over the scrolling items; dense rows with shortcuts; a submenu with a back row and radios. The content fades in on tab changes.",
+                menu,
+            ))
+            .child(demo(
+                "Composer bar",
+                "Model pill with sublabel (opens the model submenu); the send button plays the launch on each click.",
+                column()
+                    .child(bar)
+                    .when(self.usage_open, |d| {
+                        d.child(
+                            Popover::new("usage")
+                                .width(px(380.))
+                                .padding(px(18.))
+                                .direction(PopDirection::Down)
+                                .child(div().text_size(px(20.)).font_weight(FontWeight(750.)).child("Account and usage"))
+                                .child(WavyProgress::new("usage-wave", Some(0.42))),
+                        )
+                    }),
+            ))
+            .child(demo(
+                "Composer chips",
+                "Muted static chips, a tonal mode chip with a morphing dot (click to cycle), a filter that keeps its icon and pulses, a tonal file chip and a small mono chip.",
+                under,
+            ))
             .into_any_element()
     }
 

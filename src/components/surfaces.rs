@@ -9,11 +9,11 @@ use gpui::{
     Styled, Window, div, point, px,
 };
 
-use super::{ClickHandler, Icon, RoundedExt, all, child_id, corners};
+use super::{ClickHandler, Icon, Radio, RoundedExt, all, child_id, corners};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::motion::{Spring, animate_color, animate_f32, entrance, key};
+use crate::motion::{Spring, animate_color, animate_f32, entrance, key, replay};
 use crate::shapes::Tone;
-use crate::theme::{FONT_FAMILY, Scheme, Theme, alpha, mix};
+use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, alpha, mix};
 
 /// Shadow for menus and popovers (the reference design's `--shadow-pop`).
 pub fn shadow_pop(s: &Scheme) -> Vec<BoxShadow> {
@@ -33,13 +33,159 @@ pub fn shadow_pop(s: &Scheme) -> Vec<BoxShadow> {
     ]
 }
 
+/// Which way a popover opens from its anchor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PopDirection {
+    /// Above the anchor: enters rising.
+    #[default]
+    Up,
+    /// Below the anchor: enters dropping.
+    Down,
+}
+
 /// Applies the M3 Expressive popover entrance: rises 12 px and fades in with the fast
 /// spatial spring. `delay` is in seconds, used to stagger groups.
 pub fn pop_in(el: Div, id: &ElementId, delay: f32, window: &mut Window, cx: &mut App) -> Div {
+    pop_in_toward(el, id, delay, PopDirection::Up, window, cx)
+}
+
+/// [`pop_in`] for a popover that opens in `direction` (a dropdown uses [`PopDirection::Down`]).
+pub fn pop_in_toward(
+    el: Div,
+    id: &ElementId,
+    delay: f32,
+    direction: PopDirection,
+    window: &mut Window,
+    cx: &mut App,
+) -> Div {
     let p = entrance(key(id, "pop"), Spring::SPATIAL_FAST, delay, window, cx);
+    let sign = match direction {
+        PopDirection::Up => 1.,
+        PopDirection::Down => -1.,
+    };
     el.relative()
-        .top(px((1. - p) * 12.))
+        .top(px((1. - p) * 12. * sign))
         .opacity(p.clamp(0., 1.))
+}
+
+/// Content that fades in and rises 6 px each time `generation` changes (a menu tab switch).
+fn content_switch(
+    el: Div,
+    id: &ElementId,
+    generation: u64,
+    window: &mut Window,
+    cx: &mut App,
+) -> Div {
+    match replay(key(id, "switch"), generation, 0.25, window, cx) {
+        Some(t) => {
+            let p = Spring::EFFECTS.step(t).clamp(0., 1.);
+            el.relative().top(px((1. - p) * 6.)).opacity(p)
+        }
+        None => el,
+    }
+}
+
+/// Popover surface ("Account and usage", mentions…): surface container, pop shadow, the
+/// pop entrance and an optional maximum height with scrolling. Position it yourself (an
+/// absolute wrapper or GPUI's `anchored`).
+#[derive(IntoElement)]
+pub struct Popover {
+    id: ElementId,
+    width: Option<Pixels>,
+    padding: Pixels,
+    radius: Pixels,
+    gap: Pixels,
+    max_height: Option<Pixels>,
+    direction: PopDirection,
+    children: Vec<AnyElement>,
+}
+
+impl Popover {
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            width: None,
+            padding: px(16.),
+            radius: px(28.),
+            gap: px(12.),
+            max_height: None,
+            direction: PopDirection::Up,
+            children: Vec::new(),
+        }
+    }
+
+    pub fn width(mut self, width: Pixels) -> Self {
+        self.width = Some(width);
+        self
+    }
+
+    /// Inner padding (16 px by default).
+    pub fn padding(mut self, padding: Pixels) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    /// Corner radius (28 px by default).
+    pub fn radius(mut self, radius: Pixels) -> Self {
+        self.radius = radius;
+        self
+    }
+
+    /// Gap between children (12 px by default).
+    pub fn gap(mut self, gap: Pixels) -> Self {
+        self.gap = gap;
+        self
+    }
+
+    pub fn max_h(mut self, max_height: Pixels) -> Self {
+        self.max_height = Some(max_height);
+        self
+    }
+
+    pub fn direction(mut self, direction: PopDirection) -> Self {
+        self.direction = direction;
+        self
+    }
+}
+
+impl ParentElement for Popover {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
+}
+
+impl RenderOnce for Popover {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let s = *Theme::of(cx);
+        let content = div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap(self.gap)
+            .p(self.padding)
+            .children(self.children);
+        let surface = div()
+            .flex()
+            .flex_col()
+            .when_some(self.width, |d, w| d.w(w))
+            .rounded(self.radius)
+            .bg(s.surface_container)
+            .shadow(shadow_pop(&s))
+            .font_family(FONT_FAMILY)
+            .text_size(px(13.))
+            .text_color(s.on_surface);
+        let surface = match self.max_height {
+            Some(max_height) => surface.child(
+                div()
+                    .id(child_id(&self.id, "scroll"))
+                    .max_h(max_height)
+                    .overflow_y_scroll()
+                    .child(content),
+            ),
+            None => surface.child(content),
+        };
+        pop_in_toward(surface, &self.id, 0., self.direction, window, cx)
+    }
 }
 
 /// Menu: a surface with items, or several separate groups (M3 Expressive style).
@@ -50,6 +196,12 @@ pub struct Menu {
     grouped: bool,
     width: f32,
     max_height: Option<Pixels>,
+    padding: Pixels,
+    radius: Pixels,
+    direction: PopDirection,
+    header: Option<AnyElement>,
+    back: Option<(SharedString, ClickHandler)>,
+    content_key: Option<u64>,
 }
 
 impl Menu {
@@ -60,11 +212,57 @@ impl Menu {
             grouped: false,
             width: 260.,
             max_height: None,
+            padding: px(6.),
+            radius: px(24.),
+            direction: PopDirection::Up,
+            header: None,
+            back: None,
+            content_key: None,
         }
     }
 
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
+        self
+    }
+
+    /// Inner padding (6 px by default). Ignored by [`Menu::grouped`] menus.
+    pub fn padding(mut self, padding: Pixels) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    /// Corner radius (24 px by default). Ignored by [`Menu::grouped`] menus.
+    pub fn radius(mut self, radius: Pixels) -> Self {
+        self.radius = radius;
+        self
+    }
+
+    /// Entrance direction: [`PopDirection::Down`] for menus that open below their anchor.
+    pub fn direction(mut self, direction: PopDirection) -> Self {
+        self.direction = direction;
+        self
+    }
+
+    /// Fixed content above the scrolling items (a filter field, [`super::IconTabs`]…).
+    pub fn header(mut self, header: impl IntoElement) -> Self {
+        self.header = Some(header.into_any_element());
+        self
+    }
+
+    /// Submenu "back" row at the top: a reversed chevron and the submenu title.
+    pub fn back(
+        mut self,
+        title: impl Into<SharedString>,
+        on_back: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.back = Some((title.into(), Rc::new(on_back)));
+        self
+    }
+
+    /// Key of the current content (a tab index): when it changes, the items fade in and rise 6 px.
+    pub fn content_key(mut self, key: u64) -> Self {
+        self.content_key = Some(key);
         self
     }
 
@@ -149,7 +347,11 @@ impl RenderOnce for Menu {
                 None => col,
             }
         } else {
-            let mut content = div().flex().flex_col().p(px(6.));
+            let has_header = self.header.is_some() || self.back.is_some();
+            let mut content = div().flex().flex_col().p(self.padding);
+            if has_header {
+                content = content.pt(px(2.));
+            }
             for (i, group) in self.groups.into_iter().enumerate() {
                 if i > 0 {
                     content =
@@ -157,10 +359,29 @@ impl RenderOnce for Menu {
                 }
                 content = content.children(group);
             }
-            let card = base
-                .rounded(px(24.))
+            if let Some(generation) = self.content_key {
+                content = content_switch(content, &self.id, generation, window, cx);
+            }
+            let mut card = base
+                .rounded(self.radius)
                 .bg(s.surface_container)
                 .shadow(shadow_pop(&s));
+            if has_header {
+                let mut header = div()
+                    .flex()
+                    .flex_col()
+                    .flex_none()
+                    .px(self.padding)
+                    .pt(self.padding);
+                if let Some((title, on_back)) = self.back {
+                    header = header.child(BackRow {
+                        id: child_id(&self.id, "back"),
+                        title,
+                        on_back,
+                    });
+                }
+                card = card.child(header.children(self.header));
+            }
             let card = match self.max_height {
                 Some(max_height) => card.child(
                     div()
@@ -171,8 +392,46 @@ impl RenderOnce for Menu {
                 ),
                 None => card.child(content),
             };
-            pop_in(card, &self.id, 0., window, cx)
+            pop_in_toward(card, &self.id, 0., self.direction, window, cx)
         }
+    }
+}
+
+/// "Back" row of a submenu: tonal pill with a reversed chevron and the title.
+#[derive(IntoElement)]
+struct BackRow {
+    id: ElementId,
+    title: SharedString,
+    on_back: ClickHandler,
+}
+
+impl RenderOnce for BackRow {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let s = *Theme::of(cx);
+        let state = use_interaction(&self.id, window, cx);
+        let layer = state_layer(&self.id, &state, all(px(19.)), s.on_surface, window, cx);
+        let row = div()
+            .id(self.id.clone())
+            .relative()
+            .flex()
+            .items_center()
+            .gap(px(9.))
+            .min_h(px(34.))
+            .px(px(9.))
+            .mb(px(4.))
+            .rounded(px(19.))
+            .bg(s.surface_container_high)
+            .font_weight(FontWeight(600.))
+            .child(layer)
+            .child(
+                Icon::new("chevron-right")
+                    .size(px(16.))
+                    .color(s.on_surface_variant)
+                    .rotate(std::f32::consts::PI),
+            )
+            .child(self.title);
+        let on_back = self.on_back;
+        interactive(row, &state, true, true).on_click(move |e, w, cx| on_back(e, w, cx))
     }
 }
 
@@ -185,8 +444,14 @@ pub struct MenuItem {
     icon: Option<SharedString>,
     leading: Option<AnyElement>,
     trailing: Option<AnyElement>,
+    shortcut: Option<SharedString>,
     selected: bool,
+    highlighted: bool,
+    radio: Option<bool>,
     disabled: bool,
+    dense: bool,
+    static_row: bool,
+    inline_sublabel: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -199,10 +464,52 @@ impl MenuItem {
             icon: None,
             leading: None,
             trailing: None,
+            shortcut: None,
             selected: false,
+            highlighted: false,
+            radio: None,
             disabled: false,
+            dense: false,
+            static_row: false,
+            inline_sublabel: false,
             on_click: None,
         }
+    }
+
+    /// Compact row (30 px, 13 px text, 8 → 15 px corners), as in the agent menu.
+    pub fn dense(mut self, dense: bool) -> Self {
+        self.dense = dense;
+        self
+    }
+
+    /// Keyboard highlight: the hover look, without the check of [`MenuItem::selected`].
+    pub fn highlighted(mut self, highlighted: bool) -> Self {
+        self.highlighted = highlighted;
+        self
+    }
+
+    /// Leading radio mark instead of the icon; single-choice lists without a tonal background.
+    pub fn radio(mut self, selected: bool) -> Self {
+        self.radio = Some(selected);
+        self
+    }
+
+    /// Row without hover or ripple, for rows that hold their own controls (a slider…).
+    pub fn static_row(mut self, static_row: bool) -> Self {
+        self.static_row = static_row;
+        self
+    }
+
+    /// Keyboard shortcut shown at the end in a small monospace font.
+    pub fn shortcut(mut self, shortcut: impl Into<SharedString>) -> Self {
+        self.shortcut = Some(shortcut.into());
+        self
+    }
+
+    /// Shows the sublabel on the same line as the label, truncated.
+    pub fn inline_sublabel(mut self, inline: bool) -> Self {
+        self.inline_sublabel = inline;
+        self
     }
 
     pub fn icon(mut self, icon: impl Into<SharedString>) -> Self {
@@ -250,15 +557,26 @@ impl RenderOnce for MenuItem {
         let s = *Theme::of(cx);
         let state = use_interaction(&self.id, window, cx);
         let enabled = !self.disabled;
-        let hovered = state.read(cx).hovered && enabled;
+        let reactive = enabled && !self.static_row;
+        let hovered = (state.read(cx).hovered && reactive) || self.highlighted;
+        // (min height, horizontal padding, gap, radius at rest, radius on hover, icon, text)
+        let (min_h, pad, gap, rest_r, hover_r, icon_size, text_size) = if self.dense {
+            (30., 9., 9., 8., 15., 16., Some(13.))
+        } else {
+            (36., 10., 10., 10., 18., 17., None)
+        };
         let radius = px(animate_f32(
             key(&self.id, "radius"),
             Spring::SPATIAL_FAST,
-            if hovered || self.selected { 18. } else { 10. },
+            if hovered || self.selected {
+                hover_r
+            } else {
+                rest_r
+            },
             window,
             cx,
         ));
-        let (bg, fg, muted) = if self.selected {
+        let (bg, fg, muted) = if self.selected && self.radio.is_none() {
             (
                 s.secondary_container,
                 s.on_secondary_container,
@@ -286,33 +604,59 @@ impl RenderOnce for MenuItem {
             .relative()
             .flex()
             .items_center()
-            .gap(px(10.))
-            .min_h(px(36.))
-            .px(px(10.))
-            .py(px(4.))
+            .gap(px(gap))
+            .min_h(px(min_h))
+            .px(px(pad))
+            .py(px(if self.dense { 0. } else { 4. }))
             .corners(all(radius))
             .bg(bg)
             .text_color(fg)
+            .when_some(text_size, |d, size| d.text_size(px(size)))
             .when(self.selected, |d| d.font_weight(FontWeight(600.)))
             .when(!enabled, |d| d.opacity(0.38))
             .child(layer);
-        if let Some(leading) = self.leading {
+        if let Some(on) = self.radio {
+            row = row.child(Radio::new(child_id(&self.id, "radio"), on));
+        } else if let Some(leading) = self.leading {
             row = row.child(leading);
         } else if let Some(icon) = self.icon {
-            row = row.child(Icon::new(icon).size(px(17.)).color(muted));
+            row = row.child(Icon::new(icon).size(px(icon_size)).color(muted));
         }
-        let mut text = div().flex().flex_col().flex_1().child(self.label);
-        if let Some(sub) = self.sublabel {
-            text = text.child(
-                div()
-                    .text_size(px(11.5))
-                    .font_weight(FontWeight(400.))
-                    .text_color(muted)
-                    .child(sub),
-            );
-        }
+        let sub = self.sublabel.map(|sub| {
+            div()
+                .text_size(px(11.5))
+                .font_weight(FontWeight(400.))
+                .text_color(muted)
+                .child(sub)
+        });
+        let text = if self.inline_sublabel {
+            div()
+                .flex()
+                .items_baseline()
+                .gap(px(8.))
+                .flex_1()
+                .min_w_0()
+                .child(div().flex_none().child(self.label))
+                .children(sub.map(|sub| {
+                    sub.flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                }))
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .py(px(if self.dense { 4. } else { 0. }))
+                .line_height(gpui::relative(1.25))
+                .child(self.label)
+                .children(sub)
+        };
         row = row.child(text);
-        let trailing = match (self.trailing, self.selected) {
+        let trailing = match (self.trailing, self.selected && self.radio.is_none()) {
             (Some(trailing), _) => Some(trailing),
             (None, true) => Some(
                 Icon::new("check")
@@ -325,7 +669,18 @@ impl RenderOnce for MenuItem {
         if let Some(trailing) = trailing {
             row = row.child(div().text_size(px(11.5)).text_color(muted).child(trailing));
         }
-        let mut row = interactive(row, &state, enabled, enabled);
+        if let Some(shortcut) = self.shortcut {
+            row = row.child(
+                div()
+                    .flex_none()
+                    .font_family(MONO_FONT_FAMILY)
+                    .text_size(px(11.))
+                    .font_weight(FontWeight(400.))
+                    .text_color(s.outline)
+                    .child(shortcut),
+            );
+        }
+        let mut row = interactive(row, &state, reactive, reactive);
         if let (Some(f), true) = (self.on_click, enabled) {
             row = row.on_click(move |e, w, cx| f(e, w, cx));
         }

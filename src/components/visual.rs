@@ -7,7 +7,10 @@ use gpui::{
     Pixels, Point, RenderOnce, SharedString, Styled, Window, canvas, div, point, px,
 };
 
-use crate::motion::{Spring, animate_f32, continuous, continuous_at, cubic_bezier, key};
+use crate::interaction::rounded_rect;
+use crate::motion::{
+    Spring, animate, animate_color, animate_f32, continuous, continuous_at, cubic_bezier, key,
+};
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
 use crate::theme::{FONT_FAMILY, Theme};
 
@@ -463,4 +466,98 @@ fn paint_dot(center: Point<Pixels>, radius: f32, color: Hsla, window: &mut Windo
 /// Tonal color container (background and content from one tone).
 pub fn tone_colors(tone: Tone, cx: &App) -> (Hsla, Hsla) {
     tone.colors(Theme::of(cx))
+}
+
+/// Shape of a [`MorphDot`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DotShape {
+    /// Square with 3 px corners.
+    #[default]
+    Square,
+    Circle,
+    /// The square turned 45°.
+    Diamond,
+}
+
+/// Small status dot that morphs between a square, a circle and a diamond (the permission mode
+/// dot in the reference design). Shape and rotation move with the fast spatial spring.
+#[derive(IntoElement)]
+pub struct MorphDot {
+    id: ElementId,
+    shape: DotShape,
+    size: Pixels,
+    color: Option<Hsla>,
+}
+
+impl MorphDot {
+    pub fn new(id: impl Into<ElementId>, shape: DotShape) -> Self {
+        Self {
+            id: id.into(),
+            shape,
+            size: px(7.),
+            color: None,
+        }
+    }
+
+    pub fn size(mut self, size: Pixels) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
+        self
+    }
+}
+
+impl RenderOnce for MorphDot {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let size = f32::from(self.size);
+        let (radius, rotation) = match self.shape {
+            DotShape::Square => (3., 0.),
+            DotShape::Circle => (size / 2., 0.),
+            DotShape::Diamond => (3., PI / 4.),
+        };
+        let [radius, rotation] = animate(
+            key(&self.id, "shape"),
+            Spring::SPATIAL_FAST,
+            [radius, rotation],
+            window,
+            cx,
+        );
+        let color = self.color.unwrap_or(Theme::of(cx).outline);
+        let color = animate_color(key(&self.id, "color"), Spring::EFFECTS, color, window, cx);
+        div().flex_none().size(self.size).child(
+            canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| {
+                    let r = px(radius.clamp(0., size / 2.));
+                    let corners = gpui::Corners {
+                        top_left: r,
+                        top_right: r,
+                        bottom_right: r,
+                        bottom_left: r,
+                    };
+                    let center = bounds.center();
+                    let (sin, cos) = rotation.sin_cos();
+                    let points: Vec<Point<Pixels>> = rounded_rect(bounds, corners)
+                        .into_iter()
+                        .map(|p| {
+                            let (x, y) = (f32::from(p.x - center.x), f32::from(p.y - center.y));
+                            point(
+                                center.x + px(x * cos - y * sin),
+                                center.y + px(x * sin + y * cos),
+                            )
+                        })
+                        .collect();
+                    let mut builder = PathBuilder::fill();
+                    builder.add_polygon(&points, true);
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, color);
+                    }
+                },
+            )
+            .size_full(),
+        )
+    }
 }

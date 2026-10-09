@@ -16,7 +16,7 @@ use gpui::{
 
 use super::{ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::motion::{Spring, animate_color, animate_f32, animate_on_activate, key};
+use crate::motion::{Spring, animate_color, animate_f32, animate_on_activate, key, replay};
 use crate::theme::{FONT_FAMILY, Theme, alpha};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -36,9 +36,13 @@ pub enum ButtonVariant {
 pub enum ButtonSize {
     /// 30 px tall.
     Small,
+    /// 32 px tall, 14 px padding (the composer's model button).
+    Compact,
     /// 36 px tall.
     #[default]
     Medium,
+    /// 40 px tall, 20 px padding (permission and question cards).
+    Comfortable,
     /// 48 px tall.
     Large,
 }
@@ -48,7 +52,9 @@ impl ButtonSize {
     fn metrics(self) -> (f32, f32, f32, f32, f32) {
         match self {
             ButtonSize::Small => (30., 12., 12.5, 10., 8.),
+            ButtonSize::Compact => (32., 14., 12.5, 12., 8.),
             ButtonSize::Medium => (36., 18., 13.5, 12., 8.),
+            ButtonSize::Comfortable => (40., 20., 14., 14., 10.),
             ButtonSize::Large => (48., 22., 14., 16., 12.),
         }
     }
@@ -109,10 +115,12 @@ fn palette(
 pub struct Button {
     id: ElementId,
     label: Option<SharedString>,
+    sublabel: Option<SharedString>,
     icon: Option<SharedString>,
     variant: ButtonVariant,
     size: ButtonSize,
     selected: Option<bool>,
+    open: bool,
     disabled: bool,
     trailing: Option<AnyElement>,
     on_click: Option<ClickHandler>,
@@ -123,14 +131,28 @@ impl Button {
         Self {
             id: id.into(),
             label: Some(label.into()),
+            sublabel: None,
             icon: None,
             variant: ButtonVariant::default(),
             size: ButtonSize::default(),
             selected: None,
+            open: false,
             disabled: false,
             trailing: None,
             on_click: None,
         }
+    }
+
+    /// Secondary text after the label (opacity 0.75, weight 500), e.g. the effort level.
+    pub fn sublabel(mut self, sublabel: impl Into<SharedString>) -> Self {
+        self.sublabel = Some(sublabel.into());
+        self
+    }
+
+    /// The button's menu is open: corners tighten as when selected, without the toggle look.
+    pub fn open(mut self, open: bool) -> Self {
+        self.open = open;
+        self
     }
 
     /// Element after the label, such as a [`super::Badge`] ("Changes 98").
@@ -196,7 +218,7 @@ impl RenderOnce for Button {
 
         let radius_target = if pressed {
             pressed_radius
-        } else if self.selected == Some(true) {
+        } else if self.selected == Some(true) || self.open {
             selected_radius
         } else {
             height / 2.
@@ -271,6 +293,15 @@ impl RenderOnce for Button {
         if let Some(label) = self.label {
             el = el.child(label);
         }
+        if let Some(sub) = self.sublabel {
+            el = el.child(
+                div()
+                    .ml(px(-2.))
+                    .font_weight(FontWeight(500.))
+                    .opacity(0.75)
+                    .child(sub),
+            );
+        }
         if let Some(trailing) = self.trailing {
             el = el.child(trailing);
         }
@@ -304,6 +335,7 @@ pub struct IconButton {
     hover_morph: bool,
     disabled: bool,
     tooltip: Option<SharedString>,
+    launch: Option<u64>,
     on_click: Option<ClickHandler>,
 }
 
@@ -318,8 +350,16 @@ impl IconButton {
             hover_morph: false,
             disabled: false,
             tooltip: None,
+            launch: None,
             on_click: None,
         }
+    }
+
+    /// Plays the "launch" feedback (send) each time `generation` changes: the button squeezes
+    /// into a circle and the icon flies out the top and back in from below.
+    pub fn launch(mut self, generation: u64) -> Self {
+        self.launch = Some(generation);
+        self
     }
 
     pub fn variant(mut self, variant: IconButtonVariant) -> Self {
@@ -404,6 +444,18 @@ impl RenderOnce for IconButton {
             cx,
         );
 
+        let launch = self
+            .launch
+            .and_then(|generation| replay(key(&self.id, "launch"), generation, 0.6, window, cx))
+            .map(launch_frame);
+        let (radius, scale) = match launch {
+            Some(frame) => (
+                radius + (px(size / 2.) - radius) * frame.round,
+                scale * frame.scale,
+            ),
+            None => (radius, scale),
+        };
+
         let selected = self.selected == Some(true);
         let (bg, fg, border) = if !enabled {
             let bg = if self.variant == IconButtonVariant::Standard {
@@ -455,9 +507,15 @@ impl RenderOnce for IconButton {
             .bg(bg)
             .child(layer)
             .child(
-                Icon::new(self.icon)
-                    .size(px((size * 0.56).round().min(22.) * scale))
-                    .color(fg),
+                div()
+                    .relative()
+                    .top(px(launch.map_or(0., |frame| frame.icon_y)))
+                    .opacity(launch.map_or(1., |frame| frame.icon_opacity))
+                    .child(
+                        Icon::new(self.icon)
+                            .size(px((size * 0.56).round().min(22.) * scale))
+                            .color(fg),
+                    ),
             );
         if let Some(border) = border {
             face = face.border_1().border_color(border);
@@ -477,6 +535,47 @@ impl RenderOnce for IconButton {
         }
         el
     }
+}
+
+#[derive(Clone, Copy)]
+struct LaunchFrame {
+    scale: f32,
+    /// 0 = current corners, 1 = full circle.
+    round: f32,
+    icon_y: f32,
+    icon_opacity: f32,
+}
+
+/// Frame `t` seconds into the 0.6 s launch: squeeze to 0.82 and a circle by 30 %, then spring
+/// back; the icon leaves upward (−22 px) by 45 % and re-enters from +18 px.
+fn launch_frame(t: f32) -> LaunchFrame {
+    let squeeze_end = 0.18;
+    let (scale, round) = if t < squeeze_end {
+        let k = smoothstep(t / squeeze_end);
+        (1. - 0.18 * k, k)
+    } else {
+        let k = Spring::SPATIAL_FAST.step(t - squeeze_end);
+        (0.82 + 0.18 * k, 1. - k)
+    };
+    let fly_end = 0.27;
+    let (icon_y, icon_opacity) = if t < fly_end {
+        let k = smoothstep(t / fly_end);
+        (-22. * k, 1. - k)
+    } else {
+        let k = Spring::SPATIAL.step(t - fly_end);
+        (18. * (1. - k), k.clamp(0., 1.))
+    };
+    LaunchFrame {
+        scale,
+        round: round.clamp(0., 1.),
+        icon_y,
+        icon_opacity,
+    }
+}
+
+fn smoothstep(x: f32) -> f32 {
+    let x = x.clamp(0., 1.);
+    x * x * (3. - 2. * x)
 }
 
 /// Floating action button (56 px). It rounds out on hover and shrinks on press.

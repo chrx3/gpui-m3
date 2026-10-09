@@ -11,6 +11,14 @@ use material_colors::{color::Argb, hct::Hct, scheme::variant::SchemeTonalSpot};
 /// Font family registered by [`crate::init`].
 pub const FONT_FAMILY: &str = "Roboto";
 
+/// Monospace family for shortcuts and code (the platform's own; none is bundled).
+#[cfg(target_os = "windows")]
+pub const MONO_FONT_FAMILY: &str = "Consolas";
+#[cfg(target_os = "macos")]
+pub const MONO_FONT_FAMILY: &str = "Menlo";
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub const MONO_FONT_FAMILY: &str = "DejaVu Sans Mono";
+
 /// M3 corner scale (8 · 12 · 16 · 20 · 28 · 32 · full).
 pub mod corner {
     use gpui::{Pixels, px};

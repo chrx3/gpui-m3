@@ -1,15 +1,19 @@
+use std::f32::consts::TAU;
 use std::rc::Rc;
+
+use gpui::prelude::FluentBuilder as _;
 
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Window, div, px,
+    MouseButton, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
+    Styled, Window, div, px,
 };
 
 use super::{ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::motion::{Spring, animate_color, animate_f32, key};
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::motion::{Spring, animate_color, animate_f32, continuous_at, key};
+use crate::shapes::Tone;
+use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Theme, alpha};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ChipKind {
@@ -24,15 +28,34 @@ pub enum ChipKind {
     Input,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ChipSize {
+    /// 24 px (tool cards, inline actions).
+    Small,
+    /// 32 px.
+    #[default]
+    Medium,
+}
+
 /// 32 px chip with 8 px corners (per M3). It rounds with the spring on press.
 #[derive(IntoElement)]
 pub struct Chip {
     id: ElementId,
     label: SharedString,
+    sublabel: Option<SharedString>,
     icon: Option<SharedString>,
     leading: Option<AnyElement>,
+    trailing: Option<AnyElement>,
     kind: ChipKind,
+    tone: Option<Tone>,
+    size: ChipSize,
     selected: bool,
+    show_check: bool,
+    muted: bool,
+    mono: bool,
+    inert: bool,
+    pulse_icon: bool,
+    max_width: Option<Pixels>,
     on_click: Option<ClickHandler>,
     on_remove: Option<ClickHandler>,
 }
@@ -42,10 +65,20 @@ impl Chip {
         Self {
             id: id.into(),
             label: label.into(),
+            sublabel: None,
             icon: None,
             leading: None,
+            trailing: None,
             kind: ChipKind::Assist,
+            tone: None,
+            size: ChipSize::Medium,
             selected: false,
+            show_check: true,
+            muted: false,
+            mono: false,
+            inert: false,
+            pulse_icon: false,
+            max_width: None,
             on_click: None,
             on_remove: None,
         }
@@ -67,6 +100,18 @@ impl Chip {
         self
     }
 
+    /// Element after the label (e.g. a small chevron for a picker).
+    pub fn trailing(mut self, el: impl IntoElement) -> Self {
+        self.trailing = Some(el.into_any_element());
+        self
+    }
+
+    /// Secondary text after the label, in the outline color (e.g. ":12-30" line ranges).
+    pub fn sublabel(mut self, sublabel: impl Into<SharedString>) -> Self {
+        self.sublabel = Some(sublabel.into());
+        self
+    }
+
     pub fn kind(mut self, kind: ChipKind) -> Self {
         self.kind = kind;
         self
@@ -80,6 +125,53 @@ impl Chip {
     pub fn filter(mut self, selected: bool) -> Self {
         self.kind = ChipKind::Filter;
         self.selected = selected;
+        self
+    }
+
+    /// Fills the chip with a tonal container and drops the border (permission mode, files).
+    pub fn tone(mut self, tone: Tone) -> Self {
+        self.tone = Some(tone);
+        self
+    }
+
+    pub fn size(mut self, size: ChipSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Whether a selected filter chip replaces its icon with a check (default `true`).
+    pub fn show_check(mut self, show: bool) -> Self {
+        self.show_check = show;
+        self
+    }
+
+    /// Text and icon in the variant color (secondary information such as the branch).
+    pub fn muted(mut self, muted: bool) -> Self {
+        self.muted = muted;
+        self
+    }
+
+    /// Label in the monospace font.
+    pub fn mono(mut self, mono: bool) -> Self {
+        self.mono = mono;
+        self
+    }
+
+    /// Display-only chip: no hover, ripple or pointer cursor.
+    pub fn inert(mut self, inert: bool) -> Self {
+        self.inert = inert;
+        self
+    }
+
+    /// The icon pulses (opacity 1 → 0.45 → 1 every 1.4 s), e.g. while agents are running.
+    pub fn pulse_icon(mut self, pulse: bool) -> Self {
+        self.pulse_icon = pulse;
+        self
+    }
+
+    /// Maximum width; the label is truncated with an ellipsis.
+    pub fn max_w(mut self, max_width: Pixels) -> Self {
+        self.max_width = Some(max_width);
         self
     }
 
@@ -98,12 +190,18 @@ impl Chip {
 impl RenderOnce for Chip {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        let reactive = !self.inert;
         let state = use_interaction(&self.id, window, cx);
-        let pressed = state.read(cx).pressed;
+        let pressed = state.read(cx).pressed && reactive;
         let on = self.kind == ChipKind::Filter && self.selected;
+        // (height, text size, icon size, gap, side padding)
+        let (height, text_size, icon_size, gap, pad) = match self.size {
+            ChipSize::Small => (24., 12., 13., 5., 8.),
+            ChipSize::Medium => (32., 12.5, 16., 7., 12.),
+        };
 
         let radius = match (pressed, on) {
-            (true, _) | (false, true) => 16.,
+            (true, _) | (false, true) => height / 2.,
             (false, false) => 8.,
         };
         let radius = px(animate_f32(
@@ -122,29 +220,33 @@ impl RenderOnce for Chip {
             cx,
         );
 
-        let (bg, fg, border, icon_color, weight) = match self.kind {
-            ChipKind::Assist | ChipKind::Input => (
-                alpha(s.surface, 0.),
-                s.on_surface,
-                s.outline_variant,
-                s.primary,
-                500.,
-            ),
-            ChipKind::Filled => (
-                s.primary_container,
-                s.on_primary_container,
-                alpha(s.primary_container, 0.),
-                s.on_primary_container,
-                600.,
-            ),
-            ChipKind::Filter if on => (
+        let (bg, fg, border, icon_color, weight) = match (self.kind, self.tone) {
+            (ChipKind::Filter, _) if on => (
                 s.primary_container,
                 s.on_primary_container,
                 alpha(s.outline_variant, 0.),
                 s.on_primary_container,
                 600.,
             ),
-            ChipKind::Filter => (
+            (_, Some(tone)) => {
+                let (bg, fg) = tone.colors(&s);
+                (bg, fg, alpha(bg, 0.), fg, 500.)
+            }
+            (ChipKind::Assist | ChipKind::Input, None) => (
+                alpha(s.surface, 0.),
+                s.on_surface,
+                s.outline_variant,
+                s.primary,
+                500.,
+            ),
+            (ChipKind::Filled, None) => (
+                s.primary_container,
+                s.on_primary_container,
+                alpha(s.primary_container, 0.),
+                s.on_primary_container,
+                600.,
+            ),
+            (ChipKind::Filter, None) => (
                 alpha(s.surface, 0.),
                 s.on_surface_variant,
                 s.outline_variant,
@@ -152,26 +254,41 @@ impl RenderOnce for Chip {
                 500.,
             ),
         };
+        let (fg, icon_color) = if self.muted && !on {
+            (s.on_surface_variant, s.on_surface_variant)
+        } else {
+            (fg, icon_color)
+        };
         let bg = animate_color(key(&self.id, "bg"), Spring::EFFECTS, bg, window, cx);
         let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
         let border = animate_color(key(&self.id, "border"), Spring::EFFECTS, border, window, cx);
+        let icon_color = animate_color(
+            key(&self.id, "icon"),
+            Spring::EFFECTS,
+            icon_color,
+            window,
+            cx,
+        );
+        let icon_color = if self.pulse_icon {
+            let t = continuous_at(30., window, cx);
+            alpha(icon_color, 0.725 + 0.275 * (t / 1.4 * TAU).cos())
+        } else {
+            icon_color
+        };
         let layer = state_layer(&self.id, &state, all(radius), fg, window, cx);
 
+        let has_leading = self.icon.is_some() || self.leading.is_some() || on;
         let mut face = div()
             .relative()
             .flex()
             .items_center()
-            .gap(px(7.))
-            .h(px(32. - shrink * 2.))
-            .pl(px(if self.icon.is_some() || self.leading.is_some() || on {
-                8.
-            } else {
-                12.
-            }))
+            .gap(px(gap))
+            .h(px(height - shrink * 2.))
+            .pl(px(if has_leading { pad - 4. } else { pad }))
             .pr(px(if self.kind == ChipKind::Input {
                 4.
             } else {
-                12.
+                pad
             }))
             .corners(all(radius))
             .bg(bg)
@@ -179,31 +296,58 @@ impl RenderOnce for Chip {
             .border_color(border)
             .text_color(fg)
             .font_family(FONT_FAMILY)
-            .text_size(px(12.5))
+            .text_size(px(text_size))
             .font_weight(FontWeight(weight))
+            .when_some(self.max_width, |d, w| d.max_w(w))
             .child(layer);
-        if on {
-            face = face.child(Icon::new("check").size(px(16.)).color(fg));
+        if on && self.show_check {
+            face = face.child(Icon::new("check").size(px(icon_size)).color(fg));
         } else if let Some(leading) = self.leading {
             face = face.child(leading);
         } else if let Some(icon) = self.icon {
-            face = face.child(Icon::new(icon).size(px(16.)).color(icon_color));
+            let color = if on { fg } else { icon_color };
+            face = face.child(Icon::new(icon).size(px(icon_size)).color(color));
         }
-        face = face.child(self.label);
+        let truncate = self.max_width.is_some();
+        let label = div()
+            .flex()
+            .items_baseline()
+            .whitespace_nowrap()
+            .when(truncate, |d| d.min_w_0().overflow_hidden())
+            .when(!truncate, |d| d.flex_none())
+            .when(self.mono, |d| {
+                d.font_family(MONO_FONT_FAMILY)
+                    .font_weight(FontWeight(400.))
+            })
+            .child(
+                div()
+                    .when(truncate, |d| d.min_w_0().overflow_hidden().text_ellipsis())
+                    .child(self.label),
+            )
+            .children(
+                self.sublabel
+                    .map(|sub| div().flex_none().text_color(s.outline).child(sub)),
+            );
+        face = face.child(label);
+        if let Some(trailing) = self.trailing {
+            face = face.child(div().flex_none().child(trailing));
+        }
         if self.kind == ChipKind::Input {
             let remove_id = super::child_id(&self.id, "remove");
             let remove_state = use_interaction(&remove_id, window, cx);
-            let remove_layer = state_layer(&remove_id, &remove_state, all(px(12.)), fg, window, cx);
+            let remove_layer = state_layer(&remove_id, &remove_state, all(px(9.)), fg, window, cx);
             let remove = div()
                 .id(remove_id)
                 .relative()
                 .flex()
+                .flex_none()
                 .items_center()
                 .justify_center()
-                .size(px(24.))
-                .rounded(px(12.))
+                .size(px(18.))
+                .mr(px(2.))
+                .rounded(px(9.))
                 .child(remove_layer)
-                .child(Icon::new("x").size(px(14.)).color(s.on_surface_variant))
+                .child(Icon::new("x").size(px(12.)).color(s.on_surface_variant))
                 // Keeps the press from also rippling the whole chip.
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
             let mut remove = interactive(remove, &remove_state, true, true);
@@ -221,10 +365,11 @@ impl RenderOnce for Chip {
             .flex()
             .flex_none()
             .items_center()
-            .h(px(32.))
+            .h(px(height))
+            .when_some(self.max_width, |d, w| d.max_w(w))
             .child(face);
-        let mut el = interactive(el, &state, true, true);
-        if let Some(f) = self.on_click {
+        let mut el = interactive(el, &state, reactive, reactive);
+        if let (Some(f), true) = (self.on_click, reactive) {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
         }
         el

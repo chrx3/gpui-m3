@@ -79,11 +79,31 @@ pub enum TextFieldEvent {
 /// ```ignore
 /// let search = cx.new(|cx| TextField::new(cx).placeholder("Search").icon("search"));
 /// ```
+/// Look of a [`TextField`].
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum TextFieldStyle {
+    /// 44 px tonal pill that deepens and opens its corners on focus (search, forms).
+    #[default]
+    Pill,
+    /// 38 px tonal pill with fixed corners (a menu's filter).
+    Compact,
+    /// In-place editing (renaming a row): surface background and a 1.5 px primary border.
+    Inline,
+    /// Text only: no background, border or padding ("Other…" answers, tab renames).
+    Bare,
+}
+
 pub struct TextField {
     focus_handle: FocusHandle,
     content: SharedString,
     placeholder: SharedString,
     icon: Option<SharedString>,
+    style: TextFieldStyle,
+    height: Option<Pixels>,
+    select_all_on_focus: bool,
+    restore_on_cancel: bool,
+    was_focused: bool,
+    text_at_focus: SharedString,
     selected_range: Range<usize>,
     selection_reversed: bool,
     marked_range: Option<Range<usize>>,
@@ -108,6 +128,12 @@ impl TextField {
             content: SharedString::default(),
             placeholder: SharedString::default(),
             icon: None,
+            style: TextFieldStyle::Pill,
+            height: None,
+            select_all_on_focus: false,
+            restore_on_cancel: false,
+            was_focused: false,
+            text_at_focus: SharedString::default(),
             selected_range: 0..0,
             selection_reversed: false,
             marked_range: None,
@@ -127,6 +153,55 @@ impl TextField {
     pub fn icon(mut self, icon: impl Into<SharedString>) -> Self {
         self.icon = Some(icon.into());
         self
+    }
+
+    pub fn style(mut self, style: TextFieldStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Shorthand for [`TextFieldStyle::Compact`].
+    pub fn compact(self) -> Self {
+        self.style(TextFieldStyle::Compact)
+    }
+
+    /// Shorthand for [`TextFieldStyle::Inline`]; usually with `select_all_on_focus` and
+    /// `restore_on_cancel`.
+    pub fn inline(self) -> Self {
+        self.style(TextFieldStyle::Inline)
+    }
+
+    /// Shorthand for [`TextFieldStyle::Bare`].
+    pub fn bare(self) -> Self {
+        self.style(TextFieldStyle::Bare)
+    }
+
+    /// Overrides the style's height (44 / 38 / 34 / 26 px).
+    pub fn height(mut self, height: Pixels) -> Self {
+        self.height = Some(height);
+        self
+    }
+
+    /// Selects the whole text each time the field gains focus.
+    pub fn select_all_on_focus(mut self, select: bool) -> Self {
+        self.select_all_on_focus = select;
+        self
+    }
+
+    /// Escape puts back the text the field had when it gained focus (before emitting
+    /// [`TextFieldEvent::Cancelled`]).
+    pub fn restore_on_cancel(mut self, restore: bool) -> Self {
+        self.restore_on_cancel = restore;
+        self
+    }
+
+    /// Moves keyboard focus to the field.
+    pub fn focus(&self, window: &mut Window) {
+        window.focus(&self.focus_handle);
+    }
+
+    pub fn is_focused(&self, window: &Window) -> bool {
+        self.focus_handle.is_focused(window)
     }
 
     pub fn text(&self) -> &SharedString {
@@ -202,6 +277,9 @@ impl TextField {
     }
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
+        if self.restore_on_cancel && self.content != self.text_at_focus {
+            self.set_text(self.text_at_focus.clone(), cx);
+        }
         cx.emit(TextFieldEvent::Cancelled);
     }
 
@@ -646,26 +724,45 @@ impl Render for TextField {
         let s = *Theme::of(cx);
         let id = ElementId::from(("m3-text-field", cx.entity_id().as_u64()));
         let focused = self.focus_handle.is_focused(window);
+        if focused && !self.was_focused {
+            self.text_at_focus = self.content.clone();
+            if self.select_all_on_focus {
+                self.selected_range = 0..self.content.len();
+                self.selection_reversed = false;
+            }
+        }
+        self.was_focused = focused;
         if focused {
             // Caret blink: a few frames per second is enough.
             continuous_at(4., window, cx);
         }
+        // (height, horizontal padding, gap, icon size, text size, radius at rest / focused)
+        let (height, pad, gap, icon_size, text_size, rest_r, focus_r) = match self.style {
+            TextFieldStyle::Pill => (44., 18., 10., 18., 13.5, 22., 16.),
+            TextFieldStyle::Compact => (38., 12., 8., 14., 13., 19., 19.),
+            TextFieldStyle::Inline => (34., 10., 8., 16., 13.5, 10., 10.),
+            TextFieldStyle::Bare => (26., 0., 6., 16., 13.5, 0., 0.),
+        };
+        let height = self.height.map_or(height, f32::from);
         // Like the reference design's composer and search fields: the pill deepens and its corners open up on focus.
         let radius = px(animate_f32(
             key(&id, "radius"),
             Spring::SPATIAL_FAST,
-            if focused { 16. } else { 22. },
+            if focused { focus_r } else { rest_r },
             window,
             cx,
         ));
+        let (rest_bg, focus_bg) = match self.style {
+            TextFieldStyle::Pill | TextFieldStyle::Compact => {
+                (s.surface_container_high, s.surface_container_highest)
+            }
+            TextFieldStyle::Inline => (s.surface, s.surface),
+            TextFieldStyle::Bare => (alpha(s.surface, 0.), alpha(s.surface, 0.)),
+        };
         let bg = animate_color(
             key(&id, "bg"),
             Spring::EFFECTS,
-            if focused {
-                s.surface_container_highest
-            } else {
-                s.surface_container_high
-            },
+            if focused { focus_bg } else { rest_bg },
             window,
             cx,
         );
@@ -694,19 +791,22 @@ impl Render for TextField {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(px(gap))
             .w_full()
-            .h(px(44.))
-            .px(px(18.))
+            .h(px(height))
+            .px(px(pad))
             .corners(all(radius))
             .bg(bg)
             .text_color(s.on_surface)
             .font_family(FONT_FAMILY)
-            .text_size(px(13.5))
+            .text_size(px(text_size))
             .font_weight(FontWeight(400.))
             .line_height(px(20.));
+        if self.style == TextFieldStyle::Inline {
+            field = field.border(px(1.5)).border_color(s.primary);
+        }
         if let Some(icon) = self.icon.clone() {
-            field = field.child(Icon::new(icon).size(px(18.)).color(if focused {
+            field = field.child(Icon::new(icon).size(px(icon_size)).color(if focused {
                 s.primary
             } else {
                 s.on_surface_variant

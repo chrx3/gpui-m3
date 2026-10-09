@@ -462,6 +462,39 @@ pub fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32) -> impl Fn(f32) -> f32 +
 }
 
 /// Stable child key for a component's animated values.
+/// Time-based replay: returns the seconds elapsed since `generation` last changed, or `None`
+/// once `duration` has passed (and on the first frame, so nothing plays on mount). Use it for
+/// one-shot effects such as the send button's launch or a tab's content fading in.
+pub fn replay(
+    id: impl Into<ElementId>,
+    generation: u64,
+    duration: f32,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<f32> {
+    let settings = MotionSettings::get(cx);
+    let start = element_state(
+        id.into(),
+        window,
+        |state: Option<(u64, Option<Instant>)>, _| {
+            let state = match state {
+                Some((g, start)) if g == generation => (g, start),
+                Some(_) => (generation, Some(Instant::now())),
+                None => (generation, None),
+            };
+            (state.1, state)
+        },
+    );
+    if settings.reduced {
+        return None;
+    }
+    let t = elapsed(start?, cx);
+    (t < duration).then(|| {
+        window.request_animation_frame();
+        t
+    })
+}
+
 pub fn key(id: &ElementId, name: &'static str) -> ElementId {
     ElementId::NamedChild(Box::new(id.clone()), name.into())
 }
