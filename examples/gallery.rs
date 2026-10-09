@@ -14,9 +14,10 @@ use gpui_m3::{
     ChoiceRow, Dialog, DotShape, ExpandableCard, Fab, Icon, IconButton, IconTab, IconTabs,
     LinearProgress, ListGroup, ListItem, LoadingIndicator, Menu, MenuItem, MorphDot,
     MotionSettings, NavItem, PopDirection, Popover, RailItem, Ring, Segment, SegmentedButtons,
-    Shape, ShapeName, Slider, SplitButton, Spring, StopSlider, Switch, Tab, TabStrip, TextField,
-    TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress, context_menu,
-    motion::{animate_f32, key, pulse},
+    Shape, ShapeName, Slider, SplitButton, Spring, StopSlider, Switch, Tab, TabStrip, TextArea,
+    TextAreaEvent, TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress,
+    context_menu,
+    motion::{animate_color, animate_f32, key, pulse},
     theme::{FONT_FAMILY, alpha, hex},
 };
 
@@ -106,6 +107,8 @@ struct Demos {
     dialog_open: bool,
     toast_open: bool,
     context_menu: Option<Point<Pixels>>,
+    composer: Entity<TextArea>,
+    sent: SharedString,
 }
 
 /// The animated logo, in its own view: its continuous animation does not rebuild the content.
@@ -179,7 +182,26 @@ impl Demos {
                 .icon("search")
                 .placeholder("Filter actions or commands…")
         });
+        let composer = cx.new(|cx| {
+            TextArea::new(cx)
+                .placeholder("Ask anything · @ to mention · / for actions")
+                .min_rows(2)
+                .max_height(px(240.))
+        });
+        cx.subscribe(
+            &composer,
+            |this: &mut Demos, composer, event: &TextAreaEvent, cx| {
+                if let TextAreaEvent::Submit(text) = event {
+                    this.sent = text.clone();
+                    composer.update(cx, |composer, cx| composer.clear(cx));
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
         Self {
+            composer,
+            sent: SharedString::default(),
             search,
             filter,
             agent_tab: 0,
@@ -371,7 +393,7 @@ impl Render for Demos {
             4 => self.shapes(cx),
             5 => self.progress(cx),
             6 => self.surfaces(cx),
-            7 => self.inputs(cx),
+            7 => self.inputs(window, cx),
             8 => self.composer(cx),
             9 => self.conversation(window, cx),
             10 => self.panels(cx),
@@ -1130,8 +1152,25 @@ impl Demos {
             .into_any_element()
     }
 
-    fn inputs(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn inputs(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let s = *Theme::of(cx);
+        let composer_focused = self.composer.read(cx).is_focused(window);
+        let composer_bg = animate_color(
+            "composer-bg",
+            Spring::EFFECTS,
+            if composer_focused {
+                s.surface_container_highest
+            } else {
+                s.surface_container_high
+            },
+            window,
+            cx,
+        );
+        let sent = if self.sent.is_empty() {
+            "Enter sends, Shift+Enter adds a line.".to_string()
+        } else {
+            format!("Sent: {}", self.sent)
+        };
         let submitted = if self.submitted.is_empty() {
             "Type and press Enter.".to_string()
         } else {
@@ -1147,6 +1186,22 @@ impl Demos {
                     .child(self.search.clone())
                     .child(self.name.clone())
                     .child(div().text_size(px(12.5)).text_color(s.on_surface_variant).child(submitted)),
+            ))
+            .child(demo(
+                "Text area",
+                "The composer: grows with its text up to 240 px and then scrolls. Wraps lines, moves by row with the arrows.",
+                column()
+                    .w(px(560.))
+                    .child(
+                        div()
+                            .pt(px(15.))
+                            .px(px(20.))
+                            .pb(px(12.))
+                            .rounded(px(26.))
+                            .bg(composer_bg)
+                            .child(self.composer.clone()),
+                    )
+                    .child(div().text_size(px(12.5)).text_color(s.on_surface_variant).child(sent)),
             ))
             .child(demo(
                 "Tooltips",
@@ -1519,6 +1574,7 @@ impl Demos {
             .open(self.thinking_open)
             .on_toggle(update(cx, |this, open: bool, _| this.thinking_open = open))
             .header(div().opacity(pulse(1.6, window, cx)).child("Reasoning…"))
+            .preview("so the card radius should be 16 on the high container")
             .child(
                 "The user wants a 1:1 copy, so the card radius should be 16 on the high container.",
             );

@@ -35,6 +35,7 @@ pub fn init(cx: &mut App) {
         cx.set_global(Theme::new(false, None));
     }
     components::bind_text_field_keys(cx);
+    components::bind_text_area_keys(cx);
     if !cx.has_global::<MotionSettings>() {
         cx.set_global(MotionSettings::default());
     }

@@ -28,6 +28,7 @@ pub struct ExpandableCard {
     plain: bool,
     tone: Option<Tone>,
     header: Option<AnyElement>,
+    preview: Option<AnyElement>,
     under: Option<AnyElement>,
     children: Vec<AnyElement>,
     on_toggle: Option<ChangeHandler<bool>>,
@@ -42,6 +43,7 @@ impl ExpandableCard {
             plain: false,
             tone: None,
             header: None,
+            preview: None,
             under: None,
             children: Vec::new(),
             on_toggle: None,
@@ -74,6 +76,13 @@ impl ExpandableCard {
     /// Header content (status, verb, target, badges…). The chevron is added for you.
     pub fn header(mut self, header: impl IntoElement) -> Self {
         self.header = Some(header.into_any_element());
+        self
+    }
+
+    /// Shown after the header only while closed (e.g. the last line of a streaming reasoning),
+    /// truncated to the remaining width.
+    pub fn preview(mut self, preview: impl IntoElement) -> Self {
+        self.preview = Some(preview.into_any_element());
         self
     }
 
@@ -144,12 +153,24 @@ impl RenderOnce for ExpandableCard {
             all(radius)
         };
         let layer = state_layer(&head_id, &state, head_radius, fg, window, cx);
+        let preview = self.preview.filter(|_| !open).map(|preview| {
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .italic()
+                .text_color(s.outline)
+                .child(preview)
+        });
         let mut head = div().id(head_id).relative().flex().items_center().min_w_0();
         head = if self.plain {
             head.gap(px(6.))
                 .py(px(2.))
                 .children(chevron)
-                .children(self.header)
+                .child(div().flex_none().children(self.header))
+                .children(preview)
         } else {
             head.gap(px(7.))
                 .min_h(px(30.))
@@ -164,7 +185,8 @@ impl RenderOnce for ExpandableCard {
                         .gap(px(7.))
                         .flex_1()
                         .min_w_0()
-                        .children(self.header),
+                        .children(self.header)
+                        .children(preview),
                 )
                 .children(chevron)
         };
