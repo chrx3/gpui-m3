@@ -12,15 +12,15 @@ use gpui::{
 use gpui_m3::{
     Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip, ChipSize,
     ChoiceRow, Dialog, DotShape, ExpandableCard, Fab, Icon, IconButton, IconTab, IconTabs,
-    LinearProgress, ListGroup, LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem,
-    PopDirection, Popover, RailItem, Ring, Segment, SegmentedButtons, Shape, ShapeName,
-    SplitButton, Spring, StopSlider, Switch, TextField, TextFieldEvent, Theme, Toast, Tone,
-    WavyProgress, context_menu,
+    LinearProgress, ListGroup, ListItem, LoadingIndicator, Menu, MenuItem, MorphDot,
+    MotionSettings, NavItem, PopDirection, Popover, RailItem, Ring, Segment, SegmentedButtons,
+    Shape, ShapeName, Slider, SplitButton, Spring, StopSlider, Switch, Tab, TabStrip, TextField,
+    TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress, context_menu,
     motion::{animate_f32, key, pulse},
     theme::{FONT_FAMILY, alpha, hex},
 };
 
-const SECTIONS: [(&str, &str); 11] = [
+const SECTIONS: [(&str, &str); 12] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -31,6 +31,7 @@ const SECTIONS: [(&str, &str); 11] = [
     ("Text and feedback", "chat"),
     ("Composer", "up"),
     ("Conversation", "diff"),
+    ("Panels", "panel-right"),
     ("Motion", "refresh"),
 ];
 
@@ -92,6 +93,14 @@ struct Demos {
     tool_open: bool,
     thinking_open: bool,
     permission_shown: bool,
+    tree_open: bool,
+    tree_selected: usize,
+    tabs: Vec<&'static str>,
+    tab_selected: SharedString,
+    zoom: f32,
+    nav_unread: bool,
+    deleted: usize,
+    dot_key: u64,
     name: Entity<TextField>,
     submitted: SharedString,
     dialog_open: bool,
@@ -186,6 +195,14 @@ impl Demos {
             tool_open: true,
             thinking_open: false,
             permission_shown: true,
+            tree_open: true,
+            tree_selected: 2,
+            tabs: vec!["main.rs", "theme.rs", "Cargo.toml"],
+            tab_selected: "theme.rs".into(),
+            zoom: 1.6,
+            nav_unread: true,
+            deleted: 0,
+            dot_key: 0,
             name,
             submitted: SharedString::default(),
             dialog_open: false,
@@ -357,6 +374,7 @@ impl Render for Demos {
             7 => self.inputs(cx),
             8 => self.composer(cx),
             9 => self.conversation(window, cx),
+            10 => self.panels(cx),
             _ => self.motion(window, cx),
         };
         div()
@@ -1577,6 +1595,193 @@ impl Demos {
                         .confirm("Copied", std::time::Duration::from_millis(1400))
                         .on_click(|_, _, _| {}),
                 ),
+            ))
+            .into_any_element()
+    }
+
+    fn panels(&self, cx: &mut Context<Self>) -> AnyElement {
+        let s = *Theme::of(cx);
+        let tree = column()
+            .w(px(320.))
+            .gap(px(0.))
+            .child(
+                TreeRow::new("tree-root", "gpui-m3")
+                    .root(true)
+                    .expanded(Some(true))
+                    .icon("folder-open")
+                    .icon_color(s.primary),
+            )
+            .child(
+                TreeRow::new("tree-src", "src")
+                    .depth(1)
+                    .expanded(Some(self.tree_open))
+                    .icon(if self.tree_open {
+                        "folder-open"
+                    } else {
+                        "folder"
+                    })
+                    .icon_color(s.primary)
+                    .on_click(click(cx, |this, _| this.tree_open = !this.tree_open)),
+            )
+            .when(self.tree_open, |d| {
+                d.child(
+                    TreeRow::new("tree-lib", "lib.rs")
+                        .depth(2)
+                        .icon("file")
+                        .icon_color(s.primary)
+                        .selected(self.tree_selected == 2)
+                        .on_click(click(cx, |this, _| this.tree_selected = 2)),
+                )
+                .child(
+                    TreeRow::new("tree-theme", "theme.rs")
+                        .depth(2)
+                        .icon("file")
+                        .icon_color(s.primary)
+                        .selected(self.tree_selected == 3)
+                        .on_click(click(cx, |this, _| this.tree_selected = 3)),
+                )
+            })
+            .child(
+                TreeRow::new("tree-env", ".gitignore")
+                    .depth(1)
+                    .icon("file")
+                    .icon_color(s.warning)
+                    .dimmed(true),
+            );
+
+        let changes = column()
+            .w(px(320.))
+            .gap(px(2.))
+            .child(
+                ListItem::new("chg-0", "theme.rs")
+                    .subtitle("src")
+                    .badge("M", s.warning, alpha(s.warning, 0.16))
+                    .trailing(div().text_color(s.success).child("+12")),
+            )
+            .child(
+                ListItem::new("chg-1", "lists.rs")
+                    .subtitle("src/components")
+                    .badge("A", s.success, alpha(s.success, 0.16))
+                    .trailing(div().text_color(s.success).child("+480")),
+            );
+
+        let mut strip = TabStrip::new("strip")
+            .selected(self.tab_selected.clone())
+            .leading(IconButton::new("strip-back", "arrow-left").size(px(28.)))
+            .trailing(
+                IconButton::new("strip-add", "plus")
+                    .size(px(28.))
+                    .on_click(click(cx, |this, _| this.tabs.push("new.rs"))),
+            )
+            .on_select(update(cx, |this, key: SharedString, _| {
+                this.tab_selected = key
+            }))
+            .on_close(update(cx, |this, key: SharedString, _| {
+                this.tabs.retain(|t| *t != key.as_ref())
+            }));
+        for (i, name) in self.tabs.iter().enumerate() {
+            strip = strip.tab(
+                Tab::new(*name, *name)
+                    .icon("file")
+                    .tooltip(*name)
+                    .dirty(i == 1),
+            );
+        }
+
+        let nav = column()
+            .w(px(280.))
+            .gap(px(2.))
+            .child(
+                NavItem::new("nav-unread", "Theme migration")
+                    .icon("chat")
+                    .emphasized(self.nav_unread)
+                    .meta("2m")
+                    .trailing(
+                        Badge::dot()
+                            .size(px(8.))
+                            .strong(Tone::Tertiary)
+                            .pop(("dot", self.dot_key)),
+                    )
+                    .on_click(click(cx, |this, _| {
+                        this.nav_unread = !this.nav_unread;
+                        this.dot_key += 1;
+                    })),
+            )
+            .child(NavItem::new("nav-read", "Old chat").icon("chat").meta("3d"))
+            .child(
+                NavItem::new("nav-large", "Appearance")
+                    .icon("palette")
+                    .large(true)
+                    .tone(Tone::Primary)
+                    .selected(true),
+            );
+
+        let menu = Menu::new("danger-menu")
+            .width(240.)
+            .item(MenuItem::new("dm-0", "Rename").icon("pen"))
+            .item(
+                MenuItem::new("dm-1", "Delete")
+                    .icon("trash")
+                    .danger(true)
+                    .confirm("Click again to delete")
+                    .on_click(click(cx, |this, _| this.deleted += 1)),
+            );
+
+        page()
+            .child(demo(
+                "File tree",
+                "30 px pills indented 14 px per level with guides; the chevron turns; hidden files dim.",
+                tree,
+            ))
+            .child(demo(
+                "Change rows",
+                "Two-line rows; corners tighten from 20 to 12 and the status badge opens from 9 to 13 on hover.",
+                changes,
+            ))
+            .child(demo(
+                "Tab strip",
+                "Closable tabs with an unsaved dot, a back button and +. Hover a tab to see its close button.",
+                div().w(px(520.)).child(strip),
+            ))
+            .child(demo(
+                "Continuous slider",
+                "16 px track split by a 4 × 28 handle (the photo cropper's zoom). Drag it.",
+                row()
+                    .child(
+                        Slider::new("zoom", self.zoom, 1.0..=5.0)
+                            .step(0.01)
+                            .on_change(update(cx, |this, v: f32, _| this.zoom = v)),
+                    )
+                    .child(div().text_color(s.on_surface_variant).child(format!("{:.2}×", self.zoom))),
+            ))
+            .child(demo(
+                "Navigation extras",
+                "Unread row (click to toggle) with meta text and a dot that pops in; a large tonal settings tab.",
+                nav,
+            ))
+            .child(demo(
+                "Danger item",
+                "Error colors; the first click arms it, the second runs it; moving away disarms it.",
+                row()
+                    .items_start()
+                    .child(menu)
+                    .child(div().text_color(s.on_surface_variant).child(format!("Deleted {} times", self.deleted))),
+            ))
+            .child(demo(
+                "Bubbles",
+                "Error notice and bubbles with the entrance from the tail corner.",
+                column()
+                    .w(px(520.))
+                    .child(
+                        div().flex().justify_end().child(
+                            Bubble::new(BubbleKind::User, "Run the tests again.")
+                                .entrance(("bubble-user", self.dot_key), 0.),
+                        ),
+                    )
+                    .child(
+                        Bubble::new(BubbleKind::Error, "The process exited with code 101.")
+                            .entrance(("bubble-error", self.dot_key), 0.12),
+                    ),
             ))
             .into_any_element()
     }

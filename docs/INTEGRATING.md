@@ -74,6 +74,8 @@ fn m3_scheme(t: &MyTokens) -> Scheme {
         outline: t.faint,
         outline_variant: t.border,
         error: t.bad,
+        error_container: t.bad_soft,
+        on_error_container: t.on_bad_soft,
         success: t.ok,
         warning: t.warn,
         shadow: t.shadow,

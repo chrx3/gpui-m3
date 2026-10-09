@@ -11,7 +11,7 @@ use gpui::{
 
 use super::{ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::motion::{Spring, animate_color, animate_f32, continuous_at, key};
+use crate::motion::{Spring, animate_color, animate_f32, continuous_at, entrance, key};
 use crate::shapes::Tone;
 use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Theme, alpha};
 
@@ -51,6 +51,7 @@ pub struct Chip {
     size: ChipSize,
     selected: bool,
     show_check: bool,
+    open: Option<bool>,
     muted: bool,
     mono: bool,
     inert: bool,
@@ -74,6 +75,7 @@ impl Chip {
             size: ChipSize::Medium,
             selected: false,
             show_check: true,
+            open: None,
             muted: false,
             mono: false,
             inert: false,
@@ -103,6 +105,12 @@ impl Chip {
     /// Element after the label (e.g. a small chevron for a picker).
     pub fn trailing(mut self, el: impl IntoElement) -> Self {
         self.trailing = Some(el.into_any_element());
+        self
+    }
+
+    /// Picker chip: adds a trailing chevron that turns over while `open`.
+    pub fn open(mut self, open: bool) -> Self {
+        self.open = Some(open);
         self
     }
 
@@ -332,6 +340,21 @@ impl RenderOnce for Chip {
         if let Some(trailing) = self.trailing {
             face = face.child(div().flex_none().child(trailing));
         }
+        if let Some(open) = self.open {
+            let rotation = animate_f32(
+                key(&self.id, "chevron"),
+                Spring::SPATIAL,
+                if open { std::f32::consts::PI } else { 0. },
+                window,
+                cx,
+            );
+            face = face.child(
+                Icon::new("chevron-down")
+                    .size(px(12.))
+                    .color(fg)
+                    .rotate(rotation),
+            );
+        }
         if self.kind == ChipKind::Input {
             let remove_id = super::child_id(&self.id, "remove");
             let remove_state = use_interaction(&remove_id, window, cx);
@@ -548,8 +571,11 @@ impl RenderOnce for SplitButton {
 pub struct Badge {
     label: Option<SharedString>,
     tone: Option<Tone>,
+    strong: bool,
     mono: bool,
     height: Pixels,
+    dot_size: Pixels,
+    pop: Option<ElementId>,
 }
 
 impl Badge {
@@ -558,9 +584,32 @@ impl Badge {
         Self {
             label: Some(label.into()),
             tone: None,
+            strong: false,
             mono: false,
             height: px(18.),
+            dot_size: px(6.),
+            pop: None,
         }
+    }
+
+    /// Solid badge: the tone's strong color with the surface color for text (the reference
+    /// design's numeric badge uses tertiary). A dot uses the strong color too.
+    pub fn strong(mut self, tone: Tone) -> Self {
+        self.tone = Some(tone);
+        self.strong = true;
+        self
+    }
+
+    /// Size of a [`Badge::dot`] (6 px by default).
+    pub fn size(mut self, size: Pixels) -> Self {
+        self.dot_size = size;
+        self
+    }
+
+    /// The dot pops in (grows from nothing with the spring) when it first appears.
+    pub fn pop(mut self, id: impl Into<ElementId>) -> Self {
+        self.pop = Some(id.into());
+        self
     }
 
     pub fn dot() -> Self {
@@ -592,12 +641,31 @@ impl Badge {
 }
 
 impl RenderOnce for Badge {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        let strong = |tone: Tone| match tone {
+            Tone::Primary => s.primary,
+            Tone::Secondary => s.on_secondary_container,
+            Tone::Tertiary => s.tertiary,
+        };
         let Some(label) = self.label else {
-            return div().flex_none().size(px(6.)).rounded(px(3.)).bg(s.error);
+            let size = f32::from(self.dot_size);
+            let grow = match &self.pop {
+                Some(id) => entrance(key(id, "pop"), Spring::SPATIAL_FAST, 0., window, cx),
+                None => 1.,
+            };
+            let color = self.tone.map_or(s.error, strong);
+            let shown = (size * grow).max(0.);
+            return div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(self.dot_size)
+                .child(div().size(px(shown)).rounded(px(shown / 2.)).bg(color));
         };
         let (bg, fg, weight, pad, min_w) = match self.tone {
+            Some(tone) if self.strong => (strong(tone), s.surface, 700., 5., 18.),
             Some(tone) => {
                 let (bg, fg) = tone.colors(&s);
                 (bg, fg, 500., 6., 0.)

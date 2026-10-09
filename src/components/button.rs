@@ -690,6 +690,7 @@ pub struct Fab {
     id: ElementId,
     icon: SharedString,
     label: Option<SharedString>,
+    hover_radius: Option<f32>,
     on_click: Option<ClickHandler>,
 }
 
@@ -699,8 +700,15 @@ impl Fab {
             id: id.into(),
             icon: icon.into(),
             label: None,
+            hover_radius: None,
             on_click: None,
         }
+    }
+
+    /// Corner radius on hover (28 for the regular FAB; the extended one keeps 16 by default).
+    pub fn hover_radius(mut self, radius: f32) -> Self {
+        self.hover_radius = Some(radius);
+        self
     }
 
     /// Extended FAB (with text), like a "New conversation" button.
@@ -727,7 +735,9 @@ impl RenderOnce for Fab {
         let height = if extended { 42. } else { 56. };
         let target = match (pressed, hovered, extended) {
             (true, _, _) => 12.,
-            (false, true, false) => 28.,
+            (false, true, _) => self
+                .hover_radius
+                .unwrap_or(if extended { 16. } else { 28. }),
             _ => 16.,
         };
         let radius = px(animate_f32(

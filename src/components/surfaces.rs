@@ -4,9 +4,9 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, BoxShadow, ClickEvent, Div, ElementId, FontWeight, Hsla, InteractiveElement,
-    IntoElement, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
-    Styled, Window, div, point, px,
+    AnyElement, App, BoxShadow, ClickEvent, Corner, Div, ElementId, FontWeight, Hsla,
+    InteractiveElement, IntoElement, Length, ParentElement, Pixels, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Window, anchored, deferred, div, point, px, relative,
 };
 
 use super::{ClickHandler, Icon, Radio, RoundedExt, all, child_id, corners};
@@ -86,8 +86,10 @@ fn content_switch(
 }
 
 /// Popover surface ("Account and usage", mentions…): surface container, pop shadow, the
-/// pop entrance and an optional maximum height with scrolling. Position it yourself (an
-/// absolute wrapper or GPUI's `anchored`).
+/// pop entrance and an optional maximum height with scrolling.
+///
+/// Without [`Popover::anchor`] it is laid out in place (wrap it in an absolute `div`). With an
+/// anchor it floats over the window from where it is placed, kept inside the window.
 #[derive(IntoElement)]
 pub struct Popover {
     id: ElementId,
@@ -97,6 +99,8 @@ pub struct Popover {
     gap: Pixels,
     max_height: Option<Pixels>,
     direction: PopDirection,
+    anchor: Option<Corner>,
+    on_dismiss: Option<ClickHandler>,
     children: Vec<AnyElement>,
 }
 
@@ -110,8 +114,27 @@ impl Popover {
             gap: px(12.),
             max_height: None,
             direction: PopDirection::Up,
+            anchor: None,
+            on_dismiss: None,
             children: Vec::new(),
         }
+    }
+
+    /// Floats over the window: `corner` is the popover corner that sits on the anchor point
+    /// (`BottomLeft` opens up and to the right). Sets the entrance direction to match.
+    pub fn anchor(mut self, corner: Corner) -> Self {
+        self.anchor = Some(corner);
+        self.direction = match corner {
+            Corner::TopLeft | Corner::TopRight => PopDirection::Down,
+            Corner::BottomLeft | Corner::BottomRight => PopDirection::Up,
+        };
+        self
+    }
+
+    /// Called on a click outside the popover.
+    pub fn on_dismiss(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_dismiss = Some(Rc::new(f));
+        self
     }
 
     pub fn width(mut self, width: Pixels) -> Self {
@@ -184,7 +207,33 @@ impl RenderOnce for Popover {
             ),
             None => surface.child(content),
         };
-        pop_in_toward(surface, &self.id, 0., self.direction, window, cx)
+        let mut surface = pop_in_toward(surface, &self.id, 0., self.direction, window, cx)
+            .id(child_id(&self.id, "surface"));
+        if let Some(f) = self.on_dismiss {
+            surface = surface.on_mouse_down_out(move |event, w, cx| {
+                let click = ClickEvent::Mouse(gpui::MouseClickEvent {
+                    down: event.clone(),
+                    up: gpui::MouseUpEvent {
+                        button: event.button,
+                        position: event.position,
+                        modifiers: event.modifiers,
+                        click_count: event.click_count,
+                    },
+                });
+                f(&click, w, cx)
+            });
+        }
+        match self.anchor {
+            Some(corner) => deferred(
+                anchored()
+                    .anchor(corner)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(surface),
+            )
+            .with_priority(1)
+            .into_any_element(),
+            None => surface.into_any_element(),
+        }
     }
 }
 
@@ -452,6 +501,8 @@ pub struct MenuItem {
     dense: bool,
     static_row: bool,
     inline_sublabel: bool,
+    danger: bool,
+    confirm: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
 
@@ -472,8 +523,23 @@ impl MenuItem {
             dense: false,
             static_row: false,
             inline_sublabel: false,
+            danger: false,
+            confirm: None,
             on_click: None,
         }
+    }
+
+    /// Destructive action: error color for text and icon, error container on hover.
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
+        self
+    }
+
+    /// Two-step action: the first click arms the row and shows `label` ("Click again to
+    /// delete"); the second click runs `on_click`. Moving the pointer away disarms it.
+    pub fn confirm(mut self, label: impl Into<SharedString>) -> Self {
+        self.confirm = Some(label.into());
+        self
     }
 
     /// Compact row (30 px, 13 px text, 8 → 15 px corners), as in the agent menu.
@@ -559,6 +625,18 @@ impl RenderOnce for MenuItem {
         let enabled = !self.disabled;
         let reactive = enabled && !self.static_row;
         let hovered = (state.read(cx).hovered && reactive) || self.highlighted;
+        let armed_state = self
+            .confirm
+            .as_ref()
+            .map(|_| window.use_keyed_state(key(&self.id, "armed"), cx, |_, _| false));
+        let armed = match &armed_state {
+            Some(armed) if *armed.read(cx) && !hovered => {
+                armed.update(cx, |armed, _| *armed = false);
+                false
+            }
+            Some(armed) => *armed.read(cx),
+            None => false,
+        };
         // (min height, horizontal padding, gap, radius at rest, radius on hover, icon, text)
         let (min_h, pad, gap, rest_r, hover_r, icon_size, text_size) = if self.dense {
             (30., 9., 9., 8., 15., 16., Some(13.))
@@ -595,9 +673,23 @@ impl RenderOnce for MenuItem {
                 s.on_surface_variant,
             )
         };
+        let (bg, fg, muted) = match (self.danger, armed, hovered) {
+            (_, true, _) => (
+                s.error_container,
+                s.on_error_container,
+                s.on_error_container,
+            ),
+            (true, false, true) => (s.error_container, s.error, s.error),
+            (true, false, false) => (bg, s.error, s.error),
+            _ => (bg, fg, muted),
+        };
         let bg = animate_color(key(&self.id, "bg"), Spring::EFFECTS, bg, window, cx);
         let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
         let layer = state_layer(&self.id, &state, all(radius), fg, window, cx);
+        let label = match (&self.confirm, armed) {
+            (Some(confirm), true) => confirm.clone(),
+            _ => self.label,
+        };
 
         let mut row = div()
             .id(self.id.clone())
@@ -636,7 +728,7 @@ impl RenderOnce for MenuItem {
                 .gap(px(8.))
                 .flex_1()
                 .min_w_0()
-                .child(div().flex_none().child(self.label))
+                .child(div().flex_none().child(label.clone()))
                 .children(sub.map(|sub| {
                     sub.flex_1()
                         .min_w_0()
@@ -652,7 +744,7 @@ impl RenderOnce for MenuItem {
                 .min_w_0()
                 .py(px(if self.dense { 4. } else { 0. }))
                 .line_height(gpui::relative(1.25))
-                .child(self.label)
+                .child(label)
                 .children(sub)
         };
         row = row.child(text);
@@ -682,7 +774,21 @@ impl RenderOnce for MenuItem {
         }
         let mut row = interactive(row, &state, reactive, reactive);
         if let (Some(f), true) = (self.on_click, enabled) {
-            row = row.on_click(move |e, w, cx| f(e, w, cx));
+            row = row.on_click(move |e, w, cx| {
+                if let Some(armed) = &armed_state
+                    && !armed.read(cx)
+                {
+                    armed.update(cx, |armed, cx| {
+                        *armed = true;
+                        cx.notify();
+                    });
+                    return;
+                }
+                if let Some(armed) = &armed_state {
+                    armed.update(cx, |armed, _| *armed = false);
+                }
+                f(e, w, cx)
+            });
         }
         row
     }
@@ -924,13 +1030,17 @@ pub enum BubbleKind {
     User,
     /// Notice: squared top-left corner, tertiary container.
     Notice,
+    /// Error notice: like [`BubbleKind::Notice`] with the text in the error color.
+    Error,
 }
 
 /// Message bubble with a squared "tail" corner.
 #[derive(IntoElement)]
 pub struct Bubble {
     kind: BubbleKind,
-    max_width: Pixels,
+    max_width: Length,
+    padding: (Pixels, Pixels),
+    entrance: Option<(ElementId, f32)>,
     children: Vec<AnyElement>,
 }
 
@@ -943,14 +1053,35 @@ impl Bubble {
     pub fn custom(kind: BubbleKind) -> Self {
         Self {
             kind,
-            max_width: px(420.),
+            max_width: px(420.).into(),
+            padding: (px(14.), px(10.)),
+            entrance: None,
             children: Vec::new(),
         }
     }
 
     /// Maximum width (420 px by default).
     pub fn max_w(mut self, max_width: Pixels) -> Self {
-        self.max_width = max_width;
+        self.max_width = max_width.into();
+        self
+    }
+
+    /// Maximum width as a fraction of the parent (e.g. 0.8).
+    pub fn max_w_fraction(mut self, fraction: f32) -> Self {
+        self.max_width = relative(fraction).into();
+        self
+    }
+
+    /// Horizontal and vertical padding (14 × 10 by default).
+    pub fn padding(mut self, x: Pixels, y: Pixels) -> Self {
+        self.padding = (x, y);
+        self
+    }
+
+    /// Entrance when it first appears: grows out of its tail corner with the fast spatial
+    /// spring, after `delay` seconds (the reference design delays notices by 0.12 s).
+    pub fn entrance(mut self, id: impl Into<ElementId>, delay: f32) -> Self {
+        self.entrance = Some((id.into(), delay));
         self
     }
 }
@@ -962,7 +1093,7 @@ impl ParentElement for Bubble {
 }
 
 impl RenderOnce for Bubble {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let (bg, fg, r) = match self.kind {
             BubbleKind::User => (
@@ -975,11 +1106,27 @@ impl RenderOnce for Bubble {
                 s.on_tertiary_container,
                 [4., 20., 20., 20.],
             ),
+            BubbleKind::Error => (s.tertiary_container, s.error, [4., 20., 20., 20.]),
         };
+        // GPUI cannot scale an element, so the entrance rounds every corner fully, fades in and
+        // slides 8 px from the tail side while the spring settles.
+        let p = match &self.entrance {
+            Some((id, delay)) => {
+                entrance(key(id, "bubble"), Spring::SPATIAL_FAST, *delay, window, cx)
+            }
+            None => 1.,
+        };
+        let r = r.map(|corner| corner + (20. - corner) * (1. - p).clamp(0., 1.));
+        let slide = (1. - p) * 8.;
         div()
+            .relative()
+            .when(p < 1., |d| match self.kind {
+                BubbleKind::User => d.left(px(slide)).top(px(slide)).opacity(p.clamp(0., 1.)),
+                _ => d.left(px(-slide)).top(px(-slide)).opacity(p.clamp(0., 1.)),
+            })
             .max_w(self.max_width)
-            .px(px(14.))
-            .py(px(10.))
+            .px(self.padding.0)
+            .py(self.padding.1)
             .corners(corners(r))
             .bg(bg)
             .text_color(fg)

@@ -71,6 +71,8 @@ pub struct Scheme {
     pub outline_variant: Hsla,
     /// (--bad)
     pub error: Hsla,
+    pub error_container: Hsla,
+    pub on_error_container: Hsla,
     /// (--ok)
     pub success: Hsla,
     /// (--warn)
@@ -100,6 +102,8 @@ impl Scheme {
             outline: rgb(0x79747e).into(),
             outline_variant: rgb(0xcac4d0).into(),
             error: rgb(0xb3261e).into(),
+            error_container: rgb(0xf9dedc).into(),
+            on_error_container: rgb(0x410e0b).into(),
             success: rgb(0x146c2e).into(),
             warning: rgb(0x8b5000).into(),
             shadow: Hsla {
@@ -131,6 +135,8 @@ impl Scheme {
             outline: rgb(0x938f99).into(),
             outline_variant: rgb(0x49454f).into(),
             error: rgb(0xf2b8b5).into(),
+            error_container: rgb(0x8c1d18).into(),
+            on_error_container: rgb(0xf9dedc).into(),
             success: rgb(0xa8dab5).into(),
             warning: rgb(0xffb868).into(),
             shadow: Hsla {
@@ -177,6 +183,8 @@ impl Scheme {
             outline: c(s.outline()),
             outline_variant: c(s.outline_variant()),
             error: c(s.error()),
+            error_container: c(s.error_container()),
+            on_error_container: c(s.on_error_container()),
             ..base
         }
     }

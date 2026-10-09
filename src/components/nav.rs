@@ -11,6 +11,7 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, animate_on_activate, key};
+use crate::shapes::Tone;
 use crate::theme::{FONT_FAMILY, Theme, alpha};
 
 /// Navigation row (the sidebar in the reference design). The selected indicator starts at the
@@ -25,6 +26,10 @@ pub struct NavItem {
     selected: bool,
     dense: bool,
     muted: bool,
+    emphasized: bool,
+    large: bool,
+    tone: Option<Tone>,
+    meta: Option<SharedString>,
     group: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
@@ -40,9 +45,38 @@ impl NavItem {
             selected: false,
             dense: false,
             muted: false,
+            emphasized: false,
+            large: false,
+            tone: None,
+            meta: None,
             group: None,
             on_click: None,
         }
+    }
+
+    /// Unread row: heavier label in the full text color.
+    pub fn emphasized(mut self, emphasized: bool) -> Self {
+        self.emphasized = emphasized;
+        self
+    }
+
+    /// Short trailing text in the outline color (a time, a count). It gives way to
+    /// [`NavItem::trailing`] while the row is hovered.
+    pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
+        self.meta = Some(meta.into());
+        self
+    }
+
+    /// Large row (52 px, 26 px corners), like settings tabs; the icon pops when selected.
+    pub fn large(mut self, large: bool) -> Self {
+        self.large = large;
+        self
+    }
+
+    /// Selected indicator in a tonal container instead of the secondary container.
+    pub fn tone(mut self, tone: Tone) -> Self {
+        self.tone = Some(tone);
+        self
     }
 
     pub fn icon(mut self, icon: impl Into<SharedString>) -> Self {
@@ -96,7 +130,18 @@ impl RenderOnce for NavItem {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let state = use_interaction(&self.id, window, cx);
-        let (height, font) = if self.dense { (30., 13.) } else { (34., 13.5) };
+        let hovered = state.read(cx).hovered;
+        let (height, font) = if self.large {
+            (52., 14.)
+        } else if self.dense {
+            (30., 13.)
+        } else {
+            (34., 13.5)
+        };
+        let (indicator_bg, selected_fg) = match self.tone {
+            Some(tone) => tone.colors(&s),
+            None => (s.secondary_container, s.on_secondary_container),
+        };
         let radius = px(height / 2.);
         let [grow, opacity] = animate_on_activate(
             key(&self.id, "indicator"),
@@ -108,7 +153,9 @@ impl RenderOnce for NavItem {
             cx,
         );
         let fg = if self.selected {
-            s.on_secondary_container
+            selected_fg
+        } else if self.emphasized {
+            s.on_surface
         } else if self.muted {
             s.on_surface_variant
         } else {
@@ -116,7 +163,7 @@ impl RenderOnce for NavItem {
         };
         let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
         let icon_color = if self.selected {
-            s.on_secondary_container
+            selected_fg
         } else {
             s.on_surface_variant
         };
@@ -135,7 +182,13 @@ impl RenderOnce for NavItem {
             .text_color(fg)
             .font_family(FONT_FAMILY)
             .text_size(px(font))
-            .font_weight(FontWeight(if self.selected { 700. } else { 500. }));
+            .font_weight(FontWeight(if self.selected {
+                700.
+            } else if self.emphasized {
+                650.
+            } else {
+                500.
+            }));
         if let Some(group) = self.group {
             row = row.group(group);
         }
@@ -148,14 +201,29 @@ impl RenderOnce for NavItem {
                     .left(relative((1. - grow) / 2.))
                     .w(relative(grow.max(0.)))
                     .rounded(radius)
-                    .bg(alpha(s.secondary_container, opacity.clamp(0., 1.))),
+                    .bg(alpha(indicator_bg, opacity.clamp(0., 1.))),
             );
         }
         row = row.child(layer);
         if let Some(leading) = self.leading {
             row = row.child(leading);
         } else if let Some(icon) = self.icon {
-            row = row.child(Icon::new(icon).size(px(17.)).color(icon_color));
+            let mut icon = Icon::new(icon)
+                .size(px(if self.large { 20. } else { 17. }))
+                .color(icon_color);
+            if self.large {
+                let [scale, rotation] = animate_on_activate(
+                    key(&self.id, "icon-pop"),
+                    Spring::SPATIAL,
+                    self.selected,
+                    [1.25, -8f32.to_radians()],
+                    [1., 0.],
+                    window,
+                    cx,
+                );
+                icon = icon.scale(scale).rotate(rotation);
+            }
+            row = row.child(icon);
         }
         row = row.child(
             div()
@@ -165,7 +233,18 @@ impl RenderOnce for NavItem {
                 .text_ellipsis()
                 .child(self.label),
         );
-        if let Some(trailing) = self.trailing {
+        let show_trailing = self.meta.is_none() || hovered;
+        if let Some(meta) = self.meta.filter(|_| !(hovered && self.trailing.is_some())) {
+            row = row.child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.5))
+                    .font_weight(FontWeight(400.))
+                    .text_color(s.outline)
+                    .child(meta),
+            );
+        }
+        if let Some(trailing) = self.trailing.filter(|_| show_trailing) {
             row = row.child(trailing);
         }
         let mut row = interactive(row, &state, true, true);
