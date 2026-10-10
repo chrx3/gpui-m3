@@ -85,5 +85,8 @@ First release.
     pulsing "capturing" pill with its own prompt.
   - `SettingRow`: icon, title, description and a trailing control (switch, key combo, button),
     optionally clickable as a whole; meant for `ListGroup::custom_row`.
+- Added for Atic Code's split panes: `Button::icon_only` (icon in a round button with the label
+  as a tooltip, for narrow containers) and `Button::truncate` (the button shrinks and cuts its
+  label with an ellipsis instead of overflowing its row).
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
 - Gallery example to try every component in light and dark, with any seed color and slow motion.

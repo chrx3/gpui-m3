@@ -858,6 +858,32 @@ impl Demos {
                     ),
             ))
             .child(demo(
+                "Narrow containers",
+                "`icon_only` keeps the icon and moves the label to a tooltip (switch it on under a width); `truncate` lets a button shrink and cut its label with an ellipsis instead of overflowing.",
+                column()
+                    .child(
+                        row()
+                            .child(Button::new("n-files", "Files").icon("folder").text().size(ButtonSize::Small).icon_only(true))
+                            .child(Button::new("n-changes", "Changes").icon("branch").text().size(ButtonSize::Small).icon_only(true))
+                            .child(Button::new("n-terminal", "Terminal").icon("terminal").text().size(ButtonSize::Small).icon_only(true)),
+                    )
+                    .child(
+                        div()
+                            .w(px(170.))
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .overflow_hidden()
+                            .child(Button::new("n-plus", "Attach").icon("plus").text().size(ButtonSize::Compact).icon_only(true))
+                            .child(
+                                Button::new("n-model", "Claude Opus 4.1 with a long name")
+                                    .size(ButtonSize::Compact)
+                                    .sublabel("High")
+                                    .truncate(true),
+                            ),
+                    ),
+            ))
+            .child(demo(
                 "Toggle buttons",
                 "Round; when selected they turn square (radius 12) and switch to secondary container (.tb-btn).",
                 toggles,

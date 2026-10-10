@@ -135,6 +135,8 @@ pub struct Button {
     trailing: Option<AnyElement>,
     confirm: Option<(SharedString, Duration)>,
     label_on_hover: bool,
+    icon_only: bool,
+    truncate: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -153,8 +155,25 @@ impl Button {
             trailing: None,
             confirm: None,
             label_on_hover: false,
+            icon_only: false,
+            truncate: false,
             on_click: None,
         }
+    }
+
+    /// Shows only the icon, in a round button as wide as it is tall, and moves the label (and
+    /// sublabel) to a tooltip. For narrow containers: switch it on under a width, then back.
+    /// Without an icon the button stays as it was.
+    pub fn icon_only(mut self, icon_only: bool) -> Self {
+        self.icon_only = icon_only;
+        self
+    }
+
+    /// Lets the button shrink inside a row that runs out of room: the label (and sublabel)
+    /// are cut with an ellipsis instead of pushing the button out of its container.
+    pub fn truncate(mut self, truncate: bool) -> Self {
+        self.truncate = truncate;
+        self
     }
 
     /// After a click, shows a check, `label` and the primary container for `duration`
@@ -313,12 +332,20 @@ impl RenderOnce for Button {
                     ))
             });
 
+        let icon_only = self.icon_only && self.icon.is_some() && !self.label_on_hover;
+        let tooltip = icon_only.then(|| match (&self.label, &self.sublabel) {
+            (Some(label), Some(sub)) => SharedString::from(format!("{label} {sub}")),
+            (Some(label), None) => label.clone(),
+            _ => SharedString::default(),
+        });
         let mut el = div()
             .id(self.id.clone())
             .relative()
             .flex()
-            .flex_none()
             .items_center()
+            .when(!self.truncate || icon_only, |d| d.flex_none())
+            .when(self.truncate && !icon_only, |d| d.flex_shrink().min_w_0().overflow_hidden())
+            .when(icon_only, |d| d.w(px(height)))
             .justify_center()
             .gap(px(if self.label_on_hover {
                 0.
@@ -328,7 +355,7 @@ impl RenderOnce for Button {
                 8.
             }))
             .h(px(height))
-            .px(px(if self.icon.is_some() { pad - 2. } else { pad }))
+            .when(!icon_only, |d| d.px(px(if self.icon.is_some() { pad - 2. } else { pad })))
             .corners(all(radius))
             .bg(bg)
             .text_color(fg)
@@ -355,6 +382,7 @@ impl RenderOnce for Button {
         }
         let label = match (&self.confirm, confirming) {
             (Some((label, _)), true) => Some(label.clone()),
+            _ if icon_only => None,
             _ => self.label,
         };
         if let Some(label) = label {
@@ -377,21 +405,34 @@ impl RenderOnce for Button {
                         .opacity(shown)
                         .child(label),
                 );
+            } else if self.truncate {
+                el = el.child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(label),
+                );
             } else {
                 el = el.child(label);
             }
         }
-        if let Some(sub) = self.sublabel {
+        if let Some(sub) = self.sublabel.filter(|_| !icon_only) {
             el = el.child(
                 div()
                     .ml(px(-2.))
                     .font_weight(FontWeight(500.))
                     .opacity(0.75)
+                    .when(self.truncate, |d| d.flex_none())
                     .child(sub),
             );
         }
-        if let Some(trailing) = self.trailing {
+        if let Some(trailing) = self.trailing.filter(|_| !icon_only) {
             el = el.child(trailing);
+        }
+        if let Some(tooltip) = tooltip {
+            el = el.tooltip(super::Tooltip::text(tooltip));
         }
         let mut el = interactive(el, &state, enabled, true);
         if enabled && (self.on_click.is_some() || confirmed_at.is_some()) {
