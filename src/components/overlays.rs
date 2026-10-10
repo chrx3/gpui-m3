@@ -28,6 +28,7 @@ pub struct Dialog {
     children: Vec<AnyElement>,
     actions: Vec<AnyElement>,
     on_dismiss: Option<ClickHandler>,
+    shown: f32,
 }
 
 impl Dialog {
@@ -43,6 +44,7 @@ impl Dialog {
             children: Vec::new(),
             actions: Vec::new(),
             on_dismiss: None,
+            shown: 1.,
         }
     }
 
@@ -88,6 +90,15 @@ impl Dialog {
         self
     }
 
+    /// Draws the dialog while it leaves: `progress` goes from 1 (shown) to 0 (gone), as
+    /// [`crate::motion::presence`] returns it. The scrim and the card fade and the card sinks 8 px.
+    /// A `Presence` around a dialog cannot do this: the dialog is drawn deferred, outside the
+    /// opacity of its parent.
+    pub fn exit(mut self, progress: f32) -> Self {
+        self.shown = progress.clamp(0., 1.);
+        self
+    }
+
     /// Called when the scrim is clicked.
     pub fn on_dismiss(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_dismiss = Some(Rc::new(f));
@@ -104,7 +115,8 @@ impl ParentElement for Dialog {
 impl RenderOnce for Dialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let fade = entrance(key(&self.id, "scrim"), Spring::EFFECTS, 0., window, cx).clamp(0., 1.);
+        let fade = entrance(key(&self.id, "scrim"), Spring::EFFECTS, 0., window, cx).clamp(0., 1.)
+            * self.shown;
         // M3 Expressive entrance (the reference design's m3-dialog-in): grows from 86 % while rising 18 px and
         // opening its corners from 56 px. GPUI cannot scale, so the width grows instead.
         let p = entrance(key(&self.id, "grow"), Spring::SPATIAL, 0., window, cx);
@@ -163,8 +175,8 @@ impl RenderOnce for Dialog {
         }
         let card = div()
             .relative()
-            .top(px(18. * rest))
-            .opacity(p.clamp(0., 1.))
+            .top(px(18. * rest + 8. * (1. - self.shown)))
+            .opacity(p.clamp(0., 1.) * self.shown)
             .child(card);
 
         // Covers the whole window even when the dialog is drawn inside a panel.

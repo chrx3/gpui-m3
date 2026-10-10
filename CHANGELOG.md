@@ -75,5 +75,7 @@ First release.
   - `ExpandableCard` animates its height with a spring; `Icon::pop`, `Avatar::hover_spin`,
     menu items staggered one by one, and `Dialog` / `Toast` entrances with scale and radius.
   - Two-line `MenuItem` with actions under the text.
+  - `Dialog::exit(progress)`: fades and sinks a dialog while it leaves (`motion::presence`),
+    because a dialog is drawn deferred and a `Presence` around it cannot fade it.
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
 - Gallery example to try every component in light and dark, with any seed color and slow motion.
