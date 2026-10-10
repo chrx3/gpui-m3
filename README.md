@@ -164,10 +164,13 @@ newer one, the two cannot be resolved together until GPUI updates.
   Sublime Text syntaxes; Markdown parsing by
   [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark) (MIT); diffs by
   [similar](https://github.com/mitsuhiko/similar) (Apache-2.0).
+- Some icons are based on [Lucide](https://lucide.dev) (ISC) and [Feather](https://feathericons.com) (MIT);
+  see [assets/icons/LICENSE-LUCIDE.txt](assets/icons/LICENSE-LUCIDE.txt).
 - Roboto by The Roboto Project Authors, under the [SIL Open Font License 1.1](assets/fonts/OFL.txt).
 - "Material Design" is a trademark of Google. This project is not affiliated with or endorsed by Google.
 
 ## License
 
 Code licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
-The bundled Roboto font is licensed under the [OFL 1.1](assets/fonts/OFL.txt).
+The bundled Roboto font is licensed under the [OFL 1.1](assets/fonts/OFL.txt); icons derived from Lucide
+and Feather keep their notices in [assets/icons/LICENSE-LUCIDE.txt](assets/icons/LICENSE-LUCIDE.txt).
