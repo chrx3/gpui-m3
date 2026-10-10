@@ -505,6 +505,98 @@ pub fn replay(
     })
 }
 
+/// Seconds since `active` last went from `false` to `true`, while fewer than `duration` have
+/// passed; `None` otherwise (and when it starts active, so nothing plays on mount). Use it for
+/// one-shot effects tied to a state edge, such as a shape that breathes once when hovered.
+pub fn play_on_rise(
+    id: impl Into<ElementId>,
+    active: bool,
+    duration: f32,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<f32> {
+    let settings = MotionSettings::get(cx);
+    let start = element_state(
+        id.into(),
+        window,
+        |state: Option<(bool, Option<Instant>)>, _| {
+            let state = match state {
+                Some((false, _)) if active => (true, Some(Instant::now())),
+                Some((_, start)) => (active, start),
+                None => (active, None),
+            };
+            (state.1, state)
+        },
+    );
+    if settings.reduced {
+        return None;
+    }
+    let t = elapsed(start?, cx);
+    (t < duration).then(|| {
+        window.request_animation_frame();
+        t
+    })
+}
+
+/// Keeps something on screen while it animates out, like the reference design's `<Presence>`.
+///
+/// Returns `Some(progress)` while the content should be drawn: `1.` while `show` is true, then
+/// falling to `0.` with the fast effects spring once `show` turns false (exits are shorter than
+/// entrances). Returns `None` when the exit has finished or when it was never shown. Call it
+/// every frame, shown or not, with the same `id`:
+///
+/// ```ignore
+/// div().when_some(motion::presence("offer", self.offer.is_some(), window, cx), |d, p| {
+///     d.child(banner(&self.last_offer).opacity(p))
+/// })
+/// ```
+///
+/// Keep the data of the leaving content (the last offer, the last menu) until it returns `None`.
+pub fn presence(
+    id: impl Into<ElementId>,
+    show: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<f32> {
+    let settings = MotionSettings::get(cx);
+    let spring = Spring::EFFECTS_FAST;
+    let (value, moving) = element_state(id.into(), window, |state: Option<Presence>, _| {
+        let mut s = state.unwrap_or(Presence {
+            value: SpringValue::new(spring, [if show { 1. } else { 0. }]),
+            mounted: show,
+        });
+        let now = Instant::now();
+        if show {
+            s.mounted = true;
+            s.value = SpringValue::new(spring, [1.]);
+            return ((Some(1.), false), s);
+        }
+        if !s.mounted || settings.reduced {
+            s.mounted = false;
+            return ((None, false), s);
+        }
+        if s.value.target != [0.] {
+            s.value.update([0.], spring, 0., now);
+        }
+        let t = now.duration_since(s.value.start).as_secs_f32() / settings.time_scale.max(0.01);
+        let ([value], moving) = s.value.update([0.], spring, t, now);
+        if !moving || value <= 0.01 {
+            s.mounted = false;
+            return ((None, false), s);
+        }
+        ((Some(value.clamp(0., 1.)), true), s)
+    });
+    if moving {
+        window.request_animation_frame();
+    }
+    value
+}
+
+struct Presence {
+    value: SpringValue<1>,
+    mounted: bool,
+}
+
 pub fn key(id: &ElementId, name: &'static str) -> ElementId {
     ElementId::NamedChild(Box::new(id.clone()), name.into())
 }

@@ -56,8 +56,12 @@ const KEY_CONTEXT: &str = "M3TextArea";
 
 /// Registers the text area key bindings. Called by [`crate::init`].
 pub fn bind_text_area_keys(cx: &mut App) {
+    cx.bind_keys(text_area_bindings());
+}
+
+pub(crate) fn text_area_bindings() -> Vec<KeyBinding> {
     let ctx = Some(KEY_CONTEXT);
-    cx.bind_keys([
+    vec![
         KeyBinding::new("backspace", Backspace, ctx),
         KeyBinding::new("delete", Delete, ctx),
         KeyBinding::new("left", Left, ctx),
@@ -79,7 +83,7 @@ pub fn bind_text_area_keys(cx: &mut App) {
         KeyBinding::new("enter", Submit, ctx),
         KeyBinding::new("shift-enter", Newline, ctx),
         KeyBinding::new("escape", Cancel, ctx),
-    ]);
+    ]
 }
 
 /// Events emitted by a [`TextArea`]. Subscribe with `cx.subscribe(&area, ...)`.
@@ -118,6 +122,7 @@ pub struct TextArea {
     scroll_to_cursor: bool,
     is_selecting: bool,
     last_edit: Instant,
+    suggesting: bool,
 }
 
 impl EventEmitter<TextAreaEvent> for TextArea {}
@@ -145,7 +150,30 @@ impl TextArea {
             scroll_to_cursor: false,
             is_selecting: false,
             last_edit: Instant::now(),
+            suggesting: false,
         }
+    }
+
+    /// Marks that a suggestion list is open for this input: while on, ↑ ↓ Enter Tab Esc dispatch
+    /// the [`super::SuggestionList`] actions instead of their usual editing behavior.
+    pub fn set_suggesting(&mut self, suggesting: bool, cx: &mut Context<Self>) {
+        if self.suggesting != suggesting {
+            self.suggesting = suggesting;
+            cx.notify();
+        }
+    }
+
+    pub fn is_suggesting(&self) -> bool {
+        self.suggesting
+    }
+
+    fn key_context(&self) -> gpui::KeyContext {
+        let mut context = gpui::KeyContext::default();
+        context.add(KEY_CONTEXT);
+        if self.suggesting {
+            context.add(super::SUGGESTING_CONTEXT);
+        }
+        context
     }
 
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
@@ -965,7 +993,7 @@ impl Render for TextArea {
         }
         div()
             .id(("m3-text-area", cx.entity_id().as_u64()))
-            .key_context(KEY_CONTEXT)
+            .key_context(self.key_context())
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))

@@ -3,27 +3,40 @@
 use std::f32::consts::{PI, TAU};
 
 use gpui::{
-    AnyElement, App, Bounds, ElementId, FontWeight, Hsla, IntoElement, ParentElement, PathBuilder,
-    Pixels, Point, RenderOnce, SharedString, Styled, Window, canvas, div, point, px,
+    AnyElement, App, Bounds, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, PathBuilder, Pixels, Point, RenderOnce, SharedString,
+    StatefulInteractiveElement, Styled, Window, canvas, div, point, px,
 };
+
+use super::photo::{self, PhotoSource};
 
 use crate::interaction::rounded_rect;
 use crate::motion::{
     Spring, animate, animate_color, animate_f32, continuous, continuous_at, cubic_bezier, key,
+    play_on_rise,
 };
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
 use crate::theme::{FONT_FAMILY, Theme};
 
 /// A shape from the M3 shape library. `morph` makes it breathe between two shapes and `spin` rotates it.
+///
+/// [`Shape::breathe_on_hover`] morphs it once toward another shape and back each time the pointer
+/// enters (the reference design's profile avatar), and [`Shape::image`] fills it with a photo.
 #[derive(IntoElement)]
 pub struct Shape {
     shape: ShapeName,
     morph: Option<(ShapeName, f32)>,
     spin: Option<f32>,
+    hover: Option<(ElementId, ShapeName)>,
+    active: Option<bool>,
+    photo: Option<PhotoSource>,
     size: Pixels,
     color: Option<Hsla>,
     child: Option<AnyElement>,
 }
+
+/// Duration of one hover breath (the reference design: `m3-shape-breathe 1.2s`).
+const HOVER_BREATH: f32 = 1.2;
 
 impl Shape {
     pub fn new(shape: ShapeName) -> Self {
@@ -31,6 +44,9 @@ impl Shape {
             shape,
             morph: None,
             spin: None,
+            hover: None,
+            active: None,
+            photo: None,
             size: px(48.),
             color: None,
             child: None,
@@ -53,6 +69,27 @@ impl Shape {
         self
     }
 
+    /// Each time the pointer enters, morphs once toward `other` and back (1.2 s). `id` must be
+    /// unique within the view. Use [`Shape::hovered`] to follow the hover of a larger parent
+    /// (a whole profile button) instead of the shape's own.
+    pub fn breathe_on_hover(mut self, id: impl Into<ElementId>, other: ShapeName) -> Self {
+        self.hover = Some((id.into(), other));
+        self
+    }
+
+    /// Drives [`Shape::breathe_on_hover`] from your own hover state.
+    pub fn hovered(mut self, hovered: bool) -> Self {
+        self.active = Some(hovered);
+        self
+    }
+
+    /// Fills the shape with a photo (covering it, centered), clipped to the shape with smooth
+    /// edges. While the photo loads, the shape shows its color and child.
+    pub fn image(mut self, source: impl Into<PhotoSource>) -> Self {
+        self.photo = Some(source.into());
+        self
+    }
+
     /// Rotates one full turn every `period` seconds (negative: counterclockwise).
     pub fn spin(mut self, period: f32) -> Self {
         self.spin = Some(period);
@@ -62,6 +99,15 @@ impl Shape {
     pub fn child(mut self, child: impl IntoElement) -> Self {
         self.child = Some(child.into_any_element());
         self
+    }
+}
+
+/// 0 → 1 → 0 over a phase from 0 to 1.
+fn triangle(phase: f32) -> f32 {
+    if phase < 0.5 {
+        phase * 2.
+    } else {
+        2. - phase * 2.
     }
 }
 
@@ -76,27 +122,59 @@ impl RenderOnce for Shape {
             0.
         };
         let ease = cubic_bezier(0.42, 0., 0.58, 1.);
-        let morph = match self.morph {
-            Some((other, period)) => {
-                let phase = (t / period).fract();
-                let tri = if phase < 0.5 {
-                    phase * 2.
-                } else {
-                    2. - phase * 2.
-                };
-                Morph {
-                    from: self.shape,
-                    to: other,
-                    t: ease(tri),
-                    rotation: 0.,
-                }
-            }
+        let mut morph = match self.morph {
+            Some((other, period)) => Morph {
+                from: self.shape,
+                to: other,
+                t: ease(triangle((t / period).fract())),
+                rotation: 0.,
+            },
             None => Morph::still(self.shape),
         };
+
+        // Hover breath: own hover (kept in element state) unless the caller drives it.
+        let mut hover_state = None;
+        if let Some((id, other)) = &self.hover {
+            let hovered = match self.active {
+                Some(active) => active,
+                None => {
+                    let state = window.use_keyed_state(key(id, "hovered"), cx, |_, _| false);
+                    let on = *state.read(cx);
+                    hover_state = Some(state);
+                    on
+                }
+            };
+            if let Some(elapsed) =
+                play_on_rise(key(id, "breath"), hovered, HOVER_BREATH, window, cx)
+            {
+                morph = Morph {
+                    from: self.shape,
+                    to: *other,
+                    t: ease(triangle(elapsed / HOVER_BREATH)),
+                    rotation: 0.,
+                };
+            }
+        }
         let rotation = self.spin.map_or(0., |p| (t / p).fract() * TAU);
         let morph = Morph { rotation, ..morph };
 
-        div()
+        // Photo: a raster masked to the shape (cached steps of the hover morph).
+        let device = (f32::from(self.size) * window.scale_factor())
+            .round()
+            .max(1.) as u32;
+        let image = self
+            .photo
+            .as_ref()
+            .and_then(|source| source.load(window, cx));
+        let photo = image.and_then(|image| {
+            if let Some((_, other)) = &self.hover {
+                photo::prewarm(&image, self.shape, *other, device, window, cx);
+            }
+            photo::shaped_photo(image, morph.from, morph.to, morph.t, device, window, cx)
+        });
+        let show_child = photo.is_none();
+
+        let base = div()
             .relative()
             .flex()
             .flex_none()
@@ -106,22 +184,48 @@ impl RenderOnce for Shape {
             .child(
                 canvas(
                     |_, _, _| {},
-                    move |bounds, _, window, _| morph.paint(bounds, color, window),
+                    move |bounds, _, window, _| match photo {
+                        Some(photo) => {
+                            window
+                                .paint_image(bounds, gpui::Corners::default(), photo, 0, false)
+                                .ok();
+                        }
+                        None => morph.paint(bounds, color, window),
+                    },
                 )
                 .absolute()
                 .top_0()
                 .left_0()
                 .size_full(),
             )
-            .children(self.child)
+            .children(self.child.filter(|_| show_child));
+        match (self.hover, hover_state) {
+            (Some((id, _)), Some(state)) => base
+                .id(key(&id, "shape"))
+                .on_hover(move |on, _, cx| {
+                    state.update(cx, |hovered, cx| {
+                        *hovered = *on;
+                        cx.notify();
+                    })
+                })
+                .into_any_element(),
+            _ => base.into_any_element(),
+        }
     }
 }
 
 /// Avatar with the initial inside an M3 shape; shape and tone are stable for each name.
+///
+/// [`Avatar::image`] shows a photo clipped to the shape instead (the user's profile picture),
+/// with the initials as a fallback while it loads.
 #[derive(IntoElement)]
 pub struct Avatar {
     name: SharedString,
     size: Pixels,
+    photo: Option<PhotoSource>,
+    shape: Option<ShapeName>,
+    hover: Option<(ElementId, ShapeName)>,
+    hovered: Option<bool>,
 }
 
 impl Avatar {
@@ -129,7 +233,51 @@ impl Avatar {
         Self {
             name: name.into(),
             size: px(22.),
+            photo: None,
+            shape: None,
+            hover: None,
+            hovered: None,
         }
+    }
+
+    /// A photo avatar: the image (a path or an `Arc<RenderImage>`) clipped to a Cookie9 shape.
+    /// Add [`Avatar::name`] for the initials shown while it loads.
+    pub fn image(source: impl Into<PhotoSource>) -> Self {
+        Self {
+            shape: Some(ShapeName::Cookie9),
+            ..Self::new("").photo(source)
+        }
+    }
+
+    /// Name for the initials and the stable tone (and shape, unless [`Avatar::shape`] is set).
+    pub fn name(mut self, name: impl Into<SharedString>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    /// Adds a photo to a name avatar.
+    pub fn photo(mut self, source: impl Into<PhotoSource>) -> Self {
+        self.photo = Some(source.into());
+        self
+    }
+
+    /// Overrides the shape derived from the name.
+    pub fn shape(mut self, shape: ShapeName) -> Self {
+        self.shape = Some(shape);
+        self
+    }
+
+    /// Morphs toward `other` and back when hovered (the reference design's profile avatar uses Clover8).
+    /// See [`Shape::breathe_on_hover`].
+    pub fn breathe_on_hover(mut self, id: impl Into<ElementId>, other: ShapeName) -> Self {
+        self.hover = Some((id.into(), other));
+        self
+    }
+
+    /// Drives [`Avatar::breathe_on_hover`] from a parent's hover.
+    pub fn hovered(mut self, hovered: bool) -> Self {
+        self.hovered = Some(hovered);
+        self
     }
 
     pub fn size(mut self, size: Pixels) -> Self {
@@ -141,23 +289,53 @@ impl Avatar {
 impl RenderOnce for Avatar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let (shape, tone) = avatar_for(&self.name);
-        let (bg, fg) = tone.colors(Theme::of(cx));
-        let initial: String = self
-            .name
-            .trim()
-            .chars()
-            .next()
-            .map(|c| c.to_uppercase().collect())
-            .unwrap_or_default();
+        let s = Theme::of(cx);
+        let has_photo = self.photo.is_some();
+        // Photo avatars sit on the tertiary container, like the reference design's user avatar.
+        let (bg, fg) = if has_photo {
+            (s.tertiary_container, s.on_tertiary_container)
+        } else {
+            tone.colors(s)
+        };
+        // Name avatars show one initial; photo avatars fall back to the user's initials.
+        let initial: String = if has_photo {
+            self.name
+                .split_whitespace()
+                .take(2)
+                .filter_map(|word| word.chars().next())
+                .flat_map(|c| c.to_uppercase())
+                .collect()
+        } else {
+            self.name
+                .trim()
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().collect())
+                .unwrap_or_default()
+        };
         let size = f32::from(self.size);
-        Shape::new(shape).size(self.size).color(bg).child(
-            div()
-                .text_color(fg)
-                .font_family(FONT_FAMILY)
-                .text_size(px((size * 0.5).max(11.)))
-                .font_weight(FontWeight(800.))
-                .child(initial),
-        )
+        let text_scale = if has_photo { 0.38 } else { 0.5 };
+        let mut el = Shape::new(self.shape.unwrap_or(shape))
+            .size(self.size)
+            .color(bg)
+            .child(
+                div()
+                    .text_color(fg)
+                    .font_family(FONT_FAMILY)
+                    .text_size(px((size * text_scale).max(11.)))
+                    .font_weight(FontWeight(800.))
+                    .child(initial),
+            );
+        if let Some(photo) = self.photo {
+            el = el.image(photo);
+        }
+        if let Some((id, other)) = self.hover {
+            el = el.breathe_on_hover(id, other);
+        }
+        if let Some(hovered) = self.hovered {
+            el = el.hovered(hovered);
+        }
+        el
     }
 }
 
@@ -426,7 +604,12 @@ impl RenderOnce for Ring {
 }
 
 /// Line with rounded ends.
-fn paint_polyline(points: &[Point<Pixels>], width: f32, color: Hsla, window: &mut Window) {
+pub(crate) fn paint_polyline(
+    points: &[Point<Pixels>],
+    width: f32,
+    color: Hsla,
+    window: &mut Window,
+) {
     if points.len() < 2 {
         return;
     }

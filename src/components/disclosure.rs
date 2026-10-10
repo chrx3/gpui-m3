@@ -10,7 +10,9 @@ use gpui::{
 };
 
 use super::{ChangeHandler, Icon, RoundedExt, all, child_id, corners};
-use crate::interaction::{interactive, state_layer, use_interaction};
+use crate::interaction::{
+    focus_ring, focusable, interactive, state_layer, use_focus, use_interaction,
+};
 use crate::motion::{Spring, animate_f32, entrance, key};
 use crate::shapes::Tone;
 use crate::theme::{FONT_FAMILY, Theme};
@@ -20,6 +22,9 @@ use crate::theme::{FONT_FAMILY, Theme};
 ///
 /// [`ExpandableCard::plain`] drops the background and moves the chevron before the header, for
 /// lighter disclosures such as a model's reasoning.
+///
+/// The header is a Tab stop: Enter or Space toggles it, and keyboard focus shows a focus ring
+/// (hidden after a click, like CSS `:focus-visible`).
 #[derive(IntoElement)]
 pub struct ExpandableCard {
     id: ElementId,
@@ -153,6 +158,9 @@ impl RenderOnce for ExpandableCard {
             all(radius)
         };
         let layer = state_layer(&head_id, &state, head_radius, fg, window, cx);
+        let head_id_ring = head_id.clone();
+        // The plain variant has no shape of its own: its ring gets small corners.
+        let ring_radius = if self.plain { all(px(6.)) } else { head_radius };
         let preview = self.preview.filter(|_| !open).map(|preview| {
             div()
                 .flex_1()
@@ -193,7 +201,12 @@ impl RenderOnce for ExpandableCard {
         let mut head = interactive(head, &state, expandable, !self.plain);
         if let (Some(f), true) = (self.on_toggle, expandable) {
             let open = self.open;
-            head = head.on_click(move |_, w, cx| f(!open, w, cx));
+            let (focus, handle, ring_visible) = use_focus(&head_id_ring, window, cx);
+            let ring = focus_ring(&head_id_ring, ring_visible, ring_radius, window, cx);
+            // GPUI turns Enter and Space on a focused clickable element into a click.
+            head = focusable(head, &focus, &handle)
+                .on_click(move |_, w, cx| f(!open, w, cx))
+                .children(ring);
         }
 
         let body = open.then(|| {

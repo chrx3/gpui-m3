@@ -14,6 +14,8 @@ exclude = ["/docs", "/.github", "/.cargo"]
 
 [dependencies]
 gpui = "0.2.2"
+# The crate GPUI decodes images with; used to build shaped photo rasters.
+image = { version = "0.25", default-features = false }
 material-colors = "0.4"
 unicode-segmentation = "1"
 

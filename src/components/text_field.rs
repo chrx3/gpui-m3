@@ -45,8 +45,12 @@ const KEY_CONTEXT: &str = "M3TextField";
 
 /// Registers the text field key bindings. Called by [`crate::init`].
 pub fn bind_text_field_keys(cx: &mut App) {
+    cx.bind_keys(text_field_bindings());
+}
+
+pub(crate) fn text_field_bindings() -> Vec<KeyBinding> {
     let ctx = Some(KEY_CONTEXT);
-    cx.bind_keys([
+    vec![
         KeyBinding::new("backspace", Backspace, ctx),
         KeyBinding::new("delete", Delete, ctx),
         KeyBinding::new("left", Left, ctx),
@@ -61,7 +65,7 @@ pub fn bind_text_field_keys(cx: &mut App) {
         KeyBinding::new("end", End, ctx),
         KeyBinding::new("enter", Submit, ctx),
         KeyBinding::new("escape", Cancel, ctx),
-    ]);
+    ]
 }
 
 /// Events emitted by a [`TextField`]. Subscribe with `cx.subscribe(&field, ...)`.
@@ -124,6 +128,7 @@ pub struct TextField {
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
     last_edit: Instant,
+    suggesting: bool,
 }
 
 impl EventEmitter<TextFieldEvent> for TextField {}
@@ -159,7 +164,30 @@ impl TextField {
             last_bounds: None,
             is_selecting: false,
             last_edit: Instant::now(),
+            suggesting: false,
         }
+    }
+
+    /// Marks that a suggestion list is open for this input: while on, ↑ ↓ Enter Tab Esc dispatch
+    /// the [`super::SuggestionList`] actions instead of their usual editing behavior.
+    pub fn set_suggesting(&mut self, suggesting: bool, cx: &mut Context<Self>) {
+        if self.suggesting != suggesting {
+            self.suggesting = suggesting;
+            cx.notify();
+        }
+    }
+
+    pub fn is_suggesting(&self) -> bool {
+        self.suggesting
+    }
+
+    fn key_context(&self) -> gpui::KeyContext {
+        let mut context = gpui::KeyContext::default();
+        context.add(KEY_CONTEXT);
+        if self.suggesting {
+            context.add(super::SUGGESTING_CONTEXT);
+        }
+        context
     }
 
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
@@ -847,7 +875,7 @@ impl Render for TextField {
         );
         let mut field = div()
             .id(id)
-            .key_context(KEY_CONTEXT)
+            .key_context(self.key_context())
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))

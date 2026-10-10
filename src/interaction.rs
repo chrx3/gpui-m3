@@ -6,9 +6,9 @@
 use std::{cell::Cell, f32::consts::FRAC_PI_2, rc::Rc, time::Instant};
 
 use gpui::{
-    App, Bounds, Corners, Div, ElementId, Entity, Hsla, InteractiveElement, IntoElement,
-    MouseButton, PathBuilder, Pixels, Point, Stateful, StatefulInteractiveElement, Styled, Window,
-    canvas, div, fill, point, px,
+    App, Bounds, Corners, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement,
+    IntoElement, MouseButton, PathBuilder, Pixels, Point, Stateful, StatefulInteractiveElement,
+    Styled, Window, canvas, div, fill, point, px,
 };
 
 use crate::motion::{self, Spring, animate_f32, cubic_bezier, key};
@@ -174,6 +174,96 @@ pub fn state_layer(
     .top_0()
     .left_0()
     .size_full()
+}
+
+/// Keyboard focus of a component, persisted across frames.
+pub struct FocusState {
+    pub handle: FocusHandle,
+    /// Focus came from a pointer press: the ring stays hidden (like CSS `:focus-visible`).
+    by_pointer: bool,
+}
+
+/// Gets (or creates) the focus handle of component `id` and whether its focus ring should show:
+/// focused and reached with the keyboard, not with a click.
+pub fn use_focus(
+    id: &ElementId,
+    window: &mut Window,
+    cx: &mut App,
+) -> (Entity<FocusState>, FocusHandle, bool) {
+    let state = window.use_keyed_state(key(id, "focus"), cx, |_, cx| FocusState {
+        handle: cx.focus_handle().tab_stop(true),
+        by_pointer: false,
+    });
+    let handle = state.read(cx).handle.clone();
+    let focused = handle.is_focused(window);
+    if !focused && state.read(cx).by_pointer {
+        state.update(cx, |s, _| s.by_pointer = false);
+    }
+    let visible = focused && !state.read(cx).by_pointer;
+    (state, handle, visible)
+}
+
+/// Makes an element focusable with Tab, hides the ring after clicks and shows it again on the
+/// next key press. Pair it with [`use_focus`] and [`focus_ring`].
+pub fn focusable(
+    el: Stateful<Div>,
+    state: &Entity<FocusState>,
+    handle: &FocusHandle,
+) -> Stateful<Div> {
+    let down = state.clone();
+    let key_down = state.clone();
+    el.track_focus(handle)
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            down.update(cx, |s, cx| {
+                s.by_pointer = true;
+                cx.notify();
+            })
+        })
+        .on_key_down(move |_, _, cx| {
+            key_down.update(cx, |s, cx| {
+                if s.by_pointer {
+                    s.by_pointer = false;
+                    cx.notify();
+                }
+            })
+        })
+}
+
+/// M3 focus indicator: a 2 px ring in the primary color, 2 px outside the component's corners.
+/// Fades in with the effects spring; it is drawn only while `visible` or fading out.
+pub fn focus_ring(
+    id: &ElementId,
+    visible: bool,
+    radii: Corners<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<impl IntoElement + use<>> {
+    let p = animate_f32(
+        key(id, "focus-ring"),
+        Spring::EFFECTS,
+        if visible { 1. } else { 0. },
+        window,
+        cx,
+    );
+    if p <= 0.001 {
+        return None;
+    }
+    let color = alpha(crate::theme::Theme::of(cx).primary, p.clamp(0., 1.));
+    let grow = |r: Pixels| r + px(3.);
+    Some(
+        div()
+            .absolute()
+            .top(px(-3.))
+            .left(px(-3.))
+            .right(px(-3.))
+            .bottom(px(-3.))
+            .border_2()
+            .border_color(color)
+            .rounded_tl(grow(radii.top_left))
+            .rounded_tr(grow(radii.top_right))
+            .rounded_br(grow(radii.bottom_right))
+            .rounded_bl(grow(radii.bottom_left)),
+    )
 }
 
 /// Absolute container that fills its parent (for indicators and layers).

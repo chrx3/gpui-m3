@@ -2164,6 +2164,7 @@ name = "gpui-m3"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "image",
  "material-colors",
  "unicode-segmentation",
 ]

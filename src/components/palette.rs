@@ -2,8 +2,8 @@
 
 use gpui::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Render, SharedString,
-    StatefulInteractiveElement, Styled, Window, actions, anchored, deferred, div, px,
+    InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Render, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, Window, actions, anchored, deferred, div, px,
 };
 
 use super::{Icon, MenuItem, TextField, TextFieldEvent, pop_in, shadow_pop};
@@ -56,7 +56,8 @@ pub enum CommandPaletteEvent {
 }
 
 /// Command palette (Ctrl/Cmd+K): a modal surface near the top of the window with a filter
-/// field and the matching commands. ↑/↓ move, Enter runs, Escape closes.
+/// field and the matching commands. ↑/↓ or the pointer move the selection, Enter or a click
+/// runs it, Escape closes.
 ///
 /// It is an entity: create it once, give it commands, call [`CommandPalette::reset`] and
 /// [`CommandPalette::focus`] when opening it, render it while open and subscribe to
@@ -68,6 +69,7 @@ pub struct CommandPalette {
     selected: usize,
     empty_text: SharedString,
     opened: u64,
+    scroll: ScrollHandle,
 }
 
 impl EventEmitter<CommandPaletteEvent> for CommandPalette {}
@@ -107,6 +109,7 @@ impl CommandPalette {
             selected: 0,
             empty_text: "No results".into(),
             opened: 0,
+            scroll: ScrollHandle::new(),
         }
     }
 
@@ -154,8 +157,14 @@ impl CommandPalette {
         cx.notify();
     }
 
+    /// Index (in the filtered list) of the highlighted command.
+    pub fn selected(&self) -> usize {
+        self.selected
+    }
+
     fn select_previous(&mut self, _: &SelectPrevious, _: &mut Window, cx: &mut Context<Self>) {
         self.selected = self.selected.saturating_sub(1);
+        self.scroll.scroll_to_item(self.selected);
         cx.notify();
     }
 
@@ -163,7 +172,16 @@ impl CommandPalette {
         if self.selected + 1 < self.matches.len() {
             self.selected += 1;
         }
+        self.scroll.scroll_to_item(self.selected);
         cx.notify();
+    }
+
+    /// The pointer moved over a row: it becomes the selection (as in the reference design's lists).
+    fn hover_row(&mut self, row: usize, cx: &mut Context<Self>) {
+        if self.selected != row && row < self.matches.len() {
+            self.selected = row;
+            cx.notify();
+        }
     }
 }
 
@@ -179,6 +197,7 @@ impl Render for CommandPalette {
             .flex_col()
             .max_h(px(380.))
             .overflow_y_scroll()
+            .track_scroll(&self.scroll)
             .py(px(6.))
             .px(px(4.));
         if self.matches.is_empty() {
@@ -190,18 +209,26 @@ impl Render for CommandPalette {
                     .child(self.empty_text.clone()),
             );
         }
+        let query = self.field.read(cx).text().clone();
         for (row, &index) in self.matches.iter().enumerate() {
             let command = &self.commands[index];
             let mut item = MenuItem::new(("m3-palette-item", index), command.label.clone())
                 .icon(command.icon.clone())
                 .highlighted(row == self.selected)
+                .hover_fill(false)
+                .label_highlights(super::match_ranges(&command.label, &query))
                 .on_click(cx.listener(move |_, _, _, cx| {
                     cx.emit(CommandPaletteEvent::Run(index));
                 }));
             if let Some(hint) = &command.hint {
                 item = item.shortcut(hint.clone());
             }
-            list = list.child(item);
+            list = list.child(
+                div()
+                    .id(("m3-palette-row", index))
+                    .on_mouse_move(cx.listener(move |this, _, _, cx| this.hover_row(row, cx)))
+                    .child(item),
+            );
         }
 
         let surface = div()

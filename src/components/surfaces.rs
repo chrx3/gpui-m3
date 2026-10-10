@@ -502,6 +502,8 @@ pub struct MenuItem {
     static_row: bool,
     inline_sublabel: bool,
     danger: bool,
+    hover_fill: bool,
+    highlights: Vec<std::ops::Range<usize>>,
     confirm: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
@@ -524,9 +526,26 @@ impl MenuItem {
             static_row: false,
             inline_sublabel: false,
             danger: false,
+            hover_fill: true,
+            highlights: Vec::new(),
             confirm: None,
             on_click: None,
         }
+    }
+
+    /// Whether hovering paints the row's highlight (on by default). Lists where the pointer moves
+    /// the keyboard highlight ([`super::CommandPalette`], [`super::SuggestionList`]) turn it off,
+    /// so only the highlighted row is lit after using the arrows.
+    pub fn hover_fill(mut self, fill: bool) -> Self {
+        self.hover_fill = fill;
+        self
+    }
+
+    /// Byte ranges of the label to emphasize (the part that matches a query), in bold and the
+    /// primary color. See [`super::match_ranges`].
+    pub fn label_highlights(mut self, ranges: Vec<std::ops::Range<usize>>) -> Self {
+        self.highlights = ranges;
+        self
     }
 
     /// Destructive action: error color for text and icon, error container on hover.
@@ -624,7 +643,7 @@ impl RenderOnce for MenuItem {
         let state = use_interaction(&self.id, window, cx);
         let enabled = !self.disabled;
         let reactive = enabled && !self.static_row;
-        let hovered = (state.read(cx).hovered && reactive) || self.highlighted;
+        let hovered = (state.read(cx).hovered && reactive && self.hover_fill) || self.highlighted;
         let armed_state = self
             .confirm
             .as_ref()
@@ -686,9 +705,32 @@ impl RenderOnce for MenuItem {
         let bg = animate_color(key(&self.id, "bg"), Spring::EFFECTS, bg, window, cx);
         let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
         let layer = state_layer(&self.id, &state, all(radius), fg, window, cx);
+        let highlighted_label = |label: SharedString| -> AnyElement {
+            if self.highlights.is_empty() {
+                return label.into_any_element();
+            }
+            let style = gpui::HighlightStyle {
+                color: Some(s.primary),
+                font_weight: Some(FontWeight(700.)),
+                ..Default::default()
+            };
+            let ranges: Vec<_> = self
+                .highlights
+                .iter()
+                .filter(|r| {
+                    r.end <= label.len()
+                        && label.is_char_boundary(r.start)
+                        && label.is_char_boundary(r.end)
+                })
+                .map(|r| (r.clone(), style))
+                .collect();
+            gpui::StyledText::new(label)
+                .with_highlights(ranges)
+                .into_any_element()
+        };
         let label = match (&self.confirm, armed) {
-            (Some(confirm), true) => confirm.clone(),
-            _ => self.label,
+            (Some(confirm), true) => confirm.clone().into_any_element(),
+            _ => highlighted_label(self.label),
         };
 
         let mut row = div()
@@ -728,7 +770,7 @@ impl RenderOnce for MenuItem {
                 .gap(px(8.))
                 .flex_1()
                 .min_w_0()
-                .child(div().flex_none().child(label.clone()))
+                .child(div().flex_none().child(label))
                 .children(sub.map(|sub| {
                     sub.flex_1()
                         .min_w_0()
