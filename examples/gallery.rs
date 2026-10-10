@@ -859,7 +859,7 @@ impl Demos {
             ))
             .child(demo(
                 "Narrow containers",
-                "`icon_only` keeps the icon and moves the label to a tooltip (switch it on under a width); `truncate` lets a button shrink and cut its label with an ellipsis instead of overflowing.",
+                "`icon_only` keeps the icon and moves the label to a tooltip (switch it on under a width); `truncate` lets a button shrink and clip its label instead of overflowing.",
                 column()
                     .child(
                         row()

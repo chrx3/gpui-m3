@@ -407,11 +407,12 @@ impl RenderOnce for Button {
                 );
             } else if self.truncate {
                 el = el.child(
+                    // Clipped without an ellipsis: GPUI 0.2 caches the first measurement of a
+                    // truncated text (often with a tiny width) and the label vanished.
                     div()
                         .min_w_0()
                         .overflow_hidden()
                         .whitespace_nowrap()
-                        .text_ellipsis()
                         .child(label),
                 );
             } else {

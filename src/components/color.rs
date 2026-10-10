@@ -106,9 +106,12 @@ impl RenderOnce for SelectCard {
             card = card.child(div().mb(px(4.)).min_w_0().overflow_hidden().child(preview));
         }
         card = card.child(
+            // Clipped, not `truncate()`: GPUI 0.2 caches the first measurement of a truncated
+            // text, often taken with a tiny width, and the title stayed as a lone "…".
             div()
                 .min_w_0()
-                .truncate()
+                .overflow_hidden()
+                .whitespace_nowrap()
                 .text_size(px(12.5))
                 .font_weight(FontWeight(600.))
                 .child(self.title),
