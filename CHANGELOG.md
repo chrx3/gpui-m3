@@ -28,6 +28,11 @@ First release.
     `IconButton::launch`, `FavStar`.
   - Panels: `TreeRow`, `ListItem`, `TabStrip`, `NavItem` emphasis, meta and large rows.
   - Appearance: `SelectCard`, `ColorSwatches`, `HsvPicker`.
+- Narrow containers: `SelectCard` clips its title and wraps its hint instead of overflowing a
+  shared row (give each card's wrapper `flex_1().min_w_0()`); `SegmentedButtons` shrink and clip
+  their labels; `Popover` and `Menu` never exceed the space they sit in; a `Banner` with actions
+  drops them to a second line; `ListGroup` rows and `MenuItem` trailing content no longer push
+  past the group.
   - `Scheme::error_container` / `on_error_container`; `motion::replay` and `motion::pulse`.
 - Added for the reference design port, batch 1:
   - `DividerLabel`: a labeled separator (compaction; model switch with wavy lines and a tonal

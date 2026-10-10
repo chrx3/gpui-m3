@@ -74,7 +74,9 @@ impl RenderOnce for SegmentedButtons {
         let count = self.segments.len();
         let mut row = div()
             .flex()
-            .flex_none()
+            .flex_shrink()
+            .min_w_0()
+            .max_w_full()
             .gap(px(2.))
             .font_family(FONT_FAMILY);
         for (i, segment) in self.segments.into_iter().enumerate() {
@@ -107,6 +109,9 @@ impl RenderOnce for SegmentedButtons {
                 .items_center()
                 .justify_center()
                 .gap(px(6.))
+                // In a narrow container the segments shrink and clip their labels.
+                .min_w_0()
+                .overflow_hidden()
                 .h(px(32.))
                 .px(px(if segment.label.is_some() { 14. } else { 10. }))
                 .corners(corners(r))
@@ -118,7 +123,7 @@ impl RenderOnce for SegmentedButtons {
                 item = item.child(Icon::new(icon).size(px(16.)).color(fg));
             }
             if let Some(label) = segment.label {
-                item = item.child(label);
+                item = item.child(div().min_w_0().truncate().child(label));
             }
             let mut item = interactive(item, &state, true, false);
             if let Some(f) = self.on_change.clone() {

@@ -17,7 +17,8 @@ use crate::motion::{Spring, animate, animate_f32, key};
 use crate::theme::{FONT_FAMILY, Theme, alpha};
 
 /// Selectable card with a preview, a title and a hint (the style picker). Selected cards get
-/// a 2 px primary border.
+/// a 2 px primary border. Side by side in a row, wrap each in `div().flex_1().min_w_0()`: the
+/// cards then share the width, truncate the title and wrap the hint.
 #[derive(IntoElement)]
 pub struct SelectCard {
     id: ElementId,
@@ -85,6 +86,9 @@ impl RenderOnce for SelectCard {
             .flex_col()
             .gap(px(3.))
             .p(px(8.))
+            // Cards share a row: let them shrink below their content and clip what is left.
+            .min_w_0()
+            .overflow_hidden()
             .corners(all(radius))
             .when(hovered && !self.selected, |d| {
                 d.bg(s.surface_container_high)
@@ -99,10 +103,12 @@ impl RenderOnce for SelectCard {
             .text_color(s.on_surface)
             .child(layer);
         if let Some(preview) = self.preview {
-            card = card.child(div().mb(px(4.)).child(preview));
+            card = card.child(div().mb(px(4.)).min_w_0().overflow_hidden().child(preview));
         }
         card = card.child(
             div()
+                .min_w_0()
+                .truncate()
                 .text_size(px(12.5))
                 .font_weight(FontWeight(600.))
                 .child(self.title),
@@ -110,6 +116,7 @@ impl RenderOnce for SelectCard {
         if let Some(hint) = self.hint {
             card = card.child(
                 div()
+                    .min_w_0()
                     .text_size(px(11.5))
                     .text_color(s.on_surface_variant)
                     .child(hint),

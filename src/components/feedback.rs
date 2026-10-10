@@ -430,11 +430,15 @@ impl RenderOnce for Banner {
         });
 
         let rise: Pixels = px((1. - p) * 18.);
+        // With actions, a narrow banner drops them to a second line instead of squeezing the
+        // text down to nothing.
+        let has_actions = !self.actions.is_empty();
         div()
             .relative()
             .top(rise)
             .opacity(p.clamp(0., 1.))
             .flex()
+            .when(has_actions, |d| d.flex_wrap())
             .items_center()
             .gap(px(if tonal { 12. } else { 6. }))
             .pt(px(pad[0]))
@@ -447,7 +451,7 @@ impl RenderOnce for Banner {
             .font_family(FONT_FAMILY)
             .text_size(px(12.5))
             .children(mark)
-            .child(text)
+            .child(text.when(has_actions, |d| d.min_w(px(140.))))
             .children(self.actions.into_iter().map(|a| div().flex_none().child(a)))
             .children(close)
     }

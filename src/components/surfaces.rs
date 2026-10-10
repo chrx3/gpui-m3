@@ -184,13 +184,14 @@ impl RenderOnce for Popover {
             .flex()
             .flex_col()
             .flex_none()
+            .min_w_0()
             .gap(self.gap)
             .p(self.padding)
             .children(self.children);
         let surface = div()
             .flex()
             .flex_col()
-            .when_some(self.width, |d, w| d.w(w))
+            .when_some(self.width, |d, w| d.w(w).max_w_full())
             .rounded(self.radius)
             .bg(s.surface_container)
             .shadow(shadow_pop(&s))
@@ -381,6 +382,7 @@ impl RenderOnce for Menu {
             .flex()
             .flex_col()
             .w(px(self.width))
+            .max_w_full()
             .font_family(FONT_FAMILY)
             .text_size(px(13.))
             .text_color(s.on_surface);
@@ -888,7 +890,13 @@ impl RenderOnce for MenuItem {
             (None, false) => None,
         };
         if let Some(trailing) = trailing {
-            row = row.child(div().text_size(px(11.5)).text_color(muted).child(trailing));
+            row = row.child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.5))
+                    .text_color(muted)
+                    .child(trailing),
+            );
         }
         if let Some(shortcut) = self.shortcut {
             row = row.child(
@@ -1146,7 +1154,7 @@ impl RenderOnce for ListGroup {
                     .px(px(18.))
                     .corners(corners([top, top, bottom, bottom]))
                     .bg(bg)
-                    .child(row),
+                    .child(div().flex_1().min_w_0().child(row)),
             );
         }
         col

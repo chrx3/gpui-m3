@@ -2357,28 +2357,35 @@ impl Demos {
             ("Material 3 Expressive", "Color, shapes and motion"),
             ("Liquid Glass", "Glass, light and depth"),
         ];
-        let mut cards = div().flex().gap(px(8.)).w(px(420.));
-        for (i, (title, hint)) in styles.into_iter().enumerate() {
-            cards = cards.child(
-                div().flex_1().child(
-                    SelectCard::new(("style", i), title)
-                        .hint(hint)
-                        .preview(
-                            div()
-                                .h(px(52.))
-                                .rounded(px(14.))
-                                .bg(s.surface_container)
-                                .p(px(6.))
-                                .flex()
-                                .gap(px(5.))
-                                .child(div().flex_1().rounded(px(10.)).bg(s.primary_container))
-                                .child(div().w(px(20.)).rounded(px(10.)).bg(s.primary)),
-                        )
-                        .selected(self.style_choice == i)
-                        .on_click(click(cx, move |this, _| this.style_choice = i)),
-                ),
-            );
+        // The second row is narrower than the cards' contents: they share it and clip.
+        let mut rows = Vec::new();
+        for (name, width) in [("style", 420.), ("style-narrow", 240.)] {
+            let mut cards = div().flex().gap(px(8.)).w(px(width));
+            for (i, (title, hint)) in styles.into_iter().enumerate() {
+                cards = cards.child(
+                    // `min_w_0` lets each card shrink with its row instead of overflowing it.
+                    div().flex_1().min_w_0().child(
+                        SelectCard::new((name, i), title)
+                            .hint(hint)
+                            .preview(
+                                div()
+                                    .h(px(52.))
+                                    .rounded(px(14.))
+                                    .bg(s.surface_container)
+                                    .p(px(6.))
+                                    .flex()
+                                    .gap(px(5.))
+                                    .child(div().flex_1().rounded(px(10.)).bg(s.primary_container))
+                                    .child(div().w(px(20.)).rounded(px(10.)).bg(s.primary)),
+                            )
+                            .selected(self.style_choice == i)
+                            .on_click(click(cx, move |this, _| this.style_choice = i)),
+                    ),
+                );
+            }
+            rows.push(cards);
         }
+        let cards = column().gap(px(12.)).children(rows);
 
         let presets = SEEDS.map(hex);
         page()
@@ -2387,7 +2394,11 @@ impl Demos {
                 "Hover a row to reveal its star; turning it on spins it in and throws a burst.",
                 projects,
             ))
-            .child(demo("Select cards", "The style picker: a preview, a title and a hint.", cards))
+            .child(demo(
+                "Select cards",
+                "The style picker: a preview, a title and a hint. In a narrow row (second line) the cards share the width and clip their titles.",
+                cards,
+            ))
             .child(demo(
                 "Accent swatches",
                 "The chosen swatch turns into a rounded diamond with a double ring; the wheel opens an HSV picker.",
