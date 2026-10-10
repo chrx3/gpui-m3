@@ -283,11 +283,6 @@ impl RenderOnce for ReorderList {
                                 s.bounds.get(k).is_some_and(|b| b.contains(&e.position))
                             })
                         };
-                        eprintln!(
-                            "DBG down hit={hit:?} pos={:?} bounds={:?}",
-                            e.position,
-                            st.read(cx).bounds
-                        );
                         if let Some(from) = hit {
                             st.update(cx, |s, _| {
                                 s.drag = Some(Drag {
@@ -330,7 +325,6 @@ impl RenderOnce for ReorderList {
                                     .then(|| (i, e.position.y > b.center().y))
                             })
                         };
-                        eprintln!("DBG move target={target:?}");
                         st.update(cx, |s, cx| {
                             if let Some(d) = s.drag.as_mut() {
                                 d.moved = true;
@@ -352,7 +346,6 @@ impl RenderOnce for ReorderList {
                         }) else {
                             return;
                         };
-                        eprintln!("DBG up moved={} target={:?}", drag.moved, drag.target);
                         if !drag.moved {
                             return;
                         }
