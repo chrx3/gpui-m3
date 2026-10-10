@@ -12,7 +12,7 @@ use super::photo::{self, PhotoSource};
 
 use crate::interaction::rounded_rect;
 use crate::motion::{
-    Spring, animate, animate_color, animate_f32, continuous, continuous_at, cubic_bezier, key,
+    Spring, animate, animate_color, animate_f32, continuous_at, cubic_bezier, key,
 };
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
 use crate::theme::{FONT_FAMILY, Theme};
@@ -459,7 +459,8 @@ impl Default for LoadingIndicator {
 impl RenderOnce for LoadingIndicator {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let t = continuous(window, cx);
+        // 30 fps: it looks just as smooth and each frame redraws the view that holds it.
+        let t = continuous_at(30., window, cx);
         // Each shape lasts 0.7 s and reaches the next one with a bouncy spring; the rotation is continuous.
         const SEGMENT: f32 = 0.7;
         let n = LOADING_SEQUENCE.len();
@@ -528,7 +529,8 @@ impl WavyProgress {
 impl RenderOnce for WavyProgress {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let t = continuous(window, cx);
+        // 30 fps: it looks just as smooth and each frame redraws the view that holds it.
+        let t = continuous_at(30., window, cx);
         let indeterminate = self.value.is_none();
         let value = animate_f32(
             key(&self.id, "value"),
