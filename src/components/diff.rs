@@ -350,7 +350,7 @@ fn skipped(prev: &DiffLine, next: &DiffLine) -> Option<usize> {
 }
 
 thread_local! {
-    static DIFFS: std::cell::RefCell<Lru<Rc<Diff>>> = const { std::cell::RefCell::new(Lru::new(64)) };
+    static DIFFS: std::cell::RefCell<Lru<Rc<Diff>>> = const { std::cell::RefCell::new(Lru::new(1024)) };
 }
 
 /// [`Diff::new`] cached by content (renders do not recompute it).

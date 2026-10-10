@@ -634,7 +634,7 @@ pub fn parse_markdown(text: &str) -> Vec<MarkdownBlock> {
 }
 
 thread_local! {
-    static PARSED: RefCell<Lru<Rc<Vec<MarkdownBlock>>>> = const { RefCell::new(Lru::new(128)) };
+    static PARSED: RefCell<Lru<Rc<Vec<MarkdownBlock>>>> = const { RefCell::new(Lru::new(4096)) };
 }
 
 /// [`parse_markdown`] with a per-thread cache keyed by the text.

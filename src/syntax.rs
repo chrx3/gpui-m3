@@ -486,7 +486,7 @@ struct Partial {
 type Tokens = Rc<[(Range<usize>, TokenKind)]>;
 
 thread_local! {
-    static HIGHLIGHTS: RefCell<Lru<Option<Tokens>>> = const { RefCell::new(Lru::new(200)) };
+    static HIGHLIGHTS: RefCell<Lru<Option<Tokens>>> = const { RefCell::new(Lru::new(4096)) };
     static PARTIAL: RefCell<Option<Partial>> = const { RefCell::new(None) };
 }
 
