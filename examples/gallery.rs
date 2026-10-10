@@ -1,4 +1,4 @@
-//! Gallery for trying out each component and comparing it with the reference design.
+//! Gallery for trying out each component.
 //!
 //! `cargo run --example gallery`
 
@@ -53,7 +53,7 @@ const SECTIONS: [(&str, &str); 16] = [
     ("Editor and layout", "terminal"),
 ];
 
-/// the reference design's seed colors for M3 Expressive; the first one is the base scheme.
+/// Seed colors for M3 Expressive; the first one is the base scheme.
 const SEEDS: [&str; 9] = [
     "#6750a4", "#0b57d0", "#006a6a", "#386a20", "#7d5700", "#b3261e", "#984061", "#5b5f97",
     "#00639b",
@@ -349,15 +349,6 @@ impl Gallery {
         Theme::set(self.dark, self.seed_color(), cx);
     }
 
-    fn demo_url(&self) -> String {
-        let mode = if self.dark { "dark" } else { "light" };
-        let accent = if self.seed == 0 {
-            String::new()
-        } else {
-            format!("&accent={}", &SEEDS[self.seed][1..])
-        };
-        format!("http://localhost:1420/?style=expressive&mode={mode}{accent}&demo&chat")
-    }
 }
 
 impl Demos {
@@ -472,7 +463,7 @@ impl Demos {
             term_height: px(140.),
             open_files: vec!["springs.rs", "theme.rs", "motion.rs", "Cargo.toml"],
             favorite_projects: vec!["gpui-m3", "atic"],
-            other_projects: vec!["demo", "zed", "material-colors"],
+            other_projects: vec!["notes", "zed", "material-colors"],
             cropper: None,
             cropped: None,
             pop_key: 0,
@@ -655,16 +646,9 @@ impl Render for Gallery {
                                 div()
                                     .text_size(px(12.))
                                     .text_color(s.on_surface_variant)
-                                    .child("GPUI · the reference design components"),
+                                    .child("GPUI components"),
                             ),
                     ),
-            )
-            .child(
-                Fab::new("fab-demo", "export")
-                    .label("Open in the reference design")
-                    .on_click(click(cx, |this: &mut Gallery, cx| {
-                        cx.open_url(&this.demo_url())
-                    })),
             )
             .child(div().h(px(6.)))
             .child(
@@ -793,7 +777,7 @@ impl Gallery {
                     if self.dark { 1 } else { 0 },
                 )
                 .on_change({
-                    // Circular reveal from the pointer, like the reference design's M3 theme switch.
+                    // Circular reveal from the pointer, like an M3 theme switch.
                     let view = cx.entity().downgrade();
                     move |i: usize, window, cx| {
                         view.update(cx, |this, cx| {
@@ -1036,7 +1020,7 @@ impl Demos {
                         row()
                             .child(Chip::new("c-assist", "Explain this code").icon("spark"))
                             .child(Chip::new("c-assist2", "Write tests").icon("check"))
-                            .child(Chip::new("c-project", "demo").icon("folder").filled())
+                            .child(Chip::new("c-project", "notes").icon("folder").filled())
                             .child(
                                 Chip::new("c-dot", "Running")
                                     .leading(div().size(px(8.)).rounded(px(4.)).bg(Theme::of(cx).success)),
@@ -1077,7 +1061,7 @@ impl Demos {
 
     fn navigation(&self, cx: &mut Context<Self>) -> AnyElement {
         let s = *Theme::of(cx);
-        let projects = ["demo", "dashboard-php", "api-clientes"];
+        let projects = ["notes", "dashboard-php", "api-clientes"];
         let mut drawer = div()
             .flex()
             .flex_col()
@@ -1178,7 +1162,7 @@ impl Demos {
                 "Pill rows; the selected row's indicator grows from the center and stretches with the spring (.nav-row).",
                 row().items_start().child(drawer).child(
                     demo_note(
-                        "Try it: switch rows quickly several times. The indicator always grows from the center, as in the reference design.",
+                        "Try it: switch rows quickly several times. The indicator always grows from the center.",
                         cx,
                     ),
                 ),
@@ -1306,7 +1290,7 @@ impl Demos {
         let turns = [
             "Port the code editor to GPUI with line numbers, undo and a virtualized list so large files stay fast",
             "Add a splitter for the terminal height",
-            "Why does the theme flash when switching to dark mode? It should reveal from the click like the reference design",
+            "Why does the theme flash when switching to dark mode? It should reveal from the click",
         ];
         let mut menu = Menu::new("rewind-menu").width(340.).section("Rewind to");
         for (i, text) in turns.into_iter().enumerate() {
@@ -1352,7 +1336,7 @@ impl Demos {
         }
         let mut avatars = row();
         for name in [
-            "demo",
+            "notes",
             "dashboard-php",
             "api-clientes",
             "chrsx3-web",
@@ -1377,10 +1361,10 @@ impl Demos {
             );
         }
         page()
-            .child(demo("Shape library", "The 14 M3 Expressive shapes, fitted to their box as in the reference design (shapes.ts).", grid))
+            .child(demo("Shape library", "The 14 M3 Expressive shapes, fitted to their box.", grid))
             .child(demo(
                 "Breathing shapes",
-                "the reference design's home screen composition: three shapes that slowly morph and rotate (.hero-shapes).",
+                "A home screen composition: three shapes that slowly morph and rotate (.hero-shapes).",
                 div()
                     .flex()
                     .items_center()
@@ -1398,7 +1382,7 @@ impl Demos {
                     )
                     .child(div().mt(px(34.)).child(Shape::new(ShapeName::Pentagon).size(px(28.)).color(s.secondary_container).breathe(ShapeName::Gem, 5.).spin(18.))),
             ))
-            .child(demo("Project avatars", "Shape and tone are derived from the name (same hash as the reference design).", avatars))
+            .child(demo("Project avatars", "Shape and tone are derived from the name (stable hash).", avatars))
             .into_any_element()
     }
 
@@ -2338,7 +2322,7 @@ impl Demos {
     fn appearance(&self, cx: &mut Context<Self>) -> AnyElement {
         let s = *Theme::of(cx);
         let mut projects = column().w(px(280.)).gap(px(2.));
-        for (i, name) in ["gpui-m3", "demo", "atic"].into_iter().enumerate() {
+        for (i, name) in ["gpui-m3", "notes", "atic"].into_iter().enumerate() {
             let group: SharedString = format!("project-{i}").into();
             projects = projects.child(
                 NavItem::new(("project", i), name)
@@ -2979,7 +2963,7 @@ impl Demos {
     fn small_motion(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
         let mut avatars = row().gap(px(18.));
-        for (i, name) in ["the reference design", "Bruno", "Carla", "Diego"].into_iter().enumerate() {
+        for (i, name) in ["Ana", "Bruno", "Carla", "Diego"].into_iter().enumerate() {
             avatars = avatars.child(Avatar::new(name).size(px(36.)).hover_spin(("spin", i)));
         }
         let pop = self.pop_key;

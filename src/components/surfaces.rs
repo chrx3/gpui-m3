@@ -15,7 +15,7 @@ use crate::motion::{Spring, animate_color, animate_f32, entrance, key, replay};
 use crate::shapes::Tone;
 use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, alpha, mix};
 
-/// Shadow for menus and popovers (the reference design's `--shadow-pop`).
+/// Shadow for menus and popovers .
 pub fn shadow_pop(s: &Scheme) -> Vec<BoxShadow> {
     vec![
         BoxShadow {
@@ -255,7 +255,7 @@ pub struct Menu {
     stagger: bool,
 }
 
-/// Delay between the entrances of consecutive menu items (the reference design: 25 ms, up to the fifth).
+/// Delay between the entrances of consecutive menu items (25 ms, up to the fifth).
 const ITEM_STAGGER: f32 = 0.025;
 
 impl Menu {
@@ -931,7 +931,7 @@ impl RenderOnce for MenuItem {
     }
 }
 
-/// Color card (the reference design's version card): 28 px corners and a tonal container.
+/// Color card (a version card): 28 px corners and a tonal container.
 #[derive(IntoElement)]
 pub struct Card {
     id: Option<ElementId>,

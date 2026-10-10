@@ -34,7 +34,7 @@ First release.
   drops them to a second line; `ListGroup` rows and `MenuItem` trailing content no longer push
   past the group.
   - `Scheme::error_container` / `on_error_container`; `motion::replay` and `motion::pulse`.
-- Added for the reference design port, batch 1:
+- Added while porting a chat IDE to GPUI, batch 1:
   - `DividerLabel`: a labeled separator (compaction; model switch with wavy lines and a tonal
     pill, outlined and flowing while pending); its lines grow out from the label.
   - `Banner`: tonal offer card with a shape mark and pill actions, or a subtle/warning notice,
@@ -53,7 +53,7 @@ First release.
     ring (`interaction::use_focus`, `focusable`, `focus_ring`).
   - `CommandPalette`: the pointer moves the selection, the list scrolls to it and the matching
     text is highlighted; `MenuItem::hover_fill` and `MenuItem::label_highlights`.
-- Added for the reference design port, batch 2 (code):
+- Added while porting a chat IDE to GPUI, batch 2 (code):
   - `Diff` (a real line diff with `similar`: old/new numbers, `hunks`, `rows` with folding,
     `from_unified` for `git diff` output), `diff_stats`, `DiffView` (folded runs as
     "⋯ N unchanged lines", "Show all" past 400 rows, header with `+N −M`, new-file style) and
@@ -67,7 +67,7 @@ First release.
     rules, emphasis, strikethrough, inline code, tables, links and bare URLs, images, code
     blocks), cached by text for streaming; `on_link`, `on_path` (`looks_like_path`,
     `split_path_line`) and `on_image`; `parse_markdown` for tests and custom renderers.
-- Added for the reference design port, batch 3 (editor, layout and motion):
+- Added while porting a chat IDE to GPUI, batch 3 (editor, layout and motion):
   - `CodeEditor` over a `CodeBuffer`: line numbers, a virtualized list, selection with mouse
     and keys, clipboard, undo/redo, Tab / Shift+Tab, auto-indent, bracket pairs, `Save` on
     Ctrl+S, `dirty` and the selection as context. Colors come from a `LineHighlighter`;

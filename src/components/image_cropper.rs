@@ -115,7 +115,7 @@ fn crop(image: &RenderImage, rect: (f32, f32, f32), out: u32) -> Option<RenderIm
     Some(RenderImage::new(vec![image::Frame::new(buffer)]))
 }
 
-/// Photo framing for a profile picture (the reference design's `PhotoCropper`). Create it with the decoded image
+/// Photo framing for a profile picture. Create it with the decoded image
 /// and keep the entity; put it in a [`super::Dialog`] with your own Cancel / Save buttons that
 /// call [`ImageCropper::cancel`] and [`ImageCropper::confirm`]. Focus it so Enter and Escape work.
 ///

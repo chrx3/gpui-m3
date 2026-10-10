@@ -53,7 +53,7 @@ pub(crate) fn suggestion_bindings() -> Vec<KeyBinding> {
     bindings
 }
 
-/// Keyboard highlight of a suggestion list: wraps around at both ends, like the reference design's mentions.
+/// Keyboard highlight of a suggestion list: wraps around at both ends.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SuggestionNav {
     selected: usize,
@@ -160,12 +160,12 @@ pub fn match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
     }
 }
 
-/// Ranks a path for a mention query, like the reference design: lower is better, `None` if it does not match.
+/// Ranks a path for a mention query: lower is better, `None` if it does not match.
 /// The file name starting with the query beats the file name containing it, which beats the
 /// path containing it, which beats a subsequence; ties go to the shorter path.
 pub fn mention_score(path: &str, query: &str) -> Option<usize> {
     if query.is_empty() {
-        // No query yet: keep the given order (the reference design shows the first files).
+        // No query yet: keep the given order (the first files come first).
         return Some(0);
     }
     let rel = path.to_lowercase();
@@ -233,7 +233,7 @@ impl Suggestion {
     }
 }
 
-/// Anchored completion list (the reference design's @-mention popover): a menu of suggestions with the matching
+/// Anchored completion list (an @-mention popover): a menu of suggestions with the matching
 /// part of each label highlighted. Rows rise in with a short stagger.
 ///
 /// The list does not take focus; the text input keeps it. Wire the keys like this:
@@ -287,7 +287,7 @@ impl SuggestionList {
         self
     }
 
-    /// Width in pixels (460 by default, as in the reference design).
+    /// Width in pixels (460 by default).
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self
@@ -351,7 +351,7 @@ impl RenderOnce for SuggestionList {
             if let Some(f) = self.on_pick.clone() {
                 entry = entry.on_click(move |_, w, cx| f(row, w, cx));
             }
-            // the reference design's m3-item-in: each row drops 6 px into place, 25 ms after the previous one.
+            // Each row drops 6 px into place, 25 ms after the previous one.
             let delay = row.min(4) as f32 * 0.025;
             let p = entrance(
                 ElementId::NamedChild(Box::new(key(&self.id, "row-in")), row.to_string().into()),
@@ -497,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn mention_ranking_matches_demo() {
+    fn mention_ranking_puts_name_matches_first() {
         let files = [
             "src/components/Agent.tsx",
             "src/styles/agent-notes.css",

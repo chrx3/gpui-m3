@@ -579,7 +579,7 @@ pub fn play_on_rise(
     })
 }
 
-/// Keeps something on screen while it animates out, like the reference design's `<Presence>`.
+/// Keeps something on screen while it animates out.
 ///
 /// Returns `Some(progress)` while the content should be drawn: `1.` while `show` is true, then
 /// falling to `0.` with the fast effects spring once `show` turns false (exits are shorter than

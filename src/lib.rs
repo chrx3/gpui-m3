@@ -1,4 +1,4 @@
-//! Material 3 Expressive components for GPUI, based on the design of the reference design app.
+//! Material 3 Expressive components for GPUI.
 //!
 //! ```ignore
 //! Application::new().with_assets(gpui_m3::Assets).run(|cx| {

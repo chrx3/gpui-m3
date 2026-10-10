@@ -845,7 +845,7 @@ impl Render for TextField {
         };
         let height = self.height.map_or(height, f32::from);
         let text_size = self.font_size.map_or(text_size, f32::from);
-        // Like the reference design's composer and search fields: the pill deepens and its corners open up on focus.
+        // Like a chat composer or a search field: the pill deepens and its corners open up on focus.
         let radius = px(animate_f32(
             key(&id, "radius"),
             Spring::SPATIAL_FAST,

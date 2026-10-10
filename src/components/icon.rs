@@ -29,7 +29,7 @@ impl Icon {
     }
 
     /// "Pops" in when it first appears: grows from 20 % while turning from -60° and fading in,
-    /// with the fast spatial spring (the reference design's `m3-icon-pop`: a copy check, an unread dot). `id`
+    /// with the fast spatial spring (a copy check, an unread dot). `id`
     /// must be unique within the view; give the icon a new id to pop it again.
     pub fn pop(mut self, id: impl Into<ElementId>) -> Self {
         self.pop = Some(id.into());

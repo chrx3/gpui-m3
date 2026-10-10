@@ -12,7 +12,7 @@ use crate::interaction::{interactive, use_interaction};
 use crate::motion::{Spring, animate, animate_color, animate_f32, key};
 use crate::theme::{Theme, alpha};
 
-/// Stepped slider (the reference design's effort picker): the current stop becomes a vertical bar
+/// Stepped slider (an effort picker): the current stop becomes a vertical bar
 /// and the preceding stops are filled with the primary color. With no value (`None`) no stop
 /// is marked, e.g. for a "default" state.
 #[derive(IntoElement)]

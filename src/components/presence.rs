@@ -14,7 +14,7 @@ pub enum Exit {
     /// Fades out (scrims, menus).
     #[default]
     Fade,
-    /// Fades out while sinking 8 px (the reference design's `m3-dialog-out`: banners, dialogs).
+    /// Fades out while sinking 8 px (banners, dialogs).
     Sink,
     /// Fades out while rising 6 px (toasts and popovers that open upward close toward the anchor).
     Rise,
@@ -36,7 +36,7 @@ impl Exit {
     }
 }
 
-/// Like the reference design's `<Presence>`: shows its children while `show` is true and, when it turns false,
+/// Shows its children while `show` is true and, when it turns false,
 /// keeps drawing them while they animate out with the fast effects spring, then draws nothing.
 /// While leaving, the children ignore the pointer.
 ///

@@ -46,7 +46,7 @@ impl DividerLabel {
         }
     }
 
-    /// Wavy lines and a tonal pill (the reference design's model mark).
+    /// Wavy lines and a tonal pill (a model switch mark).
     pub fn pill(mut self) -> Self {
         self.style = DividerStyle::Pill;
         self

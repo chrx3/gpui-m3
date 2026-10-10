@@ -17,7 +17,7 @@ type DropHandler = Rc<dyn Fn(&ExternalPaths, &mut Window, &mut App)>;
 
 /// An area that accepts files dragged from the system (`ExternalPaths`). While files are over
 /// it, a "Drop to attach" layer covers it: primary border, tinted background, icon and label.
-/// The layer springs in (the reference design's `m3-drop`) and fades out.
+/// The layer springs in and fades out.
 #[derive(IntoElement)]
 pub struct DropZone {
     id: ElementId,

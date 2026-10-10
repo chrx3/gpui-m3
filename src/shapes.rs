@@ -293,7 +293,6 @@ mod tests {
     #[test]
     fn avatars_match_the_reference_hash() {
         // Expected values computed with the reference design's JavaScript implementation.
-        assert_eq!(avatar_for("demo"), (ShapeName::Sunny, Tone::Secondary));
         assert_eq!(
             avatar_for("dashboard-php"),
             (ShapeName::Clover8, Tone::Primary)

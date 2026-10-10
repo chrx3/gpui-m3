@@ -117,7 +117,7 @@ impl RenderOnce for Dialog {
         let s = *Theme::of(cx);
         let fade = entrance(key(&self.id, "scrim"), Spring::EFFECTS, 0., window, cx).clamp(0., 1.)
             * self.shown;
-        // M3 Expressive entrance (the reference design's m3-dialog-in): grows from 86 % while rising 18 px and
+        // M3 Expressive entrance: grows from 86 % while rising 18 px and
         // opening its corners from 56 px. GPUI cannot scale, so the width grows instead.
         let p = entrance(key(&self.id, "grow"), Spring::SPATIAL, 0., window, cx);
         let rest = 1. - p;
@@ -235,7 +235,7 @@ impl Toast {
 impl RenderOnce for Toast {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        // M3 Expressive entrance (the reference design's m3-toast-in): rises 28 px from 80 % with 8 px corners,
+        // M3 Expressive entrance: rises 28 px from 80 % with 8 px corners,
         // growing and rounding with the fast spatial spring. GPUI cannot scale, so the height and
         // padding grow instead.
         let p = entrance(key(&self.id, "grow"), Spring::SPATIAL_FAST, 0., window, cx);
@@ -325,7 +325,7 @@ impl Render for Tooltip {
     }
 }
 
-/// Linear progress meter (the reference design's usage meter): a rounded track with a spring-animated fill.
+/// Linear progress meter (a usage meter): a rounded track with a spring-animated fill.
 #[derive(IntoElement)]
 pub struct LinearProgress {
     id: ElementId,

@@ -11,7 +11,7 @@ use gpui::{
 use crate::motion::{MotionSettings, Spring, cubic_bezier, elapsed};
 use crate::theme::{Scheme, Theme, alpha};
 
-/// How long [`animate_scheme`] blends the colors (the reference design: 0.45 s).
+/// How long [`animate_scheme`] blends the colors (0.45 s).
 pub const SCHEME_BLEND: f32 = 0.45;
 
 /// Generation of the running blend, so a newer change cancels an older one.
@@ -110,7 +110,7 @@ impl Global for RevealState {}
 /// Seconds the reveal layer takes to fade once the new theme is in place.
 const REVEAL_FADE: f32 = 0.2;
 
-/// Circular theme change from the pointer (the reference design's M3 view transition): a circle of the new
+/// Circular theme change from the pointer (the M3 view transition): a circle of the new
 /// background grows from where the user clicked with the slow spatial spring; when it covers
 /// the window the new scheme is applied and the circle fades away.
 ///

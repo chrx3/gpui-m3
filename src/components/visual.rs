@@ -77,7 +77,7 @@ impl Shape {
         self
     }
 
-    /// Breathes toward `other` and back, in a cycle of `period` seconds (the reference design uses 7 s).
+    /// Breathes toward `other` and back, in a cycle of `period` seconds (7 s feels calm).
     pub fn breathe(mut self, other: ShapeName, period: f32) -> Self {
         self.morph = Some((other, period));
         self
@@ -279,7 +279,7 @@ impl Avatar {
         }
     }
 
-    /// Turns 40° and grows 8 % while hovered, with the fast spatial spring (the reference design's project
+    /// Turns 40° and grows 8 % while hovered, with the fast spatial spring (for project
     /// avatars); the initial stays upright. `id` must be unique within the view. Use
     /// [`Avatar::hovered`] to follow a whole row's hover instead of the avatar's own.
     pub fn hover_spin(mut self, id: impl Into<ElementId>) -> Self {
@@ -314,7 +314,7 @@ impl Avatar {
         self
     }
 
-    /// Morphs toward `other` and back when hovered (the reference design's profile avatar uses Clover8).
+    /// Morphs toward `other` and back when hovered (Clover8 suits a profile avatar).
     /// See [`Shape::breathe_on_hover`].
     pub fn breathe_on_hover(mut self, id: impl Into<ElementId>, other: ShapeName) -> Self {
         self.hover = Some((id.into(), other));
@@ -338,7 +338,7 @@ impl RenderOnce for Avatar {
         let (shape, tone) = avatar_for(&self.name);
         let s = Theme::of(cx);
         let has_photo = self.photo.is_some();
-        // Photo avatars sit on the tertiary container, like the reference design's user avatar.
+        // Photo avatars sit on the tertiary container.
         let (bg, fg) = if has_photo {
             (s.tertiary_container, s.on_tertiary_container)
         } else {
@@ -615,7 +615,7 @@ impl RenderOnce for WavyProgress {
     }
 }
 
-/// Progress ring (the reference design's context indicator).
+/// Progress ring (a context indicator).
 #[derive(IntoElement)]
 pub struct Ring {
     id: ElementId,

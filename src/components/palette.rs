@@ -176,7 +176,7 @@ impl CommandPalette {
         cx.notify();
     }
 
-    /// The pointer moved over a row: it becomes the selection (as in the reference design's lists).
+    /// The pointer moved over a row: it becomes the selection (as in most lists).
     fn hover_row(&mut self, row: usize, cx: &mut Context<Self>) {
         if self.selected != row && row < self.matches.len() {
             self.selected = row;

@@ -33,7 +33,7 @@ struct Drag {
 ///
 /// The handle is an 8 px strip that fills its parent along the other axis. Place it yourself,
 /// usually absolutely on the edge it resizes, or let [`Splitter`] place it. On hover and while
-/// dragging a 2 px line in the primary color shows (the reference design's `.term-resize`); [`ResizeHandle::pill`]
+/// dragging a 2 px line in the primary color shows; [`ResizeHandle::pill`]
 /// shows the M3 pane drag handle instead.
 #[derive(IntoElement)]
 pub struct ResizeHandle {
