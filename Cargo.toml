@@ -22,6 +22,11 @@ similar = { version = "2", default-features = false, features = ["text"] }
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy", "yaml-load"] }
 unicode-segmentation = "1"
 
+# gpui 0.2.2 reaches `xattr` 0.2.3 (through gpui_http_client -> zed-async-tar), which uses
+# `libc::ENOATTR`; libc 0.2.190 removed it on Linux. Until gpui moves on, keep libc below it.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = ">=0.2.150, <0.2.190"
+
 # Unoptimized GPUI is very slow. In development, dependencies are optimized (built once) and
 # this crate gets a light optimization that keeps rebuilds fast. Copy these into your app.
 [profile.dev.package."*"]

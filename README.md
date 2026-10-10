@@ -135,6 +135,8 @@ With nothing animating, the gallery does not redraw at all.
 - Roboto ships as a variable font with weights; width axes (`font-stretch`) are not available in GPUI.
 - Monospace text uses the platform font (Consolas, Menlo or DejaVu Sans Mono); none is bundled.
 - GPUI does not select text, so `Markdown` offers no selection; put a Copy action next to it.
+- GPUI 0.2.2 caches text measurements without the truncation width, so text with `text_ellipsis()`
+  can stay as "…" if its first layout was very narrow. `Button` and `SelectCard` clip instead.
 
 ## Roadmap
 
@@ -146,8 +148,13 @@ With nothing animating, the gallery does not redraw at all.
 
 ## Status
 
-`0.1` is young. It is developed and tested on Windows; CI builds it on macOS and Linux. GPUI itself is
-pre-1.0 and changes its API between versions, so `gpui-m3` tracks `gpui 0.2.x`.
+`0.1` is young. It is developed and tested on Windows; it also builds on Linux (checked in a
+Debian container) and built on macOS in earlier CI runs, but neither is used day to day. GPUI itself
+is pre-1.0 and changes its API between versions, so `gpui-m3` tracks `gpui 0.2.x`.
+
+On Linux, `gpui 0.2.2` pulls in `xattr 0.2.3`, which does not compile with `libc 0.2.190` or later.
+`gpui-m3` therefore requires `libc` below 0.2.190 on Linux; if another dependency of yours needs a
+newer one, the two cannot be resolved together until GPUI updates.
 
 ## Credits
 
