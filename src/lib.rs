@@ -32,7 +32,7 @@ pub fn init(cx: &mut App) {
     let fonts: Vec<Cow<'static, [u8]>> =
         vec![Cow::Borrowed(include_bytes!("../assets/fonts/Roboto.ttf"))];
     if let Err(err) = cx.text_system().add_fonts(fonts) {
-        eprintln!("gpui_m3: could not load Roboto: {err}");
+        log::warn!("gpui_m3: could not load Roboto: {err}");
     }
     if !cx.has_global::<Theme>() {
         cx.set_global(Theme::new(false, None));

@@ -344,7 +344,9 @@ impl RenderOnce for Button {
             .flex()
             .items_center()
             .when(!self.truncate || icon_only, |d| d.flex_none())
-            .when(self.truncate && !icon_only, |d| d.flex_shrink().min_w_0().overflow_hidden())
+            .when(self.truncate && !icon_only, |d| {
+                d.flex_shrink().min_w_0().overflow_hidden()
+            })
             .when(icon_only, |d| d.w(px(height)))
             .justify_center()
             .gap(px(if self.label_on_hover {
@@ -355,7 +357,9 @@ impl RenderOnce for Button {
                 8.
             }))
             .h(px(height))
-            .when(!icon_only, |d| d.px(px(if self.icon.is_some() { pad - 2. } else { pad })))
+            .when(!icon_only, |d| {
+                d.px(px(if self.icon.is_some() { pad - 2. } else { pad }))
+            })
             .corners(all(radius))
             .bg(bg)
             .text_color(fg)

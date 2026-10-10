@@ -176,7 +176,10 @@ impl Morph {
         let cx = f32::from(bounds.origin.x) + w / 2.;
         let cy = f32::from(bounds.origin.y) + h / 2.;
         let (sin, cos) = self.rotation.sin_cos();
-        let toward = self.toward.filter(|(_, w)| *w != 0.).map(|(shape, w)| (shape.unit_points(), w));
+        let toward = self
+            .toward
+            .filter(|(_, w)| *w != 0.)
+            .map(|(shape, w)| (shape.unit_points(), w));
         a.iter()
             .enumerate()
             .map(|(i, &(ax, ay))| {

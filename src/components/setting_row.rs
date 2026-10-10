@@ -77,16 +77,22 @@ impl RenderOnce for SettingRow {
         let layer = state
             .as_ref()
             .map(|state| state_layer(&self.id, state, all(px(14.)), s.on_surface, window, cx));
-        let mut text = div().flex().flex_col().flex_1().min_w_0().gap(px(1.)).child(
-            div()
-                .font_weight(FontWeight(500.))
-                .text_color(if self.muted {
-                    s.on_surface_variant
-                } else {
-                    s.on_surface
-                })
-                .child(self.title),
-        );
+        let mut text = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .gap(px(1.))
+            .child(
+                div()
+                    .font_weight(FontWeight(500.))
+                    .text_color(if self.muted {
+                        s.on_surface_variant
+                    } else {
+                        s.on_surface
+                    })
+                    .child(self.title),
+            );
         if let Some(description) = self.description {
             text = text.child(
                 div()
@@ -118,7 +124,14 @@ impl RenderOnce for SettingRow {
         }
         row = row.child(text);
         if let Some(control) = self.control {
-            row = row.child(div().flex().flex_none().items_center().gap(px(6.)).child(control));
+            row = row.child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(control),
+            );
         }
         match (state, self.on_click) {
             (Some(state), Some(f)) => interactive(row, &state, true, true)

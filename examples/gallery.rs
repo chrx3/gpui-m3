@@ -5,26 +5,26 @@
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, AnyView, App, AppContext, Application, Bounds, ClickEvent, Context, ElementId, Entity,
-    ExternalPaths, FontStyle, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
-    KeyBinding, MouseButton, ParentElement, PathBuilder, Pixels, Point, Render, RenderImage, Rgba,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, TitlebarOptions, Window,
-    WindowAppearance, WindowBounds, WindowOptions, actions, anchored, canvas, deferred, div, point,
-    prelude::FluentBuilder, px, size,
+    AnyElement, AnyView, App, AppContext, Application, Bounds, ClickEvent, Context, ElementId,
+    Entity, ExternalPaths, FontStyle, FontWeight, HighlightStyle, Hsla, InteractiveElement,
+    IntoElement, KeyBinding, MouseButton, ParentElement, PathBuilder, Pixels, Point, Render,
+    RenderImage, Rgba, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    TitlebarOptions, Window, WindowAppearance, WindowBounds, WindowOptions, actions, anchored,
+    canvas, deferred, div, point, prelude::FluentBuilder, px, size,
 };
 use gpui_m3::{
     Avatar, Badge, Banner, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip,
     ChipSize, ChoiceRow, CodeBuffer, CodeEditor, CodeEditorEvent, ColorSwatches, Command,
     CommandPalette, CommandPaletteEvent, Dialog, DividerLabel, DotShape, DropZone, Exit,
     ExpandableCard, Fab, FavStar, HsvPicker, Icon, IconButton, IconTab, IconTabs, ImageCropper,
-    ImageCropperEvent, ImageThumb, Kbd, KeyCombo, KeyNames, LineHighlighter, LineHighlights, LinearProgress, ListGroup,
-    ListItem, LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem, PopDirection,
-    Popover, Presence, RailItem, ReorderEvent, ReorderList, Ring, Segment, SegmentedButtons,
-    SelectCard, SettingRow, Shape, ShapeName, Slider, SplitButton, Splitter, Spring, StopSlider, Suggestion,
-    SuggestionAccept, SuggestionDismiss, SuggestionList, SuggestionNav, SuggestionNext,
-    SuggestionPrevious, Switch, Tab, TabStrip, TextArea, TextAreaEvent, TextField, TextFieldEvent,
-    Theme, ThemeReveal, Toast, Tone, TreeRow, WavyProgress, animate_theme, apply_reorder,
-    context_menu,
+    ImageCropperEvent, ImageThumb, Kbd, KeyCombo, KeyNames, LineHighlighter, LineHighlights,
+    LinearProgress, ListGroup, ListItem, LoadingIndicator, Menu, MenuItem, MorphDot,
+    MotionSettings, NavItem, PopDirection, Popover, Presence, RailItem, ReorderEvent, ReorderList,
+    Ring, Segment, SegmentedButtons, SelectCard, SettingRow, Shape, ShapeName, Slider, SplitButton,
+    Splitter, Spring, StopSlider, Suggestion, SuggestionAccept, SuggestionDismiss, SuggestionList,
+    SuggestionNav, SuggestionNext, SuggestionPrevious, Switch, Tab, TabStrip, TextArea,
+    TextAreaEvent, TextField, TextFieldEvent, Theme, ThemeReveal, Toast, Tone, TreeRow,
+    WavyProgress, animate_theme, apply_reorder, context_menu,
     motion::{animate_color, animate_f32, key, pulse},
     rank_mentions,
     theme::{FONT_FAMILY, alpha, hex},
@@ -348,7 +348,6 @@ impl Gallery {
     fn apply_theme(&self, cx: &mut App) {
         Theme::set(self.dark, self.seed_color(), cx);
     }
-
 }
 
 impl Demos {

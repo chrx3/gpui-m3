@@ -8,6 +8,7 @@ authors = ["chrx3"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/chrx3/gpui-m3"
 readme = "README.md"
+documentation = "https://docs.rs/gpui-m3"
 keywords = ["gpui", "material-design", "ui", "components", "gui"]
 categories = ["gui"]
 exclude = ["/docs", "/.github", "/.cargo"]
@@ -16,6 +17,7 @@ exclude = ["/docs", "/.github", "/.cargo"]
 gpui = "0.2.2"
 # The crate GPUI decodes images with; used to build shaped photo rasters.
 image = { version = "0.25", default-features = false }
+log = "0.4"
 material-colors = "0.4"
 pulldown-cmark = { version = "0.13", default-features = false }
 similar = { version = "2", default-features = false, features = ["text"] }
@@ -26,6 +28,11 @@ unicode-segmentation = "1"
 # `libc::ENOATTR`; libc 0.2.190 removed it on Linux. Until gpui moves on, keep libc below it.
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = ">=0.2.150, <0.2.190"
+
+[features]
+# Counts which call sites keep requesting animation frames, for `motion::take_frame_requests`.
+# Off by default: it takes a lock on every frame request.
+frame-stats = []
 
 # Unoptimized GPUI is very slow. In development, dependencies are optimized (built once) and
 # this crate gets a light optimization that keeps rebuilds fast. Copy these into your app.

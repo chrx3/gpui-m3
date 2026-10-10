@@ -68,7 +68,10 @@ impl Default for KeyNames {
 impl KeyNames {
     pub fn english() -> Self {
         Self {
-            names: ENGLISH.iter().map(|(k, v)| (*k, SharedString::from(*v))).collect(),
+            names: ENGLISH
+                .iter()
+                .map(|(k, v)| (*k, SharedString::from(*v)))
+                .collect(),
         }
     }
 
@@ -86,9 +89,9 @@ impl KeyNames {
     }
 
     fn with_all<'a>(self, pairs: impl IntoIterator<Item = (&'static str, &'a str)>) -> Self {
-        pairs
-            .into_iter()
-            .fold(self, |names, (token, name)| names.with(token, name.to_string()))
+        pairs.into_iter().fold(self, |names, (token, name)| {
+            names.with(token, name.to_string())
+        })
     }
 
     /// The word of a token, or the key in upper case when it has none.
@@ -384,7 +387,9 @@ mod tests {
         let es = KeyNames::spanish();
         assert_eq!(words("ctrl-shift-k", &es), [["Ctrl", "Mayús", "K"]]);
         assert_eq!(words("pagedown", &es), [["Av Pág"]]);
-        let custom = KeyNames::spanish().with("ctrl", "Control").with("nope", "x");
+        let custom = KeyNames::spanish()
+            .with("ctrl", "Control")
+            .with("nope", "x");
         assert_eq!(words("ctrl-space", &custom), [["Control", "Espacio"]]);
     }
 }

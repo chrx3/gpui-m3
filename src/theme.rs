@@ -1,7 +1,7 @@
 //! Material 3 Expressive color, typography and corner scale.
 //!
 //! The baseline schemes use the same tokens as the reference design (the M3 reference purple).
-//! [`Theme::from_seed`] generates a dynamic (tonal spot) scheme from any color.
+//! [`Scheme::from_seed`] generates a dynamic (tonal spot) scheme from any color.
 
 use std::str::FromStr;
 

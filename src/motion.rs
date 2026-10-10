@@ -127,30 +127,43 @@ pub fn clock(cx: &App) -> f32 {
 
 /// Who asks for frames: each call site of the motion helpers that keeps the window animating,
 /// counted until [`take_frame_requests`] reads them. Lets an app find what keeps it redrawing.
+/// Only with the `frame-stats` feature: otherwise nothing is counted.
+#[cfg(feature = "frame-stats")]
 static FRAME_REQUESTS: std::sync::Mutex<Vec<(&'static std::panic::Location<'static>, u32)>> =
     std::sync::Mutex::new(Vec::new());
 
 #[track_caller]
 pub(crate) fn request_frame(window: &mut Window) {
-    let at = std::panic::Location::caller();
-    if let Ok(mut list) = FRAME_REQUESTS.lock() {
-        match list.iter_mut().find(|(loc, _)| std::ptr::eq(*loc, at)) {
-            Some((_, n)) => *n += 1,
-            None => list.push((at, 1)),
+    #[cfg(feature = "frame-stats")]
+    {
+        let at = std::panic::Location::caller();
+        if let Ok(mut list) = FRAME_REQUESTS.lock() {
+            match list.iter_mut().find(|(loc, _)| std::ptr::eq(*loc, at)) {
+                Some((_, n)) => *n += 1,
+                None => list.push((at, 1)),
+            }
         }
     }
     window.request_animation_frame();
 }
 
 /// The frame requests since the last call, as `file:line` and count, most frequent first.
+/// Always empty without the `frame-stats` feature.
 pub fn take_frame_requests() -> Vec<(String, u32)> {
-    let Ok(mut list) = FRAME_REQUESTS.lock() else {
-        return Vec::new();
-    };
-    let mut out: Vec<(String, u32)> =
-        list.drain(..).map(|(at, n)| (format!("{}:{}", at.file(), at.line()), n)).collect();
-    out.sort_by(|a, b| b.1.cmp(&a.1));
-    out
+    #[cfg(feature = "frame-stats")]
+    {
+        let Ok(mut list) = FRAME_REQUESTS.lock() else {
+            return Vec::new();
+        };
+        let mut out: Vec<(String, u32)> = list
+            .drain(..)
+            .map(|(at, n)| (format!("{}:{}", at.file(), at.line()), n))
+            .collect();
+        out.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+        out
+    }
+    #[cfg(not(feature = "frame-stats"))]
+    Vec::new()
 }
 
 /// Clock for a continuous animation: requests the next frame and returns the current time.

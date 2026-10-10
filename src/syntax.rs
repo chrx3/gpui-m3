@@ -266,7 +266,7 @@ fn extras() -> &'static SyntaxSet {
         ] {
             match SyntaxDefinition::load_from_str(source, true, None) {
                 Ok(def) => builder.add(def),
-                Err(err) => eprintln!("gpui_m3: invalid bundled syntax: {err}"),
+                Err(err) => log::warn!("gpui_m3: invalid bundled syntax: {err}"),
             }
         }
         builder.build()
