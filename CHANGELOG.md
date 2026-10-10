@@ -8,7 +8,8 @@ First release.
   custom schemes via `Theme::set_scheme`.
 - Motion: analytic springs with the official M3 Expressive values, retargetable mid-flight;
   `animate*`, `animate_on_activate`, `entrance`, `continuous` / `continuous_at`, reduced motion.
-- Shapes: the 14 M3 Expressive shapes with morphing; avatars with a stable shape and tone.
+- Shapes: the 14 M3 Expressive shapes with morphing, plus three soft organic ones (`Blob`,
+  `Blob2`, `Pebble`) for decorations without corners or lobes; avatars with a stable shape and tone.
 - Components: `Button`, `IconButton`, `Fab`, `Switch`, `SegmentedButtons`, `StopSlider`, `Chip`,
   `SplitButton`, `Badge`, `NavItem`, `RailItem`, `IconTabs`, `Menu`, `MenuItem`, `Card`,
   `ListGroup`, `Bubble`, `Shape`, `Avatar`, `LoadingIndicator`, `WavyProgress`, `Ring`,

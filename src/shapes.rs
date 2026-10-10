@@ -26,10 +26,15 @@ pub enum ShapeName {
     Triangle,
     Gem,
     Square,
+    /// Organic, asymmetric blobs with no corners or lobes: two or three slow waves.
+    Blob,
+    Blob2,
+    /// A soft, slightly triangular pebble.
+    Pebble,
 }
 
 impl ShapeName {
-    pub const ALL: [ShapeName; 14] = [
+    pub const ALL: [ShapeName; 17] = [
         ShapeName::Circle,
         ShapeName::Oval,
         ShapeName::Cookie4,
@@ -44,6 +49,9 @@ impl ShapeName {
         ShapeName::Triangle,
         ShapeName::Gem,
         ShapeName::Square,
+        ShapeName::Blob,
+        ShapeName::Blob2,
+        ShapeName::Pebble,
     ];
 
     pub fn label(self) -> &'static str {
@@ -62,6 +70,9 @@ impl ShapeName {
             ShapeName::Triangle => "triangle",
             ShapeName::Gem => "gem",
             ShapeName::Square => "square",
+            ShapeName::Blob => "blob",
+            ShapeName::Blob2 => "blob2",
+            ShapeName::Pebble => "pebble",
         }
     }
 
@@ -82,6 +93,9 @@ impl ShapeName {
             ShapeName::Triangle => polygon(t, 3., 0.3, -PI / 2.),
             ShapeName::Gem => polygon(t, 4., 0.22, 0.),
             ShapeName::Square => polygon(t, 4., 0.3, PI / 4.),
+            ShapeName::Blob => 1. + 0.075 * (2. * t + 0.6).cos() + 0.045 * (3. * t - 1.1).cos(),
+            ShapeName::Blob2 => 1. + 0.07 * (2. * t - 0.9).cos() + 0.05 * (3. * t + 2.0).cos(),
+            ShapeName::Pebble => 1. + 0.06 * (3. * t).cos() + 0.03 * (2. * t + 1.3).cos(),
         }
     }
 
