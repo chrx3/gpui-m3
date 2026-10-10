@@ -85,6 +85,7 @@ pub struct ReorderList {
     id: ElementId,
     entries: Vec<Entry>,
     gap: Pixels,
+    grab: Option<Pixels>,
     on_reorder: Option<ReorderHandler>,
 }
 
@@ -94,6 +95,7 @@ impl ReorderList {
             id: id.into(),
             entries: Vec::new(),
             gap: px(2.),
+            grab: None,
             on_reorder: None,
         }
     }
@@ -131,6 +133,13 @@ impl ReorderList {
     /// Space between rows (2 px by default).
     pub fn gap(mut self, gap: Pixels) -> Self {
         self.gap = gap;
+        self
+    }
+
+    /// Only the top `height` of each row starts a drag (a project header with its
+    /// conversations below): the rest of the row keeps its own clicks and drags.
+    pub fn grab_height(mut self, height: Pixels) -> Self {
+        self.grab = Some(height);
         self
     }
 
@@ -266,6 +275,7 @@ impl RenderOnce for ReorderList {
         }
 
         let on_reorder = self.on_reorder;
+        let grab = self.grab;
         let listener = {
             let state = state.clone();
             canvas(
@@ -280,7 +290,10 @@ impl RenderOnce for ReorderList {
                         let hit = {
                             let s = st.read(cx);
                             rows_down.iter().position(|(k, _)| {
-                                s.bounds.get(k).is_some_and(|b| b.contains(&e.position))
+                                s.bounds.get(k).is_some_and(|b| {
+                                    b.contains(&e.position)
+                                        && grab.is_none_or(|h| e.position.y < b.origin.y + h)
+                                })
                             })
                         };
                         if let Some(from) = hit {
