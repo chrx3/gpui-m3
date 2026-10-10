@@ -205,6 +205,9 @@ pub fn use_focus(
 
 /// Makes an element focusable with Tab, hides the ring after clicks and shows it again on the
 /// next key press. Pair it with [`use_focus`] and [`focus_ring`].
+///
+/// A click does not move the keyboard focus to the element, so expanding a card does not take it
+/// away from a composer; Tab and Shift+Tab reach it.
 pub fn focusable(
     el: Stateful<Div>,
     state: &Entity<FocusState>,
@@ -213,6 +216,8 @@ pub fn focusable(
     let down = state.clone();
     let key_down = state.clone();
     el.track_focus(handle)
+        // Runs before GPUI's own focus-on-click, which skips prevented events.
+        .capture_any_mouse_down(|_, window, _| window.prevent_default())
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             down.update(cx, |s, cx| {
                 s.by_pointer = true;
