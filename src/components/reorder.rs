@@ -207,7 +207,7 @@ impl RenderOnce for ReorderList {
                 .collect()
         };
         if moving {
-            window.request_animation_frame();
+            crate::motion::request_frame(window);
         } else if !state.read(cx).slides.is_empty() {
             state.update(cx, |st, _| st.slides.clear());
         }

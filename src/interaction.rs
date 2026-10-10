@@ -129,7 +129,7 @@ pub fn state_layer(
         s.ripples.clone()
     });
     if !ripples.is_empty() {
-        window.request_animation_frame();
+        crate::motion::request_frame(window);
     }
     let bounds_cell = state.read(cx).bounds.clone();
 

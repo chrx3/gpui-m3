@@ -125,13 +125,42 @@ pub fn clock(cx: &App) -> f32 {
     elapsed(*START.get_or_init(Instant::now), cx)
 }
 
+/// Who asks for frames: each call site of the motion helpers that keeps the window animating,
+/// counted until [`take_frame_requests`] reads them. Lets an app find what keeps it redrawing.
+static FRAME_REQUESTS: std::sync::Mutex<Vec<(&'static std::panic::Location<'static>, u32)>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[track_caller]
+pub(crate) fn request_frame(window: &mut Window) {
+    let at = std::panic::Location::caller();
+    if let Ok(mut list) = FRAME_REQUESTS.lock() {
+        match list.iter_mut().find(|(loc, _)| std::ptr::eq(*loc, at)) {
+            Some((_, n)) => *n += 1,
+            None => list.push((at, 1)),
+        }
+    }
+    window.request_animation_frame();
+}
+
+/// The frame requests since the last call, as `file:line` and count, most frequent first.
+pub fn take_frame_requests() -> Vec<(String, u32)> {
+    let Ok(mut list) = FRAME_REQUESTS.lock() else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, u32)> =
+        list.drain(..).map(|(at, n)| (format!("{}:{}", at.file(), at.line()), n)).collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1));
+    out
+}
+
 /// Clock for a continuous animation: requests the next frame and returns the current time.
 /// With reduced motion it always returns 0 and requests no frames (the animation stays still).
+#[track_caller]
 pub fn continuous(window: &mut Window, cx: &App) -> f32 {
     if MotionSettings::get(cx).reduced {
         return 0.;
     }
-    window.request_animation_frame();
+    request_frame(window);
     clock(cx)
 }
 
@@ -142,12 +171,13 @@ thread_local! {
 
 /// Like [`continuous`], but at `fps` frames per second. For slow ambient motion
 /// (shapes that breathe or rotate slowly) 30 fps looks the same and costs half as much.
+#[track_caller]
 pub fn continuous_at(fps: f32, window: &mut Window, cx: &mut App) -> f32 {
     if MotionSettings::get(cx).reduced {
         return 0.;
     }
     if fps >= 60. {
-        window.request_animation_frame();
+        request_frame(window);
         return clock(cx);
     }
     let view = window.current_view();
@@ -250,6 +280,7 @@ impl<const N: usize> SpringValue<N> {
 ///
 /// `id` identifies the value across frames (must be unique within the view). The first frame
 /// returns the target directly; use [`animate_from`] to animate the entrance.
+#[track_caller]
 pub fn animate<const N: usize>(
     id: impl Into<ElementId>,
     spring: Spring,
@@ -261,6 +292,7 @@ pub fn animate<const N: usize>(
 }
 
 /// Like [`animate`], but the first frame starts from `from` (spring entrance).
+#[track_caller]
 pub fn animate_from<const N: usize>(
     id: impl Into<ElementId>,
     spring: Spring,
@@ -272,6 +304,7 @@ pub fn animate_from<const N: usize>(
     animate_inner(id.into(), spring, target, Some(from), window, cx)
 }
 
+#[track_caller]
 fn animate_inner<const N: usize>(
     id: ElementId,
     spring: Spring,
@@ -301,7 +334,7 @@ fn animate_inner<const N: usize>(
         (s.update(target, spring, t, now), s)
     });
     if moving {
-        window.request_animation_frame();
+        request_frame(window);
     }
     value
 }
@@ -325,6 +358,7 @@ struct Triggered<const N: usize> {
 
 /// Each time `active` goes from `false` to `true`, the value jumps to `from` and springs back
 /// to `rest` (e.g. the icon that "pops" when a tab is selected).
+#[track_caller]
 pub fn animate_on_activate<const N: usize>(
     id: impl Into<ElementId>,
     spring: Spring,
@@ -359,13 +393,14 @@ pub fn animate_on_activate<const N: usize>(
         (s.value.update(rest, spring, t, now), s)
     });
     if moving {
-        window.request_animation_frame();
+        request_frame(window);
     }
     value
 }
 
 /// Entrance progress (0 → 1, with the spring's bounce) since the element appeared,
 /// after `delay` seconds. Useful for staggering lists and menus.
+#[track_caller]
 pub fn entrance(
     id: impl Into<ElementId>,
     spring: Spring,
@@ -383,7 +418,7 @@ pub fn entrance(
     }
     let t = elapsed(start, cx) - delay;
     if t < spring.settle_time().as_secs_f32() {
-        window.request_animation_frame();
+        request_frame(window);
         spring.step(t.max(0.))
     } else {
         1.
@@ -391,6 +426,7 @@ pub fn entrance(
 }
 
 /// Shortcut for animating a single number.
+#[track_caller]
 pub fn animate_f32(
     id: impl Into<ElementId>,
     spring: Spring,
@@ -402,6 +438,7 @@ pub fn animate_f32(
 }
 
 /// Shortcut for animating a length in pixels.
+#[track_caller]
 pub fn animate_px(
     id: impl Into<ElementId>,
     spring: Spring,
@@ -413,6 +450,7 @@ pub fn animate_px(
 }
 
 /// Shortcut for animating a color (interpolated in sRGB; no bounce when using an effects spring).
+#[track_caller]
 pub fn animate_color(
     id: impl Into<ElementId>,
     spring: Spring,
@@ -464,6 +502,7 @@ pub fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32) -> impl Fn(f32) -> f32 +
 /// Stable child key for a component's animated values.
 /// Opacity for pulsing text ("Working…"): 1 → 0.45 → 1 every `period` seconds, at 30 fps.
 /// With reduced motion it stays at 1.
+#[track_caller]
 pub fn pulse(period: f32, window: &mut Window, cx: &mut App) -> f32 {
     if MotionSettings::get(cx).reduced {
         return 1.;
@@ -475,6 +514,7 @@ pub fn pulse(period: f32, window: &mut Window, cx: &mut App) -> f32 {
 /// Time-based replay: returns the seconds elapsed since `generation` last changed, or `None`
 /// once `duration` has passed (and on the first frame, so nothing plays on mount). Use it for
 /// one-shot effects such as the send button's launch or a tab's content fading in.
+#[track_caller]
 pub fn replay(
     id: impl Into<ElementId>,
     generation: u64,
@@ -500,7 +540,7 @@ pub fn replay(
     }
     let t = elapsed(start?, cx);
     (t < duration).then(|| {
-        window.request_animation_frame();
+        request_frame(window);
         t
     })
 }
@@ -508,6 +548,7 @@ pub fn replay(
 /// Seconds since `active` last went from `false` to `true`, while fewer than `duration` have
 /// passed; `None` otherwise (and when it starts active, so nothing plays on mount). Use it for
 /// one-shot effects tied to a state edge, such as a shape that breathes once when hovered.
+#[track_caller]
 pub fn play_on_rise(
     id: impl Into<ElementId>,
     active: bool,
@@ -533,7 +574,7 @@ pub fn play_on_rise(
     }
     let t = elapsed(start?, cx);
     (t < duration).then(|| {
-        window.request_animation_frame();
+        request_frame(window);
         t
     })
 }
@@ -552,6 +593,7 @@ pub fn play_on_rise(
 /// ```
 ///
 /// Keep the data of the leaving content (the last offer, the last menu) until it returns `None`.
+#[track_caller]
 pub fn presence(
     id: impl Into<ElementId>,
     show: bool,
@@ -587,7 +629,7 @@ pub fn presence(
         ((Some(value.clamp(0., 1.)), true), s)
     });
     if moving {
-        window.request_animation_frame();
+        request_frame(window);
     }
     value
 }
@@ -619,6 +661,7 @@ struct ExpandState {
 /// When `open` changes, the height springs between 0 and `measured`; at rest it returns
 /// [`Expand::Natural`] or [`Expand::Hidden`], so open content can change size freely. Nothing
 /// animates on the first frame (content that starts open is just shown).
+#[track_caller]
 pub fn expand(
     id: impl Into<ElementId>,
     open: bool,
@@ -666,7 +709,7 @@ pub fn expand(
         ((Expand::Clipped(px(h.max(0.))), true), s)
     });
     if moving {
-        window.request_animation_frame();
+        request_frame(window);
     }
     result
 }

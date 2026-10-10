@@ -186,7 +186,7 @@ impl RenderOnce for ThemeReveal {
                 opacity = 1. - fade;
             }
         }
-        window.request_animation_frame();
+        crate::motion::request_frame(window);
         let r = (reveal.radius * progress.max(0.)).max(0.);
         let color = alpha(self.color.unwrap_or(reveal.color), opacity);
         let viewport = window.viewport_size();
