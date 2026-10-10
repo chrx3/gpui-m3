@@ -33,6 +33,8 @@ pub struct Shape {
     size: Pixels,
     color: Option<Hsla>,
     child: Option<AnyElement>,
+    turn: f32,
+    grow: f32,
 }
 
 /// Duration of one hover breath (the reference design: `m3-shape-breathe 1.2s`).
@@ -50,7 +52,22 @@ impl Shape {
             size: px(48.),
             color: None,
             child: None,
+            turn: 0.,
+            grow: 1.,
         }
+    }
+
+    /// Rotates the shape (not its child) by `radians`. Photos are not rotated.
+    pub fn rotate(mut self, radians: f32) -> Self {
+        self.turn = radians;
+        self
+    }
+
+    /// Draws the shape `factor` times larger around its center without changing the space it
+    /// takes up (the child keeps its size).
+    pub fn scale(mut self, factor: f32) -> Self {
+        self.grow = factor;
+        self
     }
 
     pub fn size(mut self, size: Pixels) -> Self {
@@ -155,8 +172,9 @@ impl RenderOnce for Shape {
                 };
             }
         }
-        let rotation = self.spin.map_or(0., |p| (t / p).fract() * TAU);
+        let rotation = self.spin.map_or(0., |p| (t / p).fract() * TAU) + self.turn;
         let morph = Morph { rotation, ..morph };
+        let grow = self.grow;
 
         // Photo: a raster masked to the shape (cached steps of the hover morph).
         let device = (f32::from(self.size) * window.scale_factor())
@@ -184,13 +202,23 @@ impl RenderOnce for Shape {
             .child(
                 canvas(
                     |_, _, _| {},
-                    move |bounds, _, window, _| match photo {
-                        Some(photo) => {
-                            window
-                                .paint_image(bounds, gpui::Corners::default(), photo, 0, false)
-                                .ok();
+                    move |bounds, _, window, _| {
+                        let bounds = if grow != 1. {
+                            let size =
+                                gpui::size(bounds.size.width * grow, bounds.size.height * grow);
+                            let half = point(size.width / 2., size.height / 2.);
+                            Bounds::new(bounds.center() - half, size)
+                        } else {
+                            bounds
+                        };
+                        match photo {
+                            Some(photo) => {
+                                window
+                                    .paint_image(bounds, gpui::Corners::default(), photo, 0, false)
+                                    .ok();
+                            }
+                            None => morph.paint(bounds, color, window),
                         }
-                        None => morph.paint(bounds, color, window),
                     },
                 )
                 .absolute()
@@ -226,6 +254,7 @@ pub struct Avatar {
     shape: Option<ShapeName>,
     hover: Option<(ElementId, ShapeName)>,
     hovered: Option<bool>,
+    spin: Option<ElementId>,
 }
 
 impl Avatar {
@@ -237,7 +266,16 @@ impl Avatar {
             shape: None,
             hover: None,
             hovered: None,
+            spin: None,
         }
+    }
+
+    /// Turns 40° and grows 8 % while hovered, with the fast spatial spring (the reference design's project
+    /// avatars); the initial stays upright. `id` must be unique within the view. Use
+    /// [`Avatar::hovered`] to follow a whole row's hover instead of the avatar's own.
+    pub fn hover_spin(mut self, id: impl Into<ElementId>) -> Self {
+        self.spin = Some(id.into());
+        self
     }
 
     /// A photo avatar: the image (a path or an `Arc<RenderImage>`) clipped to a Cookie9 shape.
@@ -287,7 +325,7 @@ impl Avatar {
 }
 
 impl RenderOnce for Avatar {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (shape, tone) = avatar_for(&self.name);
         let s = Theme::of(cx);
         let has_photo = self.photo.is_some();
@@ -335,7 +373,44 @@ impl RenderOnce for Avatar {
         if let Some(hovered) = self.hovered {
             el = el.hovered(hovered);
         }
-        el
+        let Some(id) = self.spin else {
+            return el.into_any_element();
+        };
+        let own = self
+            .hovered
+            .is_none()
+            .then(|| window.use_keyed_state(key(&id, "spin-hover"), cx, |_, _| false));
+        let hovered = match (&own, self.hovered) {
+            (_, Some(h)) => h,
+            (Some(state), None) => *state.read(cx),
+            (None, None) => false,
+        };
+        let [turn, grow] = animate(
+            key(&id, "spin"),
+            Spring::SPATIAL_FAST,
+            if hovered {
+                [40f32.to_radians(), 1.08]
+            } else {
+                [0., 1.]
+            },
+            window,
+            cx,
+        );
+        let el = el.rotate(turn).scale(grow);
+        match own {
+            Some(state) => div()
+                .id(key(&id, "spin-target"))
+                .flex_none()
+                .on_hover(move |on, _, cx| {
+                    state.update(cx, |h, cx| {
+                        *h = *on;
+                        cx.notify();
+                    })
+                })
+                .child(el)
+                .into_any_element(),
+            None => el.into_any_element(),
+        }
     }
 }
 

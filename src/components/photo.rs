@@ -202,7 +202,7 @@ fn masked(key: &MaskKey) -> Option<RenderImage> {
 }
 
 /// Bilinear sample of a 4-channel image (channel order is kept: GPUI stores BGRA).
-fn bilinear(src: &[u8], w: usize, h: usize, x: f32, y: f32) -> [u8; 4] {
+pub(crate) fn bilinear(src: &[u8], w: usize, h: usize, x: f32, y: f32) -> [u8; 4] {
     let x = x.clamp(0., (w - 1) as f32);
     let y = y.clamp(0., (h - 1) as f32);
     let (x0, y0) = (x.floor() as usize, y.floor() as usize);

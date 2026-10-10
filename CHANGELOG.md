@@ -61,5 +61,19 @@ First release.
     rules, emphasis, strikethrough, inline code, tables, links and bare URLs, images, code
     blocks), cached by text for streaming; `on_link`, `on_path` (`looks_like_path`,
     `split_path_line`) and `on_image`; `parse_markdown` for tests and custom renderers.
+- Added for the reference design port, batch 3 (editor, layout and motion):
+  - `CodeEditor` over a `CodeBuffer`: line numbers, a virtualized list, selection with mouse
+    and keys, clipboard, undo/redo, Tab / Shift+Tab, auto-indent, bracket pairs, `Save` on
+    Ctrl+S, `dirty` and the selection as context. Colors come from a `LineHighlighter`;
+    `SyntaxLines` plugs `SyntaxHighlighter` in, keeping parser checkpoints every 16 lines.
+  - `ResizeHandle` and `Splitter`: draggable dividers with limits.
+  - `ReorderList` with `ReorderEvent` / `apply_reorder`: drag to reorder, with groups and an
+    insertion line.
+  - `ImageCropper`: drag, wheel or slider zoom, a shaped mask, Enter / Esc, and the cropped image.
+  - `theme_reveal` (circular reveal from the click), `animate_theme` / `animate_scheme`
+    (`Scheme::lerp` over about 0.45 s).
+  - `ExpandableCard` animates its height with a spring; `Icon::pop`, `Avatar::hover_spin`,
+    menu items staggered one by one, and `Dialog` / `Toast` entrances with scale and radius.
+  - Two-line `MenuItem` with actions under the text.
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
 - Gallery example to try every component in light and dark, with any seed color and slow motion.

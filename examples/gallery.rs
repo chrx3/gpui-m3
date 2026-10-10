@@ -6,32 +6,35 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, AnyView, App, AppContext, Application, Bounds, Context, ElementId, Entity,
-    ExternalPaths, FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton,
-    ParentElement, PathBuilder, Pixels, Point, Render, RenderImage, Rgba, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, TitlebarOptions, Window, WindowAppearance,
-    WindowBounds, WindowOptions, actions, anchored, canvas, deferred, div, point,
+    ExternalPaths, FontStyle, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
+    KeyBinding, MouseButton, ParentElement, PathBuilder, Pixels, Point, Render, RenderImage, Rgba,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, TitlebarOptions, Window,
+    WindowAppearance, WindowBounds, WindowOptions, actions, anchored, canvas, deferred, div, point,
     prelude::FluentBuilder, px, size,
 };
 use gpui_m3::{
     Avatar, Badge, Banner, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip,
-    ChipSize, ChoiceRow, ColorSwatches, Command, CommandPalette, CommandPaletteEvent, Dialog,
-    DividerLabel, DotShape, DropZone, Exit, ExpandableCard, Fab, FavStar, HsvPicker, Icon,
-    IconButton, IconTab, IconTabs, ImageThumb, LinearProgress, ListGroup, ListItem,
-    LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem, PopDirection, Popover,
-    Presence, RailItem, Ring, Segment, SegmentedButtons, SelectCard, Shape, ShapeName, Slider,
-    SplitButton, Spring, StopSlider, Suggestion, SuggestionAccept, SuggestionDismiss,
-    SuggestionList, SuggestionNav, SuggestionNext, SuggestionPrevious, Switch, Tab, TabStrip,
-    TextArea, TextAreaEvent, TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress,
+    ChipSize, ChoiceRow, CodeBuffer, CodeEditor, CodeEditorEvent, ColorSwatches, Command,
+    CommandPalette, CommandPaletteEvent, Dialog, DividerLabel, DotShape, DropZone, Exit,
+    ExpandableCard, Fab, FavStar, HsvPicker, Icon, IconButton, IconTab, IconTabs, ImageCropper,
+    ImageCropperEvent, ImageThumb, LineHighlighter, LineHighlights, LinearProgress, ListGroup,
+    ListItem, LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem, PopDirection,
+    Popover, Presence, RailItem, ReorderEvent, ReorderList, Ring, Segment, SegmentedButtons,
+    SelectCard, Shape, ShapeName, Slider, SplitButton, Splitter, Spring, StopSlider, Suggestion,
+    SuggestionAccept, SuggestionDismiss, SuggestionList, SuggestionNav, SuggestionNext,
+    SuggestionPrevious, Switch, Tab, TabStrip, TextArea, TextAreaEvent, TextField, TextFieldEvent,
+    Theme, ThemeReveal, Toast, Tone, TreeRow, WavyProgress, animate_theme, apply_reorder,
     context_menu,
     motion::{animate_color, animate_f32, key, pulse},
     rank_mentions,
     theme::{FONT_FAMILY, alpha, hex},
+    theme_reveal,
 };
 
 #[path = "gallery/code.rs"]
 mod code;
 
-const SECTIONS: [(&str, &str); 15] = [
+const SECTIONS: [(&str, &str); 16] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -47,6 +50,7 @@ const SECTIONS: [(&str, &str); 15] = [
     ("Attachments and notices", "clip"),
     ("Code and Markdown", "terminal"),
     ("Motion", "refresh"),
+    ("Editor and layout", "terminal"),
 ];
 
 /// the reference design's seed colors for M3 Expressive; the first one is the base scheme.
@@ -79,7 +83,10 @@ actions!(gallery, [FocusNext, FocusPrevious]);
 
 /// A small generated "photo" (sky, sun and hills) for the image demos, in GPUI's BGRA order.
 fn demo_photo(hue: f32) -> Arc<RenderImage> {
-    let n = 128usize;
+    demo_photo_sized(hue, 128)
+}
+
+fn demo_photo_sized(hue: f32, n: usize) -> Arc<RenderImage> {
     let mut data = vec![0u8; n * n * 4];
     for y in 0..n {
         for x in 0..n {
@@ -194,6 +201,114 @@ struct Demos {
     mention_query: SharedString,
     mention_at: Option<usize>,
     mention_nav: SuggestionNav,
+    editor: Entity<CodeEditor>,
+    editor_saves: usize,
+    side_width: Pixels,
+    term_height: Pixels,
+    open_files: Vec<&'static str>,
+    favorite_projects: Vec<&'static str>,
+    other_projects: Vec<&'static str>,
+    cropper: Option<Entity<ImageCropper>>,
+    cropped: Option<Arc<RenderImage>>,
+    pop_key: u64,
+    stagger_key: u64,
+    accent_step: usize,
+    rewound: SharedString,
+    long_card_open: bool,
+}
+
+/// Rust-ish colors for the code editor demo, read from the theme for every line it is asked for.
+struct DemoColors;
+
+const KEYWORDS: [&str; 22] = [
+    "fn", "let", "mut", "pub", "struct", "impl", "use", "mod", "for", "in", "if", "else", "match",
+    "return", "self", "Self", "const", "enum", "while", "loop", "as", "where",
+];
+
+impl LineHighlighter for DemoColors {
+    fn highlight_line(&mut self, buffer: &CodeBuffer, line: usize, cx: &App) -> LineHighlights {
+        let s = Theme::of(cx);
+        let text = buffer.line(line);
+        let style = |color: Hsla| HighlightStyle {
+            color: Some(color),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        let code_end = match text.find("//") {
+            Some(i) => {
+                out.push((
+                    i..text.len(),
+                    HighlightStyle {
+                        color: Some(s.outline),
+                        font_style: Some(FontStyle::Italic),
+                        ..Default::default()
+                    },
+                ));
+                i
+            }
+            None => text.len(),
+        };
+        let code = &text[..code_end];
+        let mut chars = code.char_indices().peekable();
+        while let Some((i, c)) = chars.next() {
+            if c == '"' {
+                let mut end = code.len();
+                for (j, d) in chars.by_ref() {
+                    if d == '"' {
+                        end = j + 1;
+                        break;
+                    }
+                }
+                out.push((i..end, style(s.success)));
+            } else if c.is_ascii_digit() {
+                let mut end = i + 1;
+                while let Some((j, d)) = chars.peek().copied() {
+                    if !d.is_ascii_alphanumeric() && d != '.' && d != '_' {
+                        break;
+                    }
+                    end = j + d.len_utf8();
+                    chars.next();
+                }
+                out.push((i..end, style(s.warning)));
+            } else if c.is_alphabetic() || c == '_' {
+                let mut end = i + c.len_utf8();
+                while let Some((j, d)) = chars.peek().copied() {
+                    if !d.is_alphanumeric() && d != '_' {
+                        break;
+                    }
+                    end = j + d.len_utf8();
+                    chars.next();
+                }
+                let word = &code[i..end];
+                if KEYWORDS.contains(&word) {
+                    out.push((
+                        i..end,
+                        HighlightStyle {
+                            color: Some(s.primary),
+                            font_weight: Some(FontWeight(700.)),
+                            ..Default::default()
+                        },
+                    ));
+                } else if word.starts_with(char::is_uppercase) {
+                    out.push((i..end, style(s.tertiary)));
+                }
+            }
+        }
+        out
+    }
+}
+
+/// A long generated Rust file, to show that only the visible lines are laid out.
+fn demo_source() -> String {
+    let mut out = String::from(
+        "//! Generated demo: scroll, select, type, Tab / Shift+Tab, Ctrl+Z, Ctrl+S.\n\nuse std::collections::HashMap;\n\n",
+    );
+    for i in 0..400 {
+        out.push_str(&format!(
+            "/// Spring number {i}.\npub fn spring_{i}(stiffness: f32, damping: f32) -> Spring {{\n    let ratio = damping / (2.0 * stiffness.sqrt());\n    // Bouncy when the ratio is below 1.\n    Spring {{ stiffness, damping_ratio: ratio + {i}.0 * 0.001, label: \"spring {i}\" }}\n}}\n\n",
+        ));
+    }
+    out
 }
 
 /// The animated logo, in its own view: its continuous animation does not rebuild the content.
@@ -225,13 +340,12 @@ impl Gallery {
         }
     }
 
+    fn seed_color(&self) -> Option<Hsla> {
+        (self.seed != 0).then(|| hex(SEEDS[self.seed]))
+    }
+
     fn apply_theme(&self, cx: &mut App) {
-        let seed = if self.seed == 0 {
-            None
-        } else {
-            Some(hex(SEEDS[self.seed]))
-        };
-        Theme::set(self.dark, seed, cx);
+        Theme::set(self.dark, self.seed_color(), cx);
     }
 
     fn demo_url(&self) -> String {
@@ -327,7 +441,44 @@ impl Demos {
             },
         )
         .detach();
+        let editor = cx.new(|cx| {
+            CodeEditor::new(cx)
+                .path("src/springs.rs")
+                .with_text(&demo_source())
+                .highlighter(DemoColors)
+        });
+        cx.subscribe(
+            &editor,
+            |this: &mut Demos, editor, event: &CodeEditorEvent, cx| {
+                if *event == CodeEditorEvent::Save {
+                    this.editor_saves += 1;
+                    editor.update(cx, |e, cx| e.mark_saved(cx));
+                }
+                cx.notify();
+            },
+        )
+        .detach();
+        // Syntax colors come from the theme: ask for them again when it changes.
+        let themed = editor.clone();
+        cx.observe_global::<Theme>(move |_, cx| {
+            themed.update(cx, |e, cx| e.refresh_highlights(cx));
+        })
+        .detach();
         Self {
+            editor,
+            editor_saves: 0,
+            side_width: px(200.),
+            term_height: px(140.),
+            open_files: vec!["springs.rs", "theme.rs", "motion.rs", "Cargo.toml"],
+            favorite_projects: vec!["gpui-m3", "atic"],
+            other_projects: vec!["demo", "zed", "material-colors"],
+            cropper: None,
+            cropped: None,
+            pop_key: 0,
+            stagger_key: 0,
+            accent_step: 0,
+            rewound: SharedString::default(),
+            long_card_open: false,
             composer,
             sent: SharedString::default(),
             replay_key: 0,
@@ -451,6 +602,8 @@ fn click<V: 'static, F: Fn(&mut V, &mut App) + 'static>(
 impl Render for Gallery {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
+        // The mode can also change from the motion demos (theme reveal).
+        self.dark = Theme::get(cx).dark;
         let section = self.demos.read(cx).section;
 
         let mut nav = div().flex().flex_col().gap(px(2.));
@@ -540,6 +693,7 @@ impl Render for Gallery {
         div()
             .size_full()
             .flex()
+            .key_context("Gallery")
             .track_focus(&self.focus)
             .on_action(|_: &FocusNext, window, _| window.focus_next())
             .on_action(|_: &FocusPrevious, window, _| window.focus_prev())
@@ -552,6 +706,7 @@ impl Render for Gallery {
             .pt(px(8.))
             .child(sidebar)
             .child(panel)
+            .child(ThemeReveal::new())
     }
 }
 
@@ -572,7 +727,8 @@ impl Render for Demos {
             11 => self.appearance(cx),
             12 => self.attachments(window, cx),
             13 => self.code_demos.clone().into_any_element(),
-            _ => self.motion(window, cx),
+            14 => self.motion(window, cx),
+            _ => self.editor_section(window, cx),
         };
         div()
             .id(("content", self.section))
@@ -609,7 +765,7 @@ impl Gallery {
                     .child(div().size(px(14.)).rounded(px(7.)).bg(color))
                     .on_click(click(cx, move |this, cx| {
                         this.seed = i;
-                        this.apply_theme(cx);
+                        animate_theme(this.dark, this.seed_color(), cx);
                     })),
             );
         }
@@ -634,10 +790,18 @@ impl Gallery {
                     [Segment::icon("sun"), Segment::icon("moon")],
                     if self.dark { 1 } else { 0 },
                 )
-                .on_change(update(cx, |this, i: usize, cx| {
-                    this.dark = i == 1;
-                    this.apply_theme(cx);
-                })),
+                .on_change({
+                    // Circular reveal from the pointer, like the reference design's M3 theme switch.
+                    let view = cx.entity().downgrade();
+                    move |i: usize, window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.dark = i == 1;
+                            let scheme = Theme::new(this.dark, this.seed_color()).scheme;
+                            theme_reveal(scheme, this.dark, window, cx);
+                        })
+                        .ok();
+                    }
+                }),
             )
             .child(
                 SegmentedButtons::new(
@@ -1096,8 +1260,46 @@ impl Demos {
                         ))
                     }),
             ))
+            .child(demo(
+                "Two-line rows with actions",
+                "The Rewind list: the message preview is cut at two lines and the choices sit under it (MenuItem::action, line_clamp).",
+                column()
+                    .items_start()
+                    .child(self.rewind_menu(cx))
+                    .when(!self.rewound.is_empty(), |d| {
+                        d.child(div().text_color(s.on_surface_variant).child(self.rewound.clone()))
+                    }),
+            ))
             .child(div().h(px(220.)).text_color(s.on_surface_variant))
             .into_any_element()
+    }
+
+    fn rewind_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let turns = [
+            "Port the code editor to GPUI with line numbers, undo and a virtualized list so large files stay fast",
+            "Add a splitter for the terminal height",
+            "Why does the theme flash when switching to dark mode? It should reveal from the click like the reference design",
+        ];
+        let mut menu = Menu::new("rewind-menu").width(340.).section("Rewind to");
+        for (i, text) in turns.into_iter().enumerate() {
+            let choice = |label: &'static str, j: usize, cx: &mut Context<Self>| {
+                Chip::new(("rewind-chip", i * 3 + j), label)
+                    .size(ChipSize::Small)
+                    .on_click(click(cx, move |this: &mut Demos, _| {
+                        this.rewound = format!("Rewound message {} ({label})", i + 1).into();
+                    }))
+            };
+            menu = menu.item(
+                MenuItem::new(("rewind", i), text)
+                    .icon("history")
+                    .line_clamp(2)
+                    .static_row(true)
+                    .action(choice("Code", 0, cx))
+                    .action(choice("Conversation", 1, cx))
+                    .action(choice("Both", 2, cx)),
+            );
+        }
+        menu
     }
 
     fn shapes(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -2612,8 +2814,296 @@ impl Demos {
                     .child(Button::new("flip", "Animate").filled().icon("refresh").on_click(click(cx, |this, _| this.motion_flip = !this.motion_flip)))
                     .child(tracks),
             ))
+            .child(self.theme_motion(cx))
+            .child(self.small_motion(cx))
             .into_any_element()
     }
+
+    fn theme_motion(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let s = *Theme::of(cx);
+        let dark = Theme::get(cx).dark;
+        let reveal = {
+            let view = cx.entity().downgrade();
+            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                let dark = !Theme::get(cx).dark;
+                let scheme = Theme::new(dark, None).scheme;
+                theme_reveal(scheme, dark, window, cx);
+                view.update(cx, |_, cx| cx.notify()).ok();
+            }
+        };
+        demo(
+            "Theme changes",
+            "theme_reveal: a circle of the new background grows from the click (GPUI cannot capture the old frame, so it covers instead of revealing). animate_scheme / animate_theme: every color blends for 0.45 s. The toolbar's mode switch and seed swatches use them too.",
+            row()
+                .child(
+                    Button::new("reveal", if dark { "Reveal light" } else { "Reveal dark" })
+                        .filled()
+                        .icon(if dark { "sun" } else { "moon" })
+                        .on_click(reveal),
+                )
+                .child(
+                    Button::new("blend", "Blend accent")
+                        .icon("palette")
+                        .on_click(click(cx, move |this: &mut Demos, cx| {
+                            this.accent_step = (this.accent_step + 1) % SEEDS.len();
+                            let seed =
+                                (this.accent_step != 0).then(|| hex(SEEDS[this.accent_step]));
+                            animate_theme(Theme::get(cx).dark, seed, cx);
+                        })),
+                )
+                .child(div().size(px(28.)).rounded(px(14.)).bg(s.primary))
+                .child(
+                    div()
+                        .size(px(28.))
+                        .rounded(px(14.))
+                        .bg(s.tertiary_container),
+                )
+                .child(
+                    div()
+                        .size(px(28.))
+                        .rounded(px(14.))
+                        .bg(s.secondary_container),
+                ),
+        )
+    }
+
+    fn small_motion(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let s = *Theme::of(cx);
+        let mut avatars = row().gap(px(18.));
+        for (i, name) in ["the reference design", "Bruno", "Carla", "Diego"].into_iter().enumerate() {
+            avatars = avatars.child(Avatar::new(name).size(px(36.)).hover_spin(("spin", i)));
+        }
+        let pop = self.pop_key;
+        let stagger = self.stagger_key;
+        column()
+            .gap(px(28.))
+            .child(demo(
+                "Icon pop and avatar spin",
+                "Icon::pop grows from 20 % while turning from -60° (a copy check, an unread dot). Avatar::hover_spin turns 40° and grows 8 % on hover; the initial stays upright.",
+                row()
+                    .gap(px(28.))
+                    .child(
+                        row()
+                            .child(Button::new("pop-again", "Copy").icon("copy").on_click(click(cx, |this: &mut Demos, _| this.pop_key += 1)))
+                            .when(pop > 0, |d| {
+                                d.child(Icon::new("check").size(px(22.)).color(s.primary).pop(("pop", pop)))
+                            }),
+                    )
+                    .child(avatars),
+            ))
+            .child(demo(
+                "Staggered menu items",
+                "Menu items enter one by one, 25 ms apart (Menu::stagger, on by default).",
+                column()
+                    .items_start()
+                    .child(Button::new("stagger-again", "Replay").icon("refresh").on_click(click(cx, |this: &mut Demos, _| this.stagger_key += 1)))
+                    .child(
+                        Menu::new(("stagger-menu", stagger))
+                            .width(240.)
+                            .item(MenuItem::new(("st", 0usize), "Rename").icon("pen"))
+                            .item(MenuItem::new(("st", 1usize), "Duplicate").icon("copy"))
+                            .item(MenuItem::new(("st", 2usize), "Export").icon("export"))
+                            .item(MenuItem::new(("st", 3usize), "Pin").icon("star"))
+                            .separator()
+                            .item(MenuItem::new(("st", 4usize), "Delete").icon("trash").danger(true)),
+                    ),
+            ))
+            .child(demo(
+                "Expandable card height",
+                "The body opens and closes with the spatial spring instead of only fading. Dialogs and toasts (Text and feedback) now enter growing with large corners.",
+                div().w(px(420.)).child(
+                    ExpandableCard::new("long-card")
+                        .open(self.long_card_open)
+                        .header(div().child("Read 4 files"))
+                        .on_toggle(update(cx, |this: &mut Demos, open: bool, _| this.long_card_open = open))
+                        .child("src/components/code_editor.rs")
+                        .child("src/components/code_buffer.rs")
+                        .child("src/components/resize.rs")
+                        .child("src/components/reorder.rs"),
+                ),
+            ))
+    }
+}
+
+impl Demos {
+    fn editor_section(&self, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let s = *Theme::of(cx);
+        let editor = self.editor.read(cx);
+        let context = editor.selection_context();
+        let status = format!(
+            "{} · {} · {} saves · {} lines",
+            context.label(),
+            if editor.is_dirty() {
+                "modified"
+            } else {
+                "saved"
+            },
+            self.editor_saves,
+            editor.buffer().line_count(),
+        );
+
+        // Open files: a reorderable list in the side pane.
+        let mut files = ReorderList::new("open-files").gap(px(2.));
+        for name in &self.open_files {
+            files = files.row(
+                *name,
+                0,
+                ListItem::new(ElementId::Name(format!("file-{name}").into()), *name)
+                    .leading(Icon::new("file").size(px(16.)).color(s.on_surface_variant)),
+            );
+        }
+        let files = files.on_reorder(update(cx, |this: &mut Demos, e: ReorderEvent, _| {
+            apply_reorder(&mut this.open_files, e)
+        }));
+        let side = div()
+            .size_full()
+            .p(px(8.))
+            .bg(s.surface_container)
+            .child(files);
+        let terminal = div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(s.surface_container_high)
+            .px(px(14.))
+            .py(px(8.))
+            .gap(px(4.))
+            .font_family(gpui_m3::theme::MONO_FONT_FAMILY)
+            .text_size(px(12.))
+            .text_color(s.on_surface_variant)
+            .child(div().text_color(s.primary).child("Terminal"))
+            .child("$ cargo test --lib")
+            .child("test result: ok. 49 passed; 0 failed");
+        let workbench = div()
+            .w_full()
+            .h(px(480.))
+            .rounded(px(20.))
+            .overflow_hidden()
+            .bg(s.surface)
+            .child(
+                Splitter::horizontal("wb-side", self.side_width)
+                    .min(px(140.))
+                    .max(px(320.))
+                    .on_resize(update(cx, |this: &mut Demos, w: Pixels, _| {
+                        this.side_width = w
+                    }))
+                    .first(side)
+                    .second(
+                        Splitter::vertical("wb-term", self.term_height)
+                            .invert(true)
+                            .min(px(72.))
+                            .max(px(300.))
+                            .on_resize(update(cx, |this: &mut Demos, h: Pixels, _| {
+                                this.term_height = h
+                            }))
+                            .first(div().size_full().pt(px(6.)).child(self.editor.clone()))
+                            .second(terminal),
+                    ),
+            );
+
+        // Projects with a favorites group.
+        let mut projects = ReorderList::new("projects").header("Favorites");
+        for name in &self.favorite_projects {
+            projects = projects.row(*name, 0, project_row(name, true));
+        }
+        projects = projects.header("Projects");
+        for name in &self.other_projects {
+            projects = projects.row(*name, 1, project_row(name, false));
+        }
+        let projects = projects.on_reorder(update(cx, |this: &mut Demos, e: ReorderEvent, _| {
+            let favs = this.favorite_projects.len();
+            if e.from < favs {
+                apply_reorder(&mut this.favorite_projects, e);
+            } else {
+                apply_reorder(
+                    &mut this.other_projects,
+                    ReorderEvent {
+                        from: e.from - favs,
+                        to: e.to - favs,
+                    },
+                );
+            }
+        }));
+
+        let open_cropper = {
+            let view = cx.entity().downgrade();
+            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                view.update(cx, |this, cx| this.open_cropper(window, cx))
+                    .ok();
+            }
+        };
+        let cropped = self.cropped.clone();
+        page()
+            .child(demo(
+                "Code editor",
+                "CodeEditor: line numbers, a virtualized list (1,600+ lines), selection with mouse and keys, clipboard, undo/redo, Tab / Shift+Tab, auto-indent, bracket pairs, Ctrl+S and a LineHighlighter hook. Drag the dividers: the side pane and the terminal resize (Splitter).",
+                column()
+                    .w_full()
+                    .child(workbench)
+                    .child(div().text_size(px(12.5)).text_color(s.on_surface_variant).child(status)),
+            ))
+            .child(demo(
+                "Reorder with groups",
+                "Drag a project: favorites stay with favorites. A line marks where it lands and the rows slide into place. Avatars spin on hover.",
+                div().w(px(300.)).child(projects),
+            ))
+            .child(demo(
+                "Image cropper",
+                "Drag to move, wheel or slider to zoom, Enter to save and Esc to cancel. Outside the shape the photo is dimmed.",
+                row()
+                    .child(Button::new("crop", "Frame a photo").filled().icon("palette").on_click(open_cropper))
+                    .when_some(cropped, |d, image| {
+                        d.child(Avatar::image(image).size(px(56.)))
+                    }),
+            ))
+            .when_some(self.cropper.clone(), |d, cropper| {
+                let confirm = cropper.clone();
+                let cancel = cropper.clone();
+                d.child(
+                    Dialog::new("crop-dialog")
+                        .title("Frame your photo")
+                        .width(px(340.))
+                        .child(cropper)
+                        .action(Button::new("crop-cancel", "Cancel").text().on_click(move |_, _, cx| {
+                            cancel.update(cx, |c, cx| c.cancel(cx));
+                        }))
+                        .action(Button::new("crop-save", "Save").filled().on_click(move |_, _, cx| {
+                            confirm.update(cx, |c, cx| c.confirm(cx));
+                        })),
+                )
+            })
+            .into_any_element()
+    }
+
+    fn open_cropper(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let cropper = cx.new(|cx| ImageCropper::new(demo_photo_sized(0.6, 512), cx));
+        cx.subscribe(
+            &cropper,
+            |this: &mut Demos, _, event: &ImageCropperEvent, cx| {
+                if let ImageCropperEvent::Cropped(image) = event {
+                    this.cropped = Some(image.clone());
+                }
+                this.cropper = None;
+                cx.notify();
+            },
+        )
+        .detach();
+        cropper.read(cx).focus(window);
+        self.cropper = Some(cropper);
+        cx.notify();
+    }
+}
+
+fn project_row(name: &'static str, favorite: bool) -> impl IntoElement {
+    ListItem::new(ElementId::Name(format!("project-row-{name}").into()), name)
+        .leading(
+            Avatar::new(name)
+                .size(px(24.))
+                .hover_spin(ElementId::Name(format!("project-spin-{name}").into())),
+        )
+        .when(favorite, |item| {
+            item.trailing(Icon::new("star-fill").size(px(14.)))
+        })
 }
 
 fn page() -> gpui::Div {
@@ -2695,8 +3185,10 @@ fn main() {
             gpui_m3::init(cx);
             // Tab moves the keyboard focus (expandable card headers show their focus ring).
             cx.bind_keys([
-                KeyBinding::new("tab", FocusNext, None),
-                KeyBinding::new("shift-tab", FocusPrevious, None),
+                // Under the root's context, not globally: a context-less binding would win over
+                // the code editor's own Tab (indent).
+                KeyBinding::new("tab", FocusNext, Some("Gallery")),
+                KeyBinding::new("shift-tab", FocusPrevious, Some("Gallery")),
             ]);
             // M3_SECTION=<n> opens a section directly (handy for screenshots).
             // M3_REDUCED=1 disables animations (useful for measuring idle cost).

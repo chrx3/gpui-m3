@@ -24,7 +24,7 @@ pub use assets::{Assets, ICON_PREFIX};
 pub use components::*;
 pub use motion::{MotionSettings, Spring};
 pub use shapes::{Morph, ShapeName, Tone};
-pub use syntax::{SyntaxHighlighter, SyntaxPalette, TokenKind};
+pub use syntax::{SyntaxHighlighter, SyntaxLines, SyntaxPalette, TokenKind};
 pub use theme::{Scheme, Theme, corner};
 
 /// Registers the typeface, the base (light) theme and the motion settings.
@@ -39,6 +39,8 @@ pub fn init(cx: &mut App) {
     }
     components::bind_text_field_keys(cx);
     components::bind_text_area_keys(cx);
+    components::bind_code_editor_keys(cx);
+    components::bind_image_cropper_keys(cx);
     components::bind_command_palette_keys(cx);
     // After the text inputs, so open suggestion lists take the arrows, Enter, Tab and Escape.
     components::bind_suggestion_keys(cx);

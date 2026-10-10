@@ -597,6 +597,80 @@ struct Presence {
     mounted: bool,
 }
 
+/// What an expanding section should draw this frame. See [`expand`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Expand {
+    /// Closed and at rest: draw nothing.
+    Hidden,
+    /// Open and at rest: draw the content at its natural height (it may keep growing).
+    Natural,
+    /// Opening or closing: draw the content clipped to this height.
+    Clipped(Pixels),
+}
+
+struct ExpandState {
+    open: bool,
+    value: Option<SpringValue<1>>,
+}
+
+/// Height animation for content that opens and closes (an expandable card's body).
+///
+/// `measured` is the content's natural height, measured in the previous frame (0 if unknown).
+/// When `open` changes, the height springs between 0 and `measured`; at rest it returns
+/// [`Expand::Natural`] or [`Expand::Hidden`], so open content can change size freely. Nothing
+/// animates on the first frame (content that starts open is just shown).
+pub fn expand(
+    id: impl Into<ElementId>,
+    open: bool,
+    measured: Pixels,
+    spring: Spring,
+    window: &mut Window,
+    cx: &mut App,
+) -> Expand {
+    let settings = MotionSettings::get(cx);
+    let measured = f32::from(measured).max(0.);
+    let (result, moving) = element_state(id.into(), window, |state: Option<ExpandState>, _| {
+        let mut s = state.unwrap_or(ExpandState { open, value: None });
+        let rest = if open {
+            Expand::Natural
+        } else {
+            Expand::Hidden
+        };
+        if settings.reduced {
+            s.open = open;
+            s.value = None;
+            return ((rest, false), s);
+        }
+        let now = Instant::now();
+        if s.open != open {
+            s.open = open;
+            if s.value.is_none() {
+                let from = if open { 0. } else { measured };
+                s.value = Some(SpringValue::new(spring, [from]));
+            }
+        }
+        let Some(value) = s.value.as_mut() else {
+            return ((rest, false), s);
+        };
+        // Opening content that was never measured: lay it out clipped to 0 for one frame.
+        if open && measured <= 0. {
+            return ((Expand::Clipped(px(0.)), true), s);
+        }
+        let target = if open { measured } else { 0. };
+        let t = now.duration_since(value.start).as_secs_f32() / settings.time_scale.max(0.01);
+        let ([h], moving) = value.update([target], spring, t, now);
+        if !moving {
+            s.value = None;
+            return ((rest, false), s);
+        }
+        ((Expand::Clipped(px(h.max(0.))), true), s)
+    });
+    if moving {
+        window.request_animation_frame();
+    }
+    result
+}
+
 pub fn key(id: &ElementId, name: &'static str) -> ElementId {
     ElementId::NamedChild(Box::new(id.clone()), name.into())
 }
@@ -630,6 +704,17 @@ mod tests {
         // Damping 0.6 overshoots about 9.5%, like the reference CSS curve (1.093).
         assert!((peak(Spring::SPATIAL_FAST) - 1.095).abs() < 0.005);
         assert!(peak(Spring::EFFECTS) <= 1.0001);
+    }
+
+    #[test]
+    fn retargeting_from_rest_starts_from_the_old_value() {
+        let now = Instant::now();
+        let mut value = SpringValue::new(Spring::SPATIAL, [120.]);
+        let (start, moving) = value.update([0.], Spring::SPATIAL, 0., now);
+        assert!(moving);
+        assert!((start[0] - 120.).abs() < 1e-4);
+        let (later, _) = value.update([0.], Spring::SPATIAL, 0.1, now);
+        assert!(later[0] < 120. && later[0] > 0.);
     }
 
     #[test]

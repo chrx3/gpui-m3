@@ -251,7 +251,11 @@ pub struct Menu {
     header: Option<AnyElement>,
     back: Option<(SharedString, ClickHandler)>,
     content_key: Option<u64>,
+    stagger: bool,
 }
+
+/// Delay between the entrances of consecutive menu items (the reference design: 25 ms, up to the fifth).
+const ITEM_STAGGER: f32 = 0.025;
 
 impl Menu {
     pub fn new(id: impl Into<ElementId>) -> Self {
@@ -267,7 +271,16 @@ impl Menu {
             header: None,
             back: None,
             content_key: None,
+            stagger: true,
         }
+    }
+
+    /// Items enter one by one, 25 ms apart, dropping 6 px and fading in behind the surface (on
+    /// by default; the fifth and later items share the last delay). Ignored by
+    /// [`Menu::grouped`] menus, whose groups stagger instead.
+    pub fn stagger(mut self, stagger: bool) -> Self {
+        self.stagger = stagger;
+        self
     }
 
     pub fn width(mut self, width: f32) -> Self {
@@ -401,12 +414,32 @@ impl RenderOnce for Menu {
             if has_header {
                 content = content.pt(px(2.));
             }
+            let mut n = 0usize;
             for (i, group) in self.groups.into_iter().enumerate() {
                 if i > 0 {
                     content =
                         content.child(div().my(px(4.)).mx(px(10.)).h(px(1.)).bg(s.outline_variant));
                 }
-                content = content.children(group);
+                if !self.stagger {
+                    content = content.children(group);
+                    continue;
+                }
+                for item in group {
+                    let id = ElementId::NamedChild(
+                        Box::new(self.id.clone()),
+                        format!("item-{n}").into(),
+                    );
+                    let delay = n.min(4) as f32 * ITEM_STAGGER;
+                    let p = entrance(id, Spring::SPATIAL, delay, window, cx);
+                    n += 1;
+                    content = content.child(
+                        div()
+                            .relative()
+                            .top(px(-6. * (1. - p)))
+                            .opacity(p.clamp(0., 1.))
+                            .child(item),
+                    );
+                }
             }
             if let Some(generation) = self.content_key {
                 content = content_switch(content, &self.id, generation, window, cx);
@@ -505,6 +538,8 @@ pub struct MenuItem {
     hover_fill: bool,
     highlights: Vec<std::ops::Range<usize>>,
     confirm: Option<SharedString>,
+    actions: Vec<AnyElement>,
+    line_clamp: Option<usize>,
     on_click: Option<ClickHandler>,
 }
 
@@ -529,8 +564,33 @@ impl MenuItem {
             hover_fill: true,
             highlights: Vec::new(),
             confirm: None,
+            actions: Vec::new(),
+            line_clamp: None,
             on_click: None,
         }
+    }
+
+    /// Adds an action under the text (a small [`super::Chip`] or [`super::Button`]), for
+    /// two-line rows such as the Rewind list: "Code", "Conversation", "Both". Rows with actions
+    /// align their content to the top; combine with [`MenuItem::static_row`] when the actions are
+    /// the only way to act on the row.
+    pub fn action(mut self, action: impl IntoElement) -> Self {
+        self.actions.push(action.into_any_element());
+        self
+    }
+
+    /// Adds several actions under the text. See [`MenuItem::action`].
+    pub fn actions(mut self, actions: impl IntoIterator<Item = impl IntoElement>) -> Self {
+        self.actions
+            .extend(actions.into_iter().map(IntoElement::into_any_element));
+        self
+    }
+
+    /// Shows at most `lines` lines of the label, cutting the rest with an ellipsis (a long
+    /// message preview).
+    pub fn line_clamp(mut self, lines: usize) -> Self {
+        self.line_clamp = Some(lines.max(1));
+        self
     }
 
     /// Whether hovering paints the row's highlight (on by default). Lists where the pointer moves
@@ -733,15 +793,32 @@ impl RenderOnce for MenuItem {
             _ => highlighted_label(self.label),
         };
 
+        let has_actions = !self.actions.is_empty();
+        let label = match self.line_clamp {
+            Some(lines) => div()
+                .overflow_hidden()
+                .text_ellipsis()
+                .line_clamp(lines)
+                .child(label)
+                .into_any_element(),
+            None => label,
+        };
         let mut row = div()
             .id(self.id.clone())
             .relative()
             .flex()
-            .items_center()
+            .when(!has_actions, |d| d.items_center())
+            .when(has_actions, |d| d.items_start())
             .gap(px(gap))
             .min_h(px(min_h))
             .px(px(pad))
-            .py(px(if self.dense { 0. } else { 4. }))
+            .py(px(if has_actions {
+                6.
+            } else if self.dense {
+                0.
+            } else {
+                4.
+            }))
             .corners(all(radius))
             .bg(bg)
             .text_color(fg)
@@ -788,6 +865,16 @@ impl RenderOnce for MenuItem {
                 .line_height(gpui::relative(1.25))
                 .child(label)
                 .children(sub)
+                .when(has_actions, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(4.))
+                            .mt(px(6.))
+                            .children(self.actions),
+                    )
+                })
         };
         row = row.child(text);
         let trailing = match (self.trailing, self.selected && self.radio.is_none()) {

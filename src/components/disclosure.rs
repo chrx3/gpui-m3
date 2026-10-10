@@ -6,14 +6,14 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    StatefulInteractiveElement, Styled, Window, canvas, div, px,
 };
 
 use super::{ChangeHandler, Icon, RoundedExt, all, child_id, corners};
 use crate::interaction::{
     focus_ring, focusable, interactive, state_layer, use_focus, use_interaction,
 };
-use crate::motion::{Spring, animate_f32, entrance, key};
+use crate::motion::{self, Expand, Spring, animate_f32, entrance, key};
 use crate::shapes::Tone;
 use crate::theme::{FONT_FAMILY, Theme};
 
@@ -209,16 +209,40 @@ impl RenderOnce for ExpandableCard {
                 .children(ring);
         }
 
-        let body = open.then(|| {
+        // The body's natural height, measured each frame it is drawn, drives the spring that
+        // opens and closes it.
+        let measured = window.use_keyed_state(key(&self.id, "body-height"), cx, |_, _| px(0.));
+        let expand = if expandable || open {
+            motion::expand(
+                key(&self.id, "expand"),
+                open,
+                *measured.read(cx),
+                Spring::SPATIAL,
+                window,
+                cx,
+            )
+        } else {
+            Expand::Hidden
+        };
+        let body = (expand != Expand::Hidden).then(|| {
             // Fades in each time the body appears (its entrance state lives only while shown).
             let p = entrance(key(&self.id, "body"), Spring::EFFECTS, 0., window, cx);
+            let p = if open { p } else { 1. };
+            let measure = canvas(
+                move |bounds, _, cx| {
+                    measured.update(cx, |h, _| *h = bounds.size.height);
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full();
             let body = div()
                 .flex()
                 .flex_col()
                 .gap(px(8.))
                 .opacity(p.clamp(0., 1.))
                 .children(self.children);
-            if self.plain {
+            let body = if self.plain {
                 body.mt(px(4.))
                     .ml(px(6.))
                     .pl(px(12.))
@@ -226,6 +250,18 @@ impl RenderOnce for ExpandableCard {
                     .border_color(s.outline_variant)
             } else {
                 body.pt(px(2.)).px(px(10.)).pb(px(10.))
+            };
+            // Margins included: the measured box is exactly what the clip must reveal.
+            let body = div()
+                .relative()
+                .flex()
+                .flex_col()
+                .flex_none()
+                .child(body)
+                .child(measure);
+            match expand {
+                Expand::Clipped(h) => div().h(h).flex_none().overflow_hidden().child(body),
+                _ => body,
             }
         });
 

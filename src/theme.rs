@@ -148,6 +148,39 @@ impl Scheme {
         }
     }
 
+    /// Every role mixed between `self` (at `t = 0`) and `other` (at `t = 1`), in sRGB.
+    pub fn lerp(&self, other: &Scheme, t: f32) -> Scheme {
+        let m = |a: Hsla, b: Hsla| mix(b, a, t.clamp(0., 1.));
+        Scheme {
+            primary: m(self.primary, other.primary),
+            on_primary: m(self.on_primary, other.on_primary),
+            primary_container: m(self.primary_container, other.primary_container),
+            on_primary_container: m(self.on_primary_container, other.on_primary_container),
+            secondary_container: m(self.secondary_container, other.secondary_container),
+            on_secondary_container: m(self.on_secondary_container, other.on_secondary_container),
+            tertiary: m(self.tertiary, other.tertiary),
+            tertiary_container: m(self.tertiary_container, other.tertiary_container),
+            on_tertiary_container: m(self.on_tertiary_container, other.on_tertiary_container),
+            surface: m(self.surface, other.surface),
+            surface_container: m(self.surface_container, other.surface_container),
+            surface_container_high: m(self.surface_container_high, other.surface_container_high),
+            surface_container_highest: m(
+                self.surface_container_highest,
+                other.surface_container_highest,
+            ),
+            on_surface: m(self.on_surface, other.on_surface),
+            on_surface_variant: m(self.on_surface_variant, other.on_surface_variant),
+            outline: m(self.outline, other.outline),
+            outline_variant: m(self.outline_variant, other.outline_variant),
+            error: m(self.error, other.error),
+            error_container: m(self.error_container, other.error_container),
+            on_error_container: m(self.on_error_container, other.on_error_container),
+            success: m(self.success, other.success),
+            warning: m(self.warning, other.warning),
+            shadow: m(self.shadow, other.shadow),
+        }
+    }
+
     /// Dynamic "tonal spot" scheme (2021 spec) from a seed color.
     pub fn from_seed(seed: Hsla, dark: bool) -> Self {
         let rgba = Rgba::from(seed);

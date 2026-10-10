@@ -10,7 +10,7 @@ use gpui::{
 
 use gpui::prelude::FluentBuilder as _;
 
-use super::{ClickHandler, RoundedExt, all, pop_in};
+use super::{ClickHandler, RoundedExt, all};
 use crate::motion::{Spring, animate_f32, entrance, key};
 use crate::theme::{FONT_FAMILY, Theme, alpha};
 
@@ -105,12 +105,17 @@ impl RenderOnce for Dialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let fade = entrance(key(&self.id, "scrim"), Spring::EFFECTS, 0., window, cx).clamp(0., 1.);
+        // M3 Expressive entrance (the reference design's m3-dialog-in): grows from 86 % while rising 18 px and
+        // opening its corners from 56 px. GPUI cannot scale, so the width grows instead.
+        let p = entrance(key(&self.id, "grow"), Spring::SPATIAL, 0., window, cx);
+        let rest = 1. - p;
+        let radius = self.radius + (px(56.) - self.radius) * rest.max(0.);
         let mut card = div()
             .id(key(&self.id, "card"))
             .flex()
             .flex_col()
             .gap(px(16.))
-            .w(self.width)
+            .w(self.width * (0.86 + 0.14 * p))
             .max_w(window.viewport_size().width - px(48.))
             .when_some(self.height, |d, h| {
                 d.h(h)
@@ -118,7 +123,7 @@ impl RenderOnce for Dialog {
                     .overflow_hidden()
             })
             .p(self.padding)
-            .rounded(self.radius)
+            .rounded(radius)
             .bg(s.surface_container_high)
             .text_color(s.on_surface_variant)
             .text_size(px(13.5))
@@ -156,7 +161,11 @@ impl RenderOnce for Dialog {
                     .children(self.actions),
             );
         }
-        let card = pop_in(div().child(card), &self.id, 0., window, cx);
+        let card = div()
+            .relative()
+            .top(px(18. * rest))
+            .opacity(p.clamp(0., 1.))
+            .child(card);
 
         // Covers the whole window even when the dialog is drawn inside a panel.
         let viewport = window.viewport_size();
@@ -214,15 +223,24 @@ impl Toast {
 impl RenderOnce for Toast {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        // M3 Expressive entrance (the reference design's m3-toast-in): rises 28 px from 80 % with 8 px corners,
+        // growing and rounding with the fast spatial spring. GPUI cannot scale, so the height and
+        // padding grow instead.
+        let p = entrance(key(&self.id, "grow"), Spring::SPATIAL_FAST, 0., window, cx);
+        let rest = 1. - p;
+        let grow = 0.8 + 0.2 * p;
         // Inverse surface: the content color of the scheme used as background.
         let mut el = div()
+            .relative()
+            .top(px(28. * rest))
+            .opacity(p.clamp(0., 1.))
             .flex()
             .items_center()
             .gap(px(12.))
-            .min_h(px(48.))
-            .pl(px(16.))
-            .pr(px(if self.action.is_some() { 8. } else { 16. }))
-            .rounded(px(14.))
+            .min_h(px(48. * grow))
+            .pl(px(16. * grow))
+            .pr(px(if self.action.is_some() { 8. } else { 16. } * grow))
+            .rounded(px(14. - 6. * rest))
             .bg(s.on_surface)
             .text_color(s.surface)
             .font_family(FONT_FAMILY)
@@ -246,7 +264,7 @@ impl RenderOnce for Toast {
                     .child(label),
             );
         }
-        pop_in(el, &self.id, 0., window, cx)
+        el
     }
 }
 

@@ -137,11 +137,9 @@ With nothing animating, the gallery does not redraw at all.
 
 ## Roadmap
 
-- `ReorderList`: drag to reorder rows, with groups (favorites) and an insertion line.
-- A circular theme transition (`theme_reveal`).
 - `SuggestionList`: animate rows that appear while typing by identity, not by position.
 - Focus rings on the other clickable components (buttons, menu items, rows).
-- `CodeEditor` on top of `SyntaxHighlighter`: editing, undo, Tab, folding and selection.
+- `CodeEditor`: code folding and multiple cursors.
 - Syntax colors inside `DiffView` lines, and a side-by-side diff.
 - `Markdown`: selectable text, hover underline on links, footnotes and math.
 

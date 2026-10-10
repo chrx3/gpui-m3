@@ -544,9 +544,126 @@ pub fn highlight_cached(code: &str, language: &str) -> Option<Tokens> {
     tokens
 }
 
+/// The tokens of one line.
+pub type LineTokens = Vec<(Range<usize>, TokenKind)>;
+
+/// Feeds a [`CodeEditor`](crate::CodeEditor) its colors with a [`SyntaxHighlighter`]. It keeps
+/// the parser state every [`SyntaxLines::STEP`] lines, so any visible line is highlighted by
+/// re-parsing at most that many lines before it, and edits only drop what follows them.
+pub struct SyntaxLines {
+    start: SyntaxHighlighter,
+    /// `checkpoints[k]`: the state before line `k * STEP`.
+    checkpoints: Vec<SyntaxHighlighter>,
+    cache: Vec<Option<LineTokens>>,
+}
+
+impl SyntaxLines {
+    pub const STEP: usize = 16;
+
+    pub fn new(highlighter: SyntaxHighlighter) -> Self {
+        Self {
+            checkpoints: vec![highlighter.clone()],
+            start: highlighter,
+            cache: Vec::new(),
+        }
+    }
+
+    /// For a file name's extension, or `None` when there is no grammar for it.
+    pub fn for_path(path: &str) -> Option<Self> {
+        SyntaxHighlighter::for_path(path).map(Self::new)
+    }
+
+    /// The tokens of `line`, given a way to read any line of the text.
+    pub fn tokens<'a>(
+        &mut self,
+        line: usize,
+        text: impl Fn(usize) -> &'a str,
+    ) -> Vec<(Range<usize>, TokenKind)> {
+        if let Some(Some(hit)) = self.cache.get(line) {
+            return hit.clone();
+        }
+        let k = line / Self::STEP;
+        while self.checkpoints.len() <= k {
+            let last = self.checkpoints.len() - 1;
+            let mut hl = self.checkpoints[last].clone();
+            for ix in last * Self::STEP..(last + 1) * Self::STEP {
+                hl.highlight_line(text(ix));
+            }
+            self.checkpoints.push(hl);
+        }
+        let mut hl = self.checkpoints[k].clone();
+        for ix in k * Self::STEP..line {
+            hl.highlight_line(text(ix));
+        }
+        let tokens = hl.highlight_line(text(line));
+        if self.cache.len() <= line {
+            self.cache.resize(line + 1, None);
+        }
+        self.cache[line] = Some(tokens.clone());
+        tokens
+    }
+
+    /// The text changed from `from_line` on.
+    pub fn invalidate(&mut self, from_line: usize) {
+        self.cache.truncate(from_line);
+        self.checkpoints.truncate(from_line / Self::STEP + 1);
+        if self.checkpoints.is_empty() {
+            self.checkpoints.push(self.start.clone());
+        }
+    }
+}
+
+impl crate::LineHighlighter for SyntaxLines {
+    fn highlight_line(
+        &mut self,
+        buffer: &crate::CodeBuffer,
+        line: usize,
+        cx: &App,
+    ) -> crate::LineHighlights {
+        let count = buffer.line_count();
+        let palette = SyntaxPalette::of(cx);
+        self.tokens(line, |ix| if ix < count { buffer.line(ix) } else { "" })
+            .into_iter()
+            .map(|(range, kind)| (range, palette.style(kind)))
+            .collect()
+    }
+
+    fn invalidate(&mut self, from_line: usize) {
+        SyntaxLines::invalidate(self, from_line);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn syntax_lines_match_a_straight_pass_and_survive_edits() {
+        let lines: Vec<String> = (0..40)
+            .map(|i| {
+                if i == 20 {
+                    "/* open".into()
+                } else if i == 22 {
+                    "close */".into()
+                } else {
+                    format!("let x{i} = \"s\"; // c")
+                }
+            })
+            .collect();
+        let mut straight = SyntaxHighlighter::new("rust").unwrap();
+        let expected: Vec<_> = lines.iter().map(|l| straight.highlight_line(l)).collect();
+        let mut sl = SyntaxLines::for_path("main.rs").unwrap();
+        for ix in [35, 3, 21, 39, 0, 17] {
+            assert_eq!(
+                sl.tokens(ix, |i| lines[i].as_str()),
+                expected[ix],
+                "line {ix}"
+            );
+        }
+        sl.invalidate(18);
+        assert_eq!(sl.tokens(21, |i| lines[i].as_str()), expected[21]);
+        assert_eq!(sl.tokens(2, |i| lines[i].as_str()), expected[2]);
+    }
 
     fn kinds(line: &str, tokens: &[(Range<usize>, TokenKind)]) -> Vec<(String, TokenKind)> {
         tokens
