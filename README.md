@@ -23,7 +23,8 @@ cargo run --example gallery
 ```
 
 The gallery shows every component with light/dark mode, nine seed colors and a **Slow ×5** switch to
-inspect the motion. The first build compiles GPUI and takes a few minutes.
+inspect the motion. The first build compiles GPUI and takes a few minutes. `M3_SECTION=<n>` opens a
+section directly and `M3_SIZE=<width>x<height>` sets the window size (handy for screenshots).
 
 ## Install
 
@@ -63,11 +64,12 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
 | Buttons | `Button` (filled, tonal, outlined, text, ghost; 6 sizes; toggle, sublabel, confirmation), `IconButton` (tooltip, launch), `Fab`, `FavStar` |
 | Selection | `Switch`, `SegmentedButtons`, `StopSlider`, `Slider`, `Chip` (assist, filled, filter, input, tonal, small), `SplitButton`, `Badge`, `Radio`, `Checkbox`, `ChoiceRow`, `MorphDot` |
 | Navigation | `NavItem` (drawer rows), `RailItem`, `IconTabs`, `TabStrip`, `TreeRow`, `ListItem` |
-| Text & feedback | `TextField` (pill, compact, inline, bare, filled, outlined), `TextArea` (multi-line), `CommandPalette`, `Dialog`, `Toast`, `Tooltip`, `context_menu` |
+| Text & feedback | `TextField` (pill, compact, inline, bare, filled, outlined), `TextArea` (multi-line), `CommandPalette`, `SuggestionList` (@-mentions, with `SuggestionNav`, `match_ranges`, `rank_mentions`), `Dialog`, `Toast`, `Tooltip`, `context_menu`, `Banner`, `DividerLabel` |
 | Surfaces | `Menu` (header, back row, scrolling), `MenuItem` (dense, radio, danger, shortcuts), `Popover`, `Card`, `ExpandableCard`, `ListGroup`, `Bubble` |
-| Shapes & progress | `Shape` (14 shapes, breathe, spin), `Avatar`, `LoadingIndicator`, `WavyProgress`, `Ring`, `LinearProgress` |
+| Shapes & progress | `Shape` (14 shapes, breathe, breathe on hover, photo fill, spin), `Avatar` (initials or a photo), `LoadingIndicator`, `WavyProgress`, `Ring`, `LinearProgress` |
+| Attachments | `DropZone` (files from the system), `ImageThumb` |
 | Appearance | `SelectCard`, `ColorSwatches`, `HsvPicker` |
-| Foundations | `theme` (`Scheme`, `Theme`, `corner`), `motion` (`Spring`, `animate*`, `entrance`), `shapes`, `interaction` |
+| Foundations | `theme` (`Scheme`, `Theme`, `corner`), `motion` (`Spring`, `animate*`, `entrance`, `presence`, `play_on_rise`), `Presence` (exit animations), `shapes`, `interaction` (state layer, ripples, focus ring) |
 
 ## Theming
 
@@ -122,11 +124,9 @@ With nothing animating, the gallery does not redraw at all.
 ## Roadmap
 
 - `ReorderList`: drag to reorder rows, with groups (favorites) and an insertion line.
-- `Shape::image` (a photo clipped to a shape through a cached raster mask), `UserAvatar` and
-  `breathe_on_hover`.
 - A circular theme transition (`theme_reveal`).
-- `CommandPalette`: the mouse moves the selection; `ExpandableCard`: keyboard toggling and a
-  focus ring.
+- `SuggestionList`: animate rows that appear while typing by identity, not by position.
+- Focus rings on the other clickable components (buttons, menu items, rows).
 
 ## Status
 

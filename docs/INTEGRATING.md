@@ -124,6 +124,15 @@ Rules of thumb:
   subscribe to `TextFieldEvent::{Changed, Submitted, Cancelled}`.
 - **Fonts:** components set `gpui_m3::theme::FONT_FAMILY` on themselves; set it on your root too so
   surrounding text matches.
+- **Completion lists:** a `SuggestionList` never takes focus. While it is open, call
+  `set_suggesting(true, cx)` on the `TextArea`/`TextField`, handle `SuggestionNext`,
+  `SuggestionPrevious`, `SuggestionAccept` and `SuggestionDismiss` with `on_action` on an ancestor
+  of the input, and keep the highlight in a `SuggestionNav`. Call `gpui_m3::init` before binding
+  your own keys for those inputs.
+- **Exit animations:** keep the data of content that is leaving (the last offer, the last menu)
+  until `motion::presence` returns `None`, and keep rendering it inside `Presence` meanwhile.
+- **Keyboard focus:** `ExpandableCard` headers are Tab stops. GPUI does not bind Tab by default:
+  bind it to an action that calls `window.focus_next()` on a focused root element (see the gallery).
 
 ## 5. Keep it fast
 
