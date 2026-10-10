@@ -129,6 +129,11 @@ Rules of thumb:
   `SuggestionPrevious`, `SuggestionAccept` and `SuggestionDismiss` with `on_action` on an ancestor
   of the input, and keep the highlight in a `SuggestionNav`. Call `gpui_m3::init` before binding
   your own keys for those inputs.
+- **Shortcut lists:** `KeyCombo::new(id, "ctrl-shift-k").names(KeyNames::spanish())` draws the
+  keys of a binding in a row (never stacked), so keep the text your app stores and let the
+  component spell it. Give it `on_click` to make it a button and `capturing(true)` while your view
+  waits for the next keystroke (the component only draws; listening is up to you). Put one in a
+  `SettingRow::control` inside `ListGroup::custom_row` for a settings list.
 - **Exit animations:** keep the data of content that is leaving (the last offer, the last menu)
   until `motion::presence` returns `None`, and keep rendering it inside `Presence` meanwhile.
 - **Keyboard focus:** `ExpandableCard` headers are Tab stops. GPUI does not bind Tab by default:

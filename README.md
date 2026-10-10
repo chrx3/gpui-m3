@@ -70,6 +70,7 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
 | Attachments | `DropZone` (files from the system), `ImageThumb` |
 | Code | `Markdown` (GFM: tables, tasks, nested lists, quotes, links, paths; parsed with `pulldown-cmark` and cached), `CodeBlock` (language name, Copy → Copied, highlighting), `CodeOutput` (clipped tool output), `DiffView` / `Diff` (real line diff with `similar`, folding, `+N −M`), `DiffBar` |
 | Appearance | `SelectCard`, `ColorSwatches`, `HsvPicker` |
+| Settings & keys | `SettingRow` (title, description and a control on the right, for a `ListGroup`), `Kbd` (one key cap), `KeyCombo` (a combination such as `ctrl-shift-k` in a row, clickable, with a pulsing "capturing" state), `KeyNames` (English or Spanish key words), `parse_keys` |
 | Foundations | `theme` (`Scheme`, `Theme`, `corner`), `syntax` (`SyntaxHighlighter` line by line, `SyntaxPalette`), `motion` (`Spring`, `animate*`, `entrance`, `presence`, `play_on_rise`), `Presence` (exit animations), `shapes`, `interaction` (state layer, ripples, focus ring) |
 
 ## Theming

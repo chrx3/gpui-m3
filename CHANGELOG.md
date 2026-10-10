@@ -78,5 +78,12 @@ First release.
   - Two-line `MenuItem` with actions under the text.
   - `Dialog::exit(progress)`: fades and sinks a dialog while it leaves (`motion::presence`),
     because a dialog is drawn deferred and a `Presence` around it cannot fade it.
+- Added for the Atic Code settings:
+  - `Kbd`, `KeyCombo`, `KeyNames` and `parse_keys`: key caps in a tonal container; a text such as
+    `ctrl-shift-k` becomes one aligned row in a fixed modifier order, with configurable words
+    (`KeyNames::spanish()`: Mayús, Supr, Av Pág…), muted keys, a hover layer when clickable and a
+    pulsing "capturing" pill with its own prompt.
+  - `SettingRow`: icon, title, description and a trailing control (switch, key combo, button),
+    optionally clickable as a whole; meant for `ListGroup::custom_row`.
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
 - Gallery example to try every component in light and dark, with any seed color and slow motion.

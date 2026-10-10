@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, AnyView, App, AppContext, Application, Bounds, Context, ElementId, Entity,
+    AnyElement, AnyView, App, AppContext, Application, Bounds, ClickEvent, Context, ElementId, Entity,
     ExternalPaths, FontStyle, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
     KeyBinding, MouseButton, ParentElement, PathBuilder, Pixels, Point, Render, RenderImage, Rgba,
     SharedString, StatefulInteractiveElement, StyleRefinement, Styled, TitlebarOptions, Window,
@@ -17,10 +17,10 @@ use gpui_m3::{
     ChipSize, ChoiceRow, CodeBuffer, CodeEditor, CodeEditorEvent, ColorSwatches, Command,
     CommandPalette, CommandPaletteEvent, Dialog, DividerLabel, DotShape, DropZone, Exit,
     ExpandableCard, Fab, FavStar, HsvPicker, Icon, IconButton, IconTab, IconTabs, ImageCropper,
-    ImageCropperEvent, ImageThumb, LineHighlighter, LineHighlights, LinearProgress, ListGroup,
+    ImageCropperEvent, ImageThumb, Kbd, KeyCombo, KeyNames, LineHighlighter, LineHighlights, LinearProgress, ListGroup,
     ListItem, LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem, PopDirection,
     Popover, Presence, RailItem, ReorderEvent, ReorderList, Ring, Segment, SegmentedButtons,
-    SelectCard, Shape, ShapeName, Slider, SplitButton, Splitter, Spring, StopSlider, Suggestion,
+    SelectCard, SettingRow, Shape, ShapeName, Slider, SplitButton, Splitter, Spring, StopSlider, Suggestion,
     SuggestionAccept, SuggestionDismiss, SuggestionList, SuggestionNav, SuggestionNext,
     SuggestionPrevious, Switch, Tab, TabStrip, TextArea, TextAreaEvent, TextField, TextFieldEvent,
     Theme, ThemeReveal, Toast, Tone, TreeRow, WavyProgress, animate_theme, apply_reorder,
@@ -131,6 +131,7 @@ struct Demos {
     toggles: [bool; 4],
     icon_toggle: bool,
     switches: [bool; 3],
+    keys_capturing: bool,
     segment: usize,
     icon_segment: usize,
     effort: usize,
@@ -554,6 +555,7 @@ impl Demos {
             toggles: [true, false, false, false],
             icon_toggle: true,
             switches: [true, false, true],
+            keys_capturing: false,
             segment: 1,
             icon_segment: 0,
             effort: 2,
@@ -1499,6 +1501,76 @@ impl Demos {
                             div().text_color(s.on_surface_variant).child("English"),
                         )
                         .row("Shortcuts", Badge::new("12")),
+                ),
+            ))
+            .child(demo(
+                "Keyboard keys",
+                "Kbd is one key cap; KeyCombo turns a text such as ctrl-shift-k into a row of them, in a fixed modifier order, with the words of a KeyNames table (English or Spanish). Muted keys cannot be changed; clicking a combo that has on_click starts capturing, shown as a pulsing pill.",
+                column()
+                    .child(
+                        row()
+                            .child(Kbd::new("Ctrl"))
+                            .child(Kbd::new("K").active(true))
+                            .child(Kbd::new("Esc").muted(true))
+                            .child(Kbd::new("F5").small(true)),
+                    )
+                    .child(
+                        row()
+                            .gap(px(24.))
+                            .child(KeyCombo::new("kc-en", "ctrl-shift-k"))
+                            .child(KeyCombo::new("kc-es", "ctrl-shift-k").names(KeyNames::spanish()))
+                            .child(KeyCombo::new("kc-seq", "escape escape").names(KeyNames::spanish()).muted(true))
+                            .child(KeyCombo::new("kc-arrows", "alt-left").small(true))
+                            .child(KeyCombo::new("kc-pg", "pagedown").names(KeyNames::spanish())),
+                    )
+                    .child(
+                        row().child(
+                            KeyCombo::new("kc-capture", "ctrl-k")
+                                .names(KeyNames::spanish())
+                                .capturing(self.keys_capturing)
+                                .prompt("Presiona la nueva combinación…")
+                                .tooltip("Click to change")
+                                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                                    this.keys_capturing = !this.keys_capturing;
+                                    cx.notify();
+                                })),
+                        ),
+                    ),
+            ))
+            .child(demo(
+                "Setting rows",
+                "SettingRow puts a title, a description and a control (a switch, a key combo, a button) in one row; it goes inside a ListGroup. With on_click the whole row is a button.",
+                div().w(px(520.)).child(
+                    ListGroup::new()
+                        .title("Shortcuts")
+                        .custom_row(
+                            SettingRow::new("sr-0", "Open the command palette")
+                                .description("Factory key: Ctrl+K")
+                                .control(
+                                    KeyCombo::new("sr-0-keys", "ctrl-k")
+                                        .on_click(|_, _, _| {}),
+                                ),
+                        )
+                        .custom_row(
+                            SettingRow::new("sr-1", "Close the menu")
+                                .description("This one cannot be changed")
+                                .muted(true)
+                                .control(KeyCombo::new("sr-1-keys", "escape").muted(true)),
+                        )
+                        .custom_row(
+                            SettingRow::new("sr-2", "Notifications")
+                                .icon("bolt")
+                                .control(
+                                    Switch::new("sr-2-sw", self.switches[0])
+                                        .on_toggle(update(cx, |this, v: bool, _| this.switches[0] = v)),
+                                ),
+                        )
+                        .custom_row(
+                            SettingRow::new("sr-3", "Language")
+                                .description("Applies to menus and messages")
+                                .on_click(|_, _, _| {})
+                                .control(div().text_color(s.on_surface_variant).child("English")),
+                        ),
                 ),
             ))
             .child(demo(
