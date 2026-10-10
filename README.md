@@ -68,8 +68,9 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
 | Surfaces | `Menu` (header, back row, scrolling), `MenuItem` (dense, radio, danger, shortcuts), `Popover`, `Card`, `ExpandableCard`, `ListGroup`, `Bubble` |
 | Shapes & progress | `Shape` (14 shapes, breathe, breathe on hover, photo fill, spin), `Avatar` (initials or a photo), `LoadingIndicator`, `WavyProgress`, `Ring`, `LinearProgress` |
 | Attachments | `DropZone` (files from the system), `ImageThumb` |
+| Code | `Markdown` (GFM: tables, tasks, nested lists, quotes, links, paths; parsed with `pulldown-cmark` and cached), `CodeBlock` (language name, Copy → Copied, highlighting), `CodeOutput` (clipped tool output), `DiffView` / `Diff` (real line diff with `similar`, folding, `+N −M`), `DiffBar` |
 | Appearance | `SelectCard`, `ColorSwatches`, `HsvPicker` |
-| Foundations | `theme` (`Scheme`, `Theme`, `corner`), `motion` (`Spring`, `animate*`, `entrance`, `presence`, `play_on_rise`), `Presence` (exit animations), `shapes`, `interaction` (state layer, ripples, focus ring) |
+| Foundations | `theme` (`Scheme`, `Theme`, `corner`), `syntax` (`SyntaxHighlighter` line by line, `SyntaxPalette`), `motion` (`Spring`, `animate*`, `entrance`, `presence`, `play_on_rise`), `Presence` (exit animations), `shapes`, `interaction` (state layer, ripples, focus ring) |
 
 ## Theming
 
@@ -78,6 +79,18 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
   [`material-colors`](https://crates.io/crates/material-colors)).
 - `Theme::set_scheme(scheme, dark, cx)` uses your own colors — handy when your app already has
   design tokens. See [docs/INTEGRATING.md](docs/INTEGRATING.md).
+
+### Syntax colors
+
+`CodeBlock` and `SyntaxHighlighter` reduce tokens to a few kinds (keyword, string, function, type,
+comment, number, meta) painted with a `SyntaxPalette` derived from the scheme: keywords in
+`primary`, strings in `success`, types in `tertiary`, comments in `outline`, numbers in
+`warning`. `SyntaxPalette::set(Some(palette), cx)` uses your own colors.
+
+Highlighting uses [syntect](https://crates.io/crates/syntect) with its bundled Sublime Text
+syntaxes and the pure-Rust regex engine (no C toolchain), plus compact grammars for TypeScript,
+TOML and PowerShell. It works line by line with a cloneable state, so an editor can re-highlight
+from the edited line.
 
 ## Motion
 
@@ -120,6 +133,7 @@ With nothing animating, the gallery does not redraw at all.
 - `material-colors` 0.4 implements the 2021 dynamic color spec (0.5 requires Rust 1.97).
 - Roboto ships as a variable font with weights; width axes (`font-stretch`) are not available in GPUI.
 - Monospace text uses the platform font (Consolas, Menlo or DejaVu Sans Mono); none is bundled.
+- GPUI does not select text, so `Markdown` offers no selection; put a Copy action next to it.
 
 ## Roadmap
 
@@ -127,6 +141,9 @@ With nothing animating, the gallery does not redraw at all.
 - A circular theme transition (`theme_reveal`).
 - `SuggestionList`: animate rows that appear while typing by identity, not by position.
 - Focus rings on the other clickable components (buttons, menu items, rows).
+- `CodeEditor` on top of `SyntaxHighlighter`: editing, undo, Tab, folding and selection.
+- Syntax colors inside `DiffView` lines, and a side-by-side diff.
+- `Markdown`: selectable text, hover underline on links, footnotes and math.
 
 ## Status
 
@@ -137,6 +154,10 @@ pre-1.0 and changes its API between versions, so `gpui-m3` tracks `gpui 0.2.x`.
 
 - Text editing in `TextField` is based on GPUI's `examples/input.rs` (Apache-2.0).
 - Motion values from Jetpack Compose Material 3 (Apache-2.0).
+- Syntax highlighting by [syntect](https://github.com/trishume/syntect) (MIT) and its bundled
+  Sublime Text syntaxes; Markdown parsing by
+  [pulldown-cmark](https://github.com/pulldown-cmark/pulldown-cmark) (MIT); diffs by
+  [similar](https://github.com/mitsuhiko/similar) (Apache-2.0).
 - Roboto by The Roboto Project Authors, under the [SIL Open Font License 1.1](assets/fonts/OFL.txt).
 - "Material Design" is a trademark of Google. This project is not affiliated with or endorsed by Google.
 

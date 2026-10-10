@@ -28,7 +28,10 @@ use gpui_m3::{
     theme::{FONT_FAMILY, alpha, hex},
 };
 
-const SECTIONS: [(&str, &str); 14] = [
+#[path = "gallery/code.rs"]
+mod code;
+
+const SECTIONS: [(&str, &str); 15] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -42,6 +45,7 @@ const SECTIONS: [(&str, &str); 14] = [
     ("Panels", "panel-right"),
     ("Appearance", "palette"),
     ("Attachments and notices", "clip"),
+    ("Code and Markdown", "terminal"),
     ("Motion", "refresh"),
 ];
 
@@ -116,6 +120,7 @@ struct Gallery {
 /// Content of the current section and the state of its demos.
 struct Demos {
     section: usize,
+    code_demos: Entity<code::CodeDemos>,
     toggles: [bool; 4],
     icon_toggle: bool,
     switches: [bool; 3],
@@ -394,6 +399,7 @@ impl Demos {
             toast_open: false,
             context_menu: None,
             section: 0,
+            code_demos: cx.new(code::CodeDemos::new),
             toggles: [true, false, false, false],
             icon_toggle: true,
             switches: [true, false, true],
@@ -565,6 +571,7 @@ impl Render for Demos {
             10 => self.panels(cx),
             11 => self.appearance(cx),
             12 => self.attachments(window, cx),
+            13 => self.code_demos.clone().into_any_element(),
             _ => self.motion(window, cx),
         };
         div()

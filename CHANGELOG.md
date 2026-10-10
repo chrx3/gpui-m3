@@ -47,5 +47,19 @@ First release.
     ring (`interaction::use_focus`, `focusable`, `focus_ring`).
   - `CommandPalette`: the pointer moves the selection, the list scrolls to it and the matching
     text is highlighted; `MenuItem::hover_fill` and `MenuItem::label_highlights`.
+- Added for the reference design port, batch 2 (code):
+  - `Diff` (a real line diff with `similar`: old/new numbers, `hunks`, `rows` with folding,
+    `from_unified` for `git diff` output), `diff_stats`, `DiffView` (folded runs as
+    "⋯ N unchanged lines", "Show all" past 400 rows, header with `+N −M`, new-file style) and
+    `DiffBar`.
+  - `CodeOutput`: clipped monospace output with "Show all (N more lines)", a prompt and an
+    error style.
+  - `syntax`: `SyntaxHighlighter` (syntect, line by line, cloneable state), `highlight`,
+    `highlight_cached` (resumes a growing block), `language` labels and `SyntaxPalette`.
+  - `CodeBlock`: language name, Copy → "Copied" for 1.4 s, highlighting, scrolling both ways.
+  - `Markdown`: GFM via `pulldown-cmark` (headings, nested and numbered lists, tasks, quotes,
+    rules, emphasis, strikethrough, inline code, tables, links and bare URLs, images, code
+    blocks), cached by text for streaming; `on_link`, `on_path` (`looks_like_path`,
+    `split_path_line`) and `on_image`; `parse_markdown` for tests and custom renderers.
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
 - Gallery example to try every component in light and dark, with any seed color and slow motion.

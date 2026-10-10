@@ -247,6 +247,8 @@ impl RenderOnce for CodeBlock {
                     .id(child_id(&self.id, "code"))
                     .max_h(self.max_height)
                     .overflow_scroll()
+                    // A row lets the text keep its full width, so long lines scroll sideways.
+                    .flex()
                     .px(px(12.))
                     .py(px(10.))
                     .font_family(MONO_FONT_FAMILY)

@@ -305,10 +305,10 @@ impl Diff {
         let mut rows = Vec::new();
         let mut i = 0;
         while i < lines.len() {
-            if i > 0 {
-                if let Some(gap) = skipped(&lines[i - 1], &lines[i]) {
-                    rows.push(DiffRow::Skipped { lines: gap });
-                }
+            if i > 0
+                && let Some(gap) = skipped(&lines[i - 1], &lines[i])
+            {
+                rows.push(DiffRow::Skipped { lines: gap });
             }
             if lines[i].kind != DiffLineKind::Context {
                 rows.push(DiffRow::Line(i));
@@ -343,7 +343,7 @@ impl Diff {
 
 /// Lines a patch skips between two consecutive lines (their numbers jump).
 fn skipped(prev: &DiffLine, next: &DiffLine) -> Option<usize> {
-    let gap = |a: Option<usize>, b: Option<usize>| Some(b?.checked_sub(a? + 1)?);
+    let gap = |a: Option<usize>, b: Option<usize>| b?.checked_sub(a? + 1);
     gap(prev.old, next.old)
         .or_else(|| gap(prev.new, next.new))
         .filter(|&n| n > 0)
@@ -472,7 +472,7 @@ impl RenderOnce for DiffView {
                 .child(n.map(|n| n.to_string()).unwrap_or_default())
         };
 
-        let mut body = div().flex().flex_col().min_w_full();
+        let mut body = div().flex().flex_col().flex_none().min_w_full();
         for row in rows.into_iter().take(shown) {
             body = body.child(match row {
                 DiffRow::Line(i) => {
@@ -621,6 +621,8 @@ impl RenderOnce for DiffView {
                 div()
                     .id(child_id(&self.id, "body"))
                     .overflow_x_scroll()
+                    // A row lets the lines keep their full width, so long ones scroll sideways.
+                    .flex()
                     .child(body),
             )
             .children(more)

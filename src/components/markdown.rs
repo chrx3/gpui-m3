@@ -343,10 +343,10 @@ impl Builder {
             }
             TagEnd::Item => {
                 self.flush();
-                if let Some(Frame::Item(item)) = self.frames.pop() {
-                    if let Some(Frame::List { items, .. }) = self.frames.last_mut() {
-                        items.push(item);
-                    }
+                if let Some(Frame::Item(item)) = self.frames.pop()
+                    && let Some(Frame::List { items, .. }) = self.frames.last_mut()
+                {
+                    items.push(item);
                 }
             }
             TagEnd::List(_) => {
@@ -716,7 +716,8 @@ enum Target {
 
 struct Render<'a> {
     id: &'a ElementId,
-    count: usize,
+    /// Elements made so far per kind, so a new link does not renumber the code blocks.
+    counts: Vec<(&'static str, usize)>,
     size: f32,
     s: Scheme,
     on_link: Option<LinkHandler>,
@@ -726,11 +727,17 @@ struct Render<'a> {
 
 impl Render<'_> {
     fn next_id(&mut self, part: &'static str) -> ElementId {
-        self.count += 1;
-        ElementId::NamedChild(
-            Box::new(self.id.clone()),
-            format!("{part}{}", self.count).into(),
-        )
+        let n = match self.counts.iter_mut().find(|(p, _)| *p == part) {
+            Some((_, n)) => {
+                *n += 1;
+                *n
+            }
+            None => {
+                self.counts.push((part, 0));
+                0
+            }
+        };
+        ElementId::NamedChild(Box::new(self.id.clone()), format!("{part}{n}").into())
     }
 
     fn rich(&mut self, rich: &RichText, weight: FontWeight) -> AnyElement {
@@ -958,16 +965,15 @@ impl Render<'_> {
             }
         }
         let total: f32 = weights.iter().sum();
-        let row_el = |cells: &[RichText], header: bool, this: &mut Self| {
+        let row_el = |cells: &[RichText], header: bool, last: bool, this: &mut Self| {
             let mut row = div()
                 .flex()
                 .w_full()
-                .border_b_1()
-                .border_color(s.outline_variant);
+                .when(!last, |d| d.border_b_1().border_color(s.outline_variant));
             if header {
                 row = row.bg(s.surface_container);
             }
-            for c in 0..columns {
+            for (c, weight) in weights.iter().enumerate() {
                 let content = cells.get(c).map(|cell| {
                     this.rich(
                         cell,
@@ -979,7 +985,7 @@ impl Render<'_> {
                     )
                 });
                 let cell = div()
-                    .w(relative(weights[c] / total))
+                    .w(relative(weight / total))
                     .min_w(px(48.))
                     .px(px(10.))
                     .py(px(4.))
@@ -1006,10 +1012,10 @@ impl Render<'_> {
             .overflow_hidden()
             .text_size(px(self.size * 0.95));
         if !head.is_empty() {
-            table = table.child(row_el(head, true, self));
+            table = table.child(row_el(head, true, rows.is_empty(), self));
         }
-        for row in rows {
-            table = table.child(row_el(row, false, self));
+        for (i, row) in rows.iter().enumerate() {
+            table = table.child(row_el(row, false, i + 1 == rows.len(), self));
         }
         div()
             .id(self.next_id("table"))
@@ -1083,7 +1089,7 @@ impl RenderOnce for Markdown {
         let size = f32::from(self.size);
         let mut r = Render {
             id: &self.id,
-            count: 0,
+            counts: Vec::new(),
             size,
             s,
             on_link: self.on_link,
@@ -1115,7 +1121,7 @@ mod tests {
         }
     }
 
-    fn styled<'a>(rich: &'a RichText, f: impl Fn(&InlineStyle) -> bool) -> Vec<&'a str> {
+    fn styled(rich: &RichText, f: impl Fn(&InlineStyle) -> bool) -> Vec<&str> {
         rich.spans
             .iter()
             .filter(|(_, s)| f(s))
