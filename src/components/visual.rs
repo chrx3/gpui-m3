@@ -13,15 +13,15 @@ use super::photo::{self, PhotoSource};
 use crate::interaction::rounded_rect;
 use crate::motion::{
     Spring, animate, animate_color, animate_f32, continuous, continuous_at, cubic_bezier, key,
-    play_on_rise,
 };
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
 use crate::theme::{FONT_FAMILY, Theme};
 
 /// A shape from the M3 shape library. `morph` makes it breathe between two shapes and `spin` rotates it.
 ///
-/// [`Shape::breathe_on_hover`] morphs it once toward another shape and back each time the pointer
-/// enters (the reference design's profile avatar), and [`Shape::image`] fills it with a photo.
+/// [`Shape::breathe_on_hover`] morphs it toward another shape while the pointer is over it and
+/// back when it leaves, with a spring and on top of the ambient breath; [`Shape::image`] fills it
+/// with a photo.
 #[derive(IntoElement)]
 pub struct Shape {
     shape: ShapeName,
@@ -36,9 +36,6 @@ pub struct Shape {
     turn: f32,
     grow: f32,
 }
-
-/// Duration of one hover breath (the reference design: `m3-shape-breathe 1.2s`).
-const HOVER_BREATH: f32 = 1.2;
 
 impl Shape {
     pub fn new(shape: ShapeName) -> Self {
@@ -86,7 +83,7 @@ impl Shape {
         self
     }
 
-    /// Each time the pointer enters, morphs once toward `other` and back (1.2 s). `id` must be
+    /// While the pointer is over it, morphs toward `other` (and back on leave). `id` must be
     /// unique within the view. Use [`Shape::hovered`] to follow the hover of a larger parent
     /// (a whole profile button) instead of the shape's own.
     pub fn breathe_on_hover(mut self, id: impl Into<ElementId>, other: ShapeName) -> Self {
@@ -145,6 +142,7 @@ impl RenderOnce for Shape {
                 to: other,
                 t: ease(triangle((t / period).fract())),
                 rotation: 0.,
+                toward: None,
             },
             None => Morph::still(self.shape),
         };
@@ -161,15 +159,26 @@ impl RenderOnce for Shape {
                     on
                 }
             };
-            if let Some(elapsed) =
-                play_on_rise(key(id, "breath"), hovered, HOVER_BREATH, window, cx)
-            {
+            // Held while hovered and released on leave, both with a spring, and blended over
+            // the ambient breath so neither cuts the other.
+            let weight = animate_f32(
+                key(id, "hover"),
+                Spring::SPATIAL,
+                if hovered { 1. } else { 0. },
+                window,
+                cx,
+            );
+            if self.photo.is_some() {
+                // The photo mask morphs between two shapes only (cached steps).
                 morph = Morph {
                     from: self.shape,
                     to: *other,
-                    t: ease(triangle(elapsed / HOVER_BREATH)),
+                    t: weight.clamp(0., 1.),
                     rotation: 0.,
+                    toward: None,
                 };
+            } else {
+                morph.toward = Some((*other, weight));
             }
         }
         let rotation = self.spin.map_or(0., |p| (t / p).fract() * TAU) + self.turn;
@@ -466,6 +475,7 @@ impl RenderOnce for LoadingIndicator {
             to: LOADING_SEQUENCE[(index + 1) % n],
             t: progress,
             rotation: (t / 1.4).fract() * TAU,
+            toward: None,
         };
         let (color, scale) = if self.contained {
             (s.on_primary_container, 0.62)

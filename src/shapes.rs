@@ -147,6 +147,9 @@ pub struct Morph {
     pub to: ShapeName,
     pub t: f32,
     pub rotation: f32,
+    /// A third shape blended on top, with its weight (a hover that pulls the shape toward
+    /// another while it keeps breathing). `None` for a plain two-shape morph.
+    pub toward: Option<(ShapeName, f32)>,
 }
 
 impl Morph {
@@ -156,6 +159,7 @@ impl Morph {
             to: shape,
             t: 0.,
             rotation: 0.,
+            toward: None,
         }
     }
 
@@ -172,12 +176,17 @@ impl Morph {
         let cx = f32::from(bounds.origin.x) + w / 2.;
         let cy = f32::from(bounds.origin.y) + h / 2.;
         let (sin, cos) = self.rotation.sin_cos();
+        let toward = self.toward.filter(|(_, w)| *w != 0.).map(|(shape, w)| (shape.unit_points(), w));
         a.iter()
             .enumerate()
             .map(|(i, &(ax, ay))| {
                 let (x, y) = match b {
                     Some(b) => (ax + (b[i].0 - ax) * self.t, ay + (b[i].1 - ay) * self.t),
                     None => (ax, ay),
+                };
+                let (x, y) = match toward {
+                    Some((h, w)) => (x + (h[i].0 - x) * w, y + (h[i].1 - y) * w),
+                    None => (x, y),
                 };
                 let (dx, dy) = ((x - 0.5) * w, (y - 0.5) * h);
                 point(px(cx + dx * cos - dy * sin), px(cy + dx * sin + dy * cos))

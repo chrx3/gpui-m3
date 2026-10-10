@@ -167,6 +167,7 @@ fn masked(key: &MaskKey) -> Option<RenderImage> {
         to: key.to,
         t,
         rotation: 0.,
+        toward: None,
     };
     let bounds = Bounds {
         origin: point(px(0.), px(0.)),
