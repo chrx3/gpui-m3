@@ -2,26 +2,33 @@
 //!
 //! `cargo run --example gallery`
 
+use std::sync::Arc;
+
 use gpui::{
     AnyElement, AnyView, App, AppContext, Application, Bounds, Context, ElementId, Entity,
-    FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder,
-    Pixels, Point, Render, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
-    TitlebarOptions, Window, WindowAppearance, WindowBounds, WindowOptions, anchored, canvas,
-    deferred, div, point, prelude::FluentBuilder, px, size,
+    ExternalPaths, FontWeight, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton,
+    ParentElement, PathBuilder, Pixels, Point, Render, RenderImage, Rgba, SharedString,
+    StatefulInteractiveElement, StyleRefinement, Styled, TitlebarOptions, Window, WindowAppearance,
+    WindowBounds, WindowOptions, actions, anchored, canvas, deferred, div, point,
+    prelude::FluentBuilder, px, size,
 };
 use gpui_m3::{
-    Avatar, Badge, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip, ChipSize,
-    ChoiceRow, ColorSwatches, Command, CommandPalette, CommandPaletteEvent, Dialog, DotShape,
-    ExpandableCard, Fab, FavStar, HsvPicker, Icon, IconButton, IconTab, IconTabs, LinearProgress,
-    ListGroup, ListItem, LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem,
-    PopDirection, Popover, RailItem, Ring, Segment, SegmentedButtons, SelectCard, Shape, ShapeName,
-    Slider, SplitButton, Spring, StopSlider, Switch, Tab, TabStrip, TextArea, TextAreaEvent,
-    TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress, context_menu,
+    Avatar, Badge, Banner, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip,
+    ChipSize, ChoiceRow, ColorSwatches, Command, CommandPalette, CommandPaletteEvent, Dialog,
+    DividerLabel, DotShape, DropZone, Exit, ExpandableCard, Fab, FavStar, HsvPicker, Icon,
+    IconButton, IconTab, IconTabs, ImageThumb, LinearProgress, ListGroup, ListItem,
+    LoadingIndicator, Menu, MenuItem, MorphDot, MotionSettings, NavItem, PopDirection, Popover,
+    Presence, RailItem, Ring, Segment, SegmentedButtons, SelectCard, Shape, ShapeName, Slider,
+    SplitButton, Spring, StopSlider, Suggestion, SuggestionAccept, SuggestionDismiss,
+    SuggestionList, SuggestionNav, SuggestionNext, SuggestionPrevious, Switch, Tab, TabStrip,
+    TextArea, TextAreaEvent, TextField, TextFieldEvent, Theme, Toast, Tone, TreeRow, WavyProgress,
+    context_menu,
     motion::{animate_color, animate_f32, key, pulse},
+    rank_mentions,
     theme::{FONT_FAMILY, alpha, hex},
 };
 
-const SECTIONS: [(&str, &str); 13] = [
+const SECTIONS: [(&str, &str); 14] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -34,6 +41,7 @@ const SECTIONS: [(&str, &str); 13] = [
     ("Conversation", "diff"),
     ("Panels", "panel-right"),
     ("Appearance", "palette"),
+    ("Attachments and notices", "clip"),
     ("Motion", "refresh"),
 ];
 
@@ -47,6 +55,52 @@ const MODELS: [&str; 3] = ["Opus 4.1", "Sonnet 4.5", "Haiku 4.5"];
 
 const EFFORTS: [&str; 5] = ["Low", "Medium", "High", "Very high", "Max"];
 
+/// Project files for the @-mention demo.
+const MENTION_FILES: [&str; 12] = [
+    "src/components/Agent.tsx",
+    "src/components/Composer.tsx",
+    "src/components/chat/Thread.tsx",
+    "src/components/Profile.tsx",
+    "src/components/Sidebar.tsx",
+    "src/components/ui.tsx",
+    "src/lib/motion.ts",
+    "src/lib/shapes.ts",
+    "src/styles/chat.css",
+    "src/styles/expressive.css",
+    "src/styles/motion.css",
+    "README.md",
+];
+
+actions!(gallery, [FocusNext, FocusPrevious]);
+
+/// A small generated "photo" (sky, sun and hills) for the image demos, in GPUI's BGRA order.
+fn demo_photo(hue: f32) -> Arc<RenderImage> {
+    let n = 128usize;
+    let mut data = vec![0u8; n * n * 4];
+    for y in 0..n {
+        for x in 0..n {
+            let (fx, fy) = (x as f32 / n as f32, y as f32 / n as f32);
+            let hill = 0.68 + 0.08 * (fx * 7.).sin();
+            let sun = ((fx - 0.68).powi(2) + (fy - 0.32).powi(2)).sqrt() < 0.14;
+            let color = if fy > hill {
+                gpui::hsla((hue + 0.25) % 1., 0.45, 0.32 + 0.1 * (1. - fy), 1.)
+            } else if sun {
+                gpui::hsla((hue + 0.12) % 1., 0.9, 0.78, 1.)
+            } else {
+                gpui::hsla(hue, 0.55, 0.45 + 0.3 * fy, 1.)
+            };
+            let c = Rgba::from(color);
+            let o = (y * n + x) * 4;
+            data[o] = (c.b * 255.) as u8;
+            data[o + 1] = (c.g * 255.) as u8;
+            data[o + 2] = (c.r * 255.) as u8;
+            data[o + 3] = 255;
+        }
+    }
+    let buffer = image::RgbaImage::from_raw(n as u32, n as u32, data).unwrap();
+    Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]))
+}
+
 /// Window root: sidebar and toolbar. The content lives in a separate cached view, so the
 /// logo and toolbar animations do not rebuild it.
 struct Gallery {
@@ -55,6 +109,8 @@ struct Gallery {
     slow: bool,
     demos: Entity<Demos>,
     logo: Entity<Logo>,
+    /// Focused on open so Tab (bound to `FocusNext`) has a dispatch path to the root.
+    focus: gpui::FocusHandle,
 }
 
 /// Content of the current section and the state of its demos.
@@ -120,6 +176,19 @@ struct Demos {
     context_menu: Option<Point<Pixels>>,
     composer: Entity<TextArea>,
     sent: SharedString,
+    replay_key: u64,
+    offer_shown: bool,
+    notice_level: usize,
+    last_notice_level: usize,
+    presence_on: bool,
+    dropped: SharedString,
+    photos: Vec<Arc<RenderImage>>,
+    thumbs: Vec<usize>,
+    mention_input: Entity<TextArea>,
+    mention_matches: Vec<&'static str>,
+    mention_query: SharedString,
+    mention_at: Option<usize>,
+    mention_nav: SuggestionNav,
 }
 
 /// The animated logo, in its own view: its continuous animation does not rebuild the content.
@@ -147,6 +216,7 @@ impl Gallery {
             slow: false,
             demos: cx.new(Demos::new),
             logo: cx.new(|_| Logo),
+            focus: cx.focus_handle(),
         }
     }
 
@@ -237,9 +307,37 @@ impl Demos {
             },
         )
         .detach();
+        let mention_input = cx.new(|cx| {
+            TextArea::new(cx)
+                .placeholder("Mention a file with @…")
+                .min_rows(2)
+                .max_height(px(160.))
+        });
+        cx.subscribe(
+            &mention_input,
+            |this: &mut Demos, _, event: &TextAreaEvent, cx| {
+                if let TextAreaEvent::Changed(_) = event {
+                    this.refresh_mentions(cx);
+                }
+            },
+        )
+        .detach();
         Self {
             composer,
             sent: SharedString::default(),
+            replay_key: 0,
+            offer_shown: true,
+            notice_level: 1,
+            last_notice_level: 1,
+            presence_on: true,
+            dropped: SharedString::default(),
+            photos: vec![demo_photo(0.58), demo_photo(0.05), demo_photo(0.75)],
+            thumbs: vec![0, 1, 2],
+            mention_input,
+            mention_matches: Vec::new(),
+            mention_query: SharedString::default(),
+            mention_at: None,
+            mention_nav: SuggestionNav::default(),
             search,
             filter,
             agent_tab: 0,
@@ -436,6 +534,9 @@ impl Render for Gallery {
         div()
             .size_full()
             .flex()
+            .track_focus(&self.focus)
+            .on_action(|_: &FocusNext, window, _| window.focus_next())
+            .on_action(|_: &FocusPrevious, window, _| window.focus_prev())
             .bg(s.surface_container)
             .text_color(s.on_surface)
             .font_family(FONT_FAMILY)
@@ -463,6 +564,7 @@ impl Render for Demos {
             9 => self.conversation(window, cx),
             10 => self.panels(cx),
             11 => self.appearance(cx),
+            12 => self.attachments(window, cx),
             _ => self.motion(window, cx),
         };
         div()
@@ -1688,7 +1790,7 @@ impl Demos {
             ))
             .child(demo(
                 "Expandable cards",
-                "Tool card (radius 16, chevron rotates, corners tighten on press while closed), a tonal subagent card with an always-visible row, and the plain reasoning disclosure with pulsing text.",
+                "Tool card (radius 16, chevron rotates, corners tighten on press while closed), a tonal subagent card with an always-visible row, and the plain reasoning disclosure with pulsing text. Tab to a header: Enter or Space toggles it and a focus ring shows.",
                 column().w(px(520.)).gap(px(8.)).child(tool).child(subagent).child(thinking),
             ))
             .child(demo(
@@ -1891,7 +1993,7 @@ impl Demos {
             ))
             .child(demo(
                 "Command palette",
-                "Modal near the top: type to filter, ↑/↓ to move, Enter to run, Escape or a click outside to close.",
+                "Modal near the top: type to filter (matches are highlighted), ↑/↓ or the pointer move the selection, Enter or a click runs, Escape or a click outside closes.",
                 row()
                     .child(
                         Button::new("open-palette", "Open palette")
@@ -2008,6 +2110,392 @@ impl Demos {
                     .child(self.rename_field.clone()),
             ))
             .into_any_element()
+    }
+
+    fn attachments(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let s = *Theme::of(cx);
+        let k = self.replay_key;
+
+        // Dividers inside a conversation.
+        let dividers = column()
+            .w(px(560.))
+            .gap(px(4.))
+            .child(DividerLabel::new(("div-compact", k), "Context compacted"))
+            .child(
+                DividerLabel::new(("div-model", k), "Switched to Opus 4.1")
+                    .pill()
+                    .icon("cpu"),
+            )
+            .child(
+                DividerLabel::new(("div-pending", k), "Haiku 4.5 on the next message")
+                    .pill()
+                    .icon("cpu")
+                    .pending(true),
+            )
+            .child(
+                row().child(
+                    Button::new("div-replay", "Replay")
+                        .size(ButtonSize::Small)
+                        .icon("refresh")
+                        .on_click(click(cx, |this: &mut Demos, _| this.replay_key += 1)),
+                ),
+            );
+
+        // Banners above the composer, kept on screen while they leave.
+        let offer = Presence::new("offer-presence", self.offer_shown)
+            .exit(Exit::Sink)
+            .child(
+                Banner::new(("offer", k))
+                    .icon("spark")
+                    .title("Theme migration notes")
+                    .text("Artifact published · open it in the browser?")
+                    .action(
+                        Button::new("offer-open", "Open")
+                            .filled()
+                            .trailing(Icon::new("export").size(px(13.)))
+                            .on_click(click(cx, |this: &mut Demos, _| this.offer_shown = false)),
+                    )
+                    .action(
+                        Button::new("offer-copy", "Copy link")
+                            .text()
+                            .on_click(click(cx, |this: &mut Demos, _| this.offer_shown = false)),
+                    )
+                    .on_dismiss(click(cx, |this: &mut Demos, _| this.offer_shown = false)),
+            );
+        let level = self.notice_level.max(self.last_notice_level);
+        let notice_text = if level >= 2 {
+            "The context is almost full: Claude will compact soon and may lose details. A new chat is recommended."
+        } else {
+            "This conversation is already long. For better results and lower usage, start a new chat."
+        };
+        let notice = Banner::new(("notice", level))
+            .icon("gauge")
+            .text(notice_text)
+            .action(Chip::new("notice-new", "New chat"))
+            .action(Chip::new("notice-compact", "Compact"))
+            .dismiss_label("Hide notice")
+            .on_dismiss(click(cx, |this: &mut Demos, _| this.notice_level = 0));
+        let notice = if level >= 2 {
+            notice.warning()
+        } else {
+            notice.subtle()
+        };
+        let notice = Presence::new("notice-presence", self.notice_level > 0)
+            .exit(Exit::Sink)
+            .child(notice);
+        let banners = column().w(px(560.)).child(offer).child(notice).child(
+            row()
+                .child(
+                    Button::new("offer-show", "Show artifact offer")
+                        .size(ButtonSize::Small)
+                        .on_click(click(cx, |this: &mut Demos, _| {
+                            this.offer_shown = !this.offer_shown
+                        })),
+                )
+                .child(
+                    SegmentedButtons::new(
+                        "notice-level",
+                        [
+                            Segment::label("No notice"),
+                            Segment::label("Long"),
+                            Segment::label("Almost full"),
+                        ],
+                        self.notice_level,
+                    )
+                    .on_change(update(cx, |this: &mut Demos, i: usize, _| {
+                        this.notice_level = i;
+                        if i > 0 {
+                            this.last_notice_level = i;
+                        }
+                    })),
+                ),
+        );
+
+        // Presence on its own: a chip that fades out before it is removed.
+        let presence_demo = row()
+            .child(
+                Switch::new("presence-switch", self.presence_on)
+                    .on_toggle(update(cx, |this: &mut Demos, on: bool, _| {
+                        this.presence_on = on
+                    })),
+            )
+            .when_some(
+                gpui_m3::motion::presence("presence-chip", self.presence_on, window, cx),
+                |d, p| {
+                    d.child(Exit::Rise.apply(
+                        div().child(
+                            Chip::new("presence-chip-el", "Leaves before unmounting").icon("spark"),
+                        ),
+                        p,
+                    ))
+                },
+            );
+
+        // Drop zone around a composer-like area.
+        let dropped = if self.dropped.is_empty() {
+            "Drag files from your file manager onto the box.".to_string()
+        } else {
+            format!("Dropped: {}", self.dropped)
+        };
+        let drop = column()
+            .w(px(560.))
+            .child(
+                DropZone::new("drop-zone")
+                    .label("Drop to attach")
+                    .on_drop({
+                        let set = update(cx, |this: &mut Demos, names: SharedString, _| {
+                            this.dropped = names
+                        });
+                        move |paths: &ExternalPaths, window, cx| {
+                            let names = paths
+                                .paths()
+                                .iter()
+                                .filter_map(|p| p.file_name())
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            set(names.into(), window, cx)
+                        }
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .h(px(110.))
+                            .rounded(px(26.))
+                            .bg(s.surface_container_high)
+                            .text_color(s.on_surface_variant)
+                            .child("Ask anything · drop files to attach"),
+                    ),
+            )
+            .child(
+                div()
+                    .text_size(px(12.5))
+                    .text_color(s.on_surface_variant)
+                    .child(dropped),
+            );
+
+        // Thumbnails: composer attachments (remove on hover) and a sent message.
+        let mut thumbs = row().gap(px(8.));
+        for (i, &photo) in self.thumbs.iter().enumerate() {
+            thumbs = thumbs.child(
+                ImageThumb::new(("thumb", photo), self.photos[photo].clone()).on_remove(click(
+                    cx,
+                    move |this: &mut Demos, _| {
+                        if i < this.thumbs.len() {
+                            this.thumbs.remove(i);
+                        }
+                    },
+                )),
+            );
+        }
+        let sent = Bubble::custom(BubbleKind::User)
+            .child(
+                row()
+                    .gap(px(6.))
+                    .mb(px(6.))
+                    .child(ImageThumb::new("sent-0", self.photos[0].clone()).size(px(64.)))
+                    .child(ImageThumb::new("sent-1", self.photos[1].clone()).size(px(64.))),
+            )
+            .child("Can you match these two palettes?");
+        let images = row()
+            .items_end()
+            .gap(px(28.))
+            .child(
+                column().gap(px(8.)).child(thumbs).child(
+                    Button::new("thumbs-restore", "Restore")
+                        .size(ButtonSize::Small)
+                        .on_click(click(cx, |this: &mut Demos, _| this.thumbs = vec![0, 1, 2])),
+                ),
+            )
+            .child(sent);
+
+        // Photo avatars and shapes that breathe when hovered.
+        let avatars = row()
+            .gap(px(20.))
+            .child(
+                Avatar::image(self.photos[2].clone())
+                    .name("Ada Lovelace")
+                    .size(px(64.))
+                    .breathe_on_hover("ava-photo", ShapeName::Clover8),
+            )
+            .child(
+                Avatar::image(self.photos[0].clone())
+                    .name("Grace Hopper")
+                    .size(px(40.))
+                    .breathe_on_hover("ava-photo-small", ShapeName::Clover8),
+            )
+            .child(
+                Avatar::image(std::path::PathBuf::from("missing-photo.png"))
+                    .name("Grace Hopper")
+                    .size(px(40.)),
+            )
+            .child(
+                Shape::new(ShapeName::Cookie9)
+                    .size(px(56.))
+                    .color(s.tertiary_container)
+                    .breathe_on_hover("shape-hover", ShapeName::Clover8)
+                    .child(
+                        Icon::new("spark")
+                            .size(px(20.))
+                            .color(s.on_tertiary_container),
+                    ),
+            );
+
+        // @-mentions: a composer with an anchored suggestion list.
+        let suggestions: Vec<Suggestion> = self
+            .mention_matches
+            .iter()
+            .map(|path| {
+                let name = path.rsplit('/').next().unwrap_or(path);
+                Suggestion::new("file", name.to_string()).hint(path.to_string())
+            })
+            .collect();
+        let list = (!suggestions.is_empty()).then(|| {
+            div().absolute().top_0().left(px(12.)).child(
+                SuggestionList::new("mentions", suggestions)
+                    .query(self.mention_query.clone())
+                    .selected(self.mention_nav.selected())
+                    .width(420.)
+                    .anchor(gpui::Corner::BottomLeft)
+                    .on_hover(update(cx, |this: &mut Demos, row: usize, _| {
+                        this.mention_nav.hover(row);
+                    }))
+                    .on_pick({
+                        let view = cx.entity().downgrade();
+                        move |row, _, cx| {
+                            view.update(cx, |this, cx| this.pick_mention(row, cx)).ok();
+                        }
+                    }),
+            )
+        });
+        let mentions = column()
+            .w(px(560.))
+            .child(
+                div()
+                    .relative()
+                    .key_context("GalleryMentions")
+                    .on_action(cx.listener(|this, _: &SuggestionNext, _, cx| {
+                        this.mention_nav.next();
+                        cx.notify();
+                    }))
+                    .on_action(cx.listener(|this, _: &SuggestionPrevious, _, cx| {
+                        this.mention_nav.previous();
+                        cx.notify();
+                    }))
+                    .on_action(cx.listener(|this, _: &SuggestionAccept, _, cx| {
+                        if let Some(row) = this.mention_nav.current() {
+                            this.pick_mention(row, cx);
+                        }
+                    }))
+                    .on_action(cx.listener(|this, _: &SuggestionDismiss, _, cx| {
+                        this.close_mentions(cx);
+                    }))
+                    .pt(px(15.))
+                    .px(px(20.))
+                    .pb(px(12.))
+                    .rounded(px(26.))
+                    .bg(s.surface_container_high)
+                    .child(self.mention_input.clone())
+                    .children(list),
+            )
+            .child(
+                div()
+                    .text_size(px(12.5))
+                    .text_color(s.on_surface_variant)
+                    .child("Type @ and part of a file name. ↑/↓ or the pointer move, Enter or Tab picks, Escape closes."),
+            );
+
+        page()
+            .child(demo(
+                "Divider labels",
+                "Separators inside a conversation: a compaction (thin lines) and a model switch (wavy lines and a tonal pill; outlined and flowing while pending). The lines grow out from the label.",
+                dividers,
+            ))
+            .child(demo(
+                "Banners",
+                "The artifact offer (tonal, shape mark, pill buttons) and the long-conversation notice (subtle, or tinted when the context is almost full). Both leave through Presence.",
+                banners,
+            ))
+            .child(demo(
+                "Presence",
+                "Keeps an element on screen while it animates out with the fast effects spring, then removes it.",
+                presence_demo,
+            ))
+            .child(demo(
+                "Drop zone",
+                "While files are dragged over the area, a \"Drop to attach\" layer springs in over it.",
+                drop,
+            ))
+            .child(demo(
+                "Image thumbnails",
+                "Composer attachments (56 px, a round × on hover) and the images of a sent message (64 px).",
+                images,
+            ))
+            .child(demo(
+                "Photo avatars",
+                "A photo clipped to an M3 shape with smooth edges; hover to morph Cookie9 → Clover8 and back. The third one falls back to initials (missing file).",
+                avatars,
+            ))
+            .child(demo(
+                "Mentions (autocomplete)",
+                "An anchored suggestion list driven by the composer's keys; the matching part of each name is highlighted.",
+                mentions,
+            ))
+            .into_any_element()
+    }
+
+    fn refresh_mentions(&mut self, cx: &mut Context<Self>) {
+        let input = self.mention_input.read(cx);
+        let text = input.text().to_string();
+        let cursor = input.cursor_offset().min(text.len());
+        let before = &text[..cursor];
+        let at = before
+            .rfind('@')
+            .filter(|&i| i == 0 || before[..i].ends_with(char::is_whitespace));
+        let query = at
+            .map(|i| &before[i + 1..])
+            .filter(|q| !q.contains(char::is_whitespace));
+        match (at, query) {
+            (Some(at), Some(query)) => {
+                self.mention_matches =
+                    rank_mentions(MENTION_FILES.iter().copied(), query, 8, |f| f);
+                self.mention_query = query.to_string().into();
+                self.mention_at = Some(at);
+                self.mention_nav.reset(self.mention_matches.len());
+            }
+            _ => {
+                self.mention_at = None;
+                self.mention_matches.clear();
+                self.mention_nav.reset(0);
+            }
+        }
+        let open = !self.mention_matches.is_empty();
+        self.mention_input
+            .update(cx, |input, cx| input.set_suggesting(open, cx));
+        cx.notify();
+    }
+
+    fn pick_mention(&mut self, row: usize, cx: &mut Context<Self>) {
+        let (Some(at), Some(path)) = (self.mention_at, self.mention_matches.get(row).copied())
+        else {
+            return;
+        };
+        let cursor = self.mention_input.read(cx).cursor_offset();
+        self.mention_input.update(cx, |input, cx| {
+            input.replace_range(at..cursor, &format!("@{path} "), cx)
+        });
+        self.close_mentions(cx);
+    }
+
+    fn close_mentions(&mut self, cx: &mut Context<Self>) {
+        self.mention_at = None;
+        self.mention_matches.clear();
+        self.mention_nav.reset(0);
+        self.mention_input
+            .update(cx, |input, cx| input.set_suggesting(false, cx));
+        cx.notify();
     }
 
     fn motion(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -2198,6 +2686,12 @@ fn main() {
         .with_assets(gpui_m3::Assets)
         .run(|cx: &mut App| {
             gpui_m3::init(cx);
+            // Tab moves the keyboard focus (expandable card headers show their focus ring).
+            cx.bind_keys([
+                KeyBinding::new("tab", FocusNext, None),
+                KeyBinding::new("shift-tab", FocusPrevious, None),
+            ]);
+            // M3_SECTION=<n> opens a section directly (handy for screenshots).
             // M3_REDUCED=1 disables animations (useful for measuring idle cost).
             if std::env::var("M3_REDUCED").is_ok_and(|v| v == "1") {
                 cx.set_global(MotionSettings {
@@ -2205,7 +2699,15 @@ fn main() {
                     reduced: true,
                 });
             }
-            let bounds = Bounds::centered(None, size(px(1280.), px(860.)), cx);
+            // M3_SIZE=<width>x<height> sets the window size (for screenshots).
+            let (width, height) = std::env::var("M3_SIZE")
+                .ok()
+                .and_then(|v| {
+                    let (w, h) = v.split_once('x')?;
+                    Some((w.parse::<f32>().ok()?, h.parse::<f32>().ok()?))
+                })
+                .unwrap_or((1280., 860.));
+            let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -2219,6 +2721,15 @@ fn main() {
                     cx.new(|cx| {
                         let gallery = Gallery::new(window, cx);
                         gallery.apply_theme(cx);
+                        window.focus(&gallery.focus);
+                        if let Some(section) = std::env::var("M3_SECTION")
+                            .ok()
+                            .and_then(|v| v.parse::<usize>().ok())
+                        {
+                            gallery
+                                .demos
+                                .update(cx, |d, _| d.section = section.min(SECTIONS.len() - 1));
+                        }
                         gallery
                     })
                 },
