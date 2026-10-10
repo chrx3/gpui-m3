@@ -8,10 +8,12 @@
 //! ```
 
 mod assets;
+mod cache;
 pub mod components;
 pub mod interaction;
 pub mod motion;
 pub mod shapes;
+pub mod syntax;
 pub mod theme;
 
 use std::borrow::Cow;
@@ -22,6 +24,7 @@ pub use assets::{Assets, ICON_PREFIX};
 pub use components::*;
 pub use motion::{MotionSettings, Spring};
 pub use shapes::{Morph, ShapeName, Tone};
+pub use syntax::{SyntaxHighlighter, SyntaxPalette, TokenKind};
 pub use theme::{Scheme, Theme, corner};
 
 /// Registers the typeface, the base (light) theme and the motion settings.

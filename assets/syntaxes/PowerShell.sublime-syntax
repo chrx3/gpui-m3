@@ -1,0 +1,64 @@
+%YAML 1.2
+---
+# A compact PowerShell grammar for gpui-m3 (syntect's default set has none).
+name: PowerShell
+file_extensions: [ps1, psm1, psd1]
+scope: source.powershell
+contexts:
+  main:
+    - match: '<#'
+      push: block_comment
+    - match: '#.*$\n?'
+      scope: comment.line.number-sign.powershell
+    - match: '@"'
+      push: here_double
+    - match: "@'"
+      push: here_single
+    - match: '"'
+      push: double_string
+    - match: "'"
+      push: single_string
+    - match: '(?i)\b(begin|break|catch|class|continue|data|default|do|dynamicparam|else|elseif|end|enum|exit|filter|finally|for|foreach|function|hidden|if|in|param|process|return|static|switch|throw|trap|try|until|using|while|workflow)\b'
+      scope: keyword.control.powershell
+    - match: '(?i)(?<![\w-])-(eq|ne|gt|ge|lt|le|like|notlike|match|notmatch|contains|notcontains|in|notin|replace|split|join|and|or|not|xor|is|isnot|as|f|band|bor)\b'
+      scope: keyword.other.operator.powershell
+    - match: '(?i)\$(true|false|null)\b'
+      scope: constant.language.powershell
+    - match: '(?i)\$(this|_|psitem|args|input)\b'
+      scope: variable.language.powershell
+    - match: '\$\{[^}\n]+\}|\$[\w:]+'
+      scope: support.variable.powershell
+    - match: '\[[A-Za-z_][\w.]*(\[\])?\]'
+      scope: support.type.powershell
+    - match: '\b[A-Za-z]+-[A-Za-z][A-Za-z0-9]*\b'
+      scope: support.function.cmdlet.powershell
+    - match: '(?<![\w-])-[A-Za-z][\w]*'
+      scope: entity.other.attribute-name.parameter.powershell
+    - match: '(?i)\b(0x[0-9a-f]+|\d+(\.\d+)?)(kb|mb|gb|tb|pb)?\b'
+      scope: constant.numeric.powershell
+  block_comment:
+    - meta_scope: comment.block.powershell
+    - match: '#>'
+      pop: true
+  double_string:
+    - meta_scope: string.quoted.double.powershell
+    - match: '`.'
+      scope: constant.character.escape.powershell
+    - match: '\$\{[^}\n]+\}|\$[\w:]+'
+      scope: support.variable.powershell
+    - match: '"'
+      pop: true
+  single_string:
+    - meta_scope: string.quoted.single.powershell
+    - match: "''"
+      scope: constant.character.escape.powershell
+    - match: "'"
+      pop: true
+  here_double:
+    - meta_scope: string.quoted.double.heredoc.powershell
+    - match: '^"@'
+      pop: true
+  here_single:
+    - meta_scope: string.quoted.single.heredoc.powershell
+    - match: "^'@"
+      pop: true

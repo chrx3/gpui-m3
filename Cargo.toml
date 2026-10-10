@@ -17,6 +17,9 @@ gpui = "0.2.2"
 # The crate GPUI decodes images with; used to build shaped photo rasters.
 image = { version = "0.25", default-features = false }
 material-colors = "0.4"
+pulldown-cmark = { version = "0.13", default-features = false }
+similar = { version = "2", default-features = false, features = ["text"] }
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy", "yaml-load"] }
 unicode-segmentation = "1"
 
 # Unoptimized GPUI is very slow. In development, dependencies are optimized (built once) and
