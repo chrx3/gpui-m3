@@ -165,14 +165,16 @@ impl RenderOnce for DropZone {
     }
 }
 
-/// A rounded image thumbnail: the composer's attachments (56 px) and the images of a user
-/// message (64 px). With [`ImageThumb::on_remove`] a small round "×" appears on hover.
+/// A rounded image thumbnail: the composer's attachments and the images of a user
+/// message. Keeps the image's own aspect ratio (`size` caps the longest side). With
+/// [`ImageThumb::on_remove`] a small round "×" appears on hover.
 #[derive(IntoElement)]
 pub struct ImageThumb {
     id: ElementId,
     source: ImageSource,
     size: Pixels,
     radius: Pixels,
+    aspect: Option<(f32, f32)>,
     on_remove: Option<ClickHandler>,
     remove_label: SharedString,
     on_click: Option<ClickHandler>,
@@ -187,13 +189,14 @@ impl ImageThumb {
             source: source.into(),
             size: px(56.),
             radius: px(12.),
+            aspect: None,
             on_remove: None,
             remove_label: "Remove".into(),
             on_click: None,
         }
     }
 
-    /// Side in pixels (56 by default; 64 for the images of a sent message).
+    /// Longest side in pixels (56 by default): the other side follows the image.
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = size;
         self
@@ -202,6 +205,15 @@ impl ImageThumb {
     /// Corner radius (12 px, M3's medium corner, by default).
     pub fn radius(mut self, radius: Pixels) -> Self {
         self.radius = radius;
+        self
+    }
+
+    /// The image's real size (width, height): the thumbnail keeps its shape — a wide
+    /// screenshot comes out landscape, whole. Without it the thumbnail is square.
+    pub fn aspect(mut self, width: f32, height: f32) -> Self {
+        if width > 0. && height > 0. {
+            self.aspect = Some((width, height));
+        }
         self
     }
 
@@ -259,11 +271,19 @@ impl RenderOnce for ImageThumb {
                 })
         });
         let hover = hovered.clone();
+        // With the real size the box follows the image (`size` is the longest side);
+        // without it the box stays square and the image covers it, as before.
+        let (box_w, box_h) = match self.aspect {
+            Some((w, h)) if h <= w => (self.size, self.size * (h / w)),
+            Some((w, h)) => (self.size * (w / h), self.size),
+            None => (self.size, self.size),
+        };
         div()
             .id(self.id.clone())
             .relative()
             .flex_none()
-            .size(self.size)
+            .w(box_w)
+            .h(box_h)
             .rounded(radius)
             .bg(s.surface_container_highest)
             .on_hover(move |on, _, cx| {
@@ -279,7 +299,7 @@ impl RenderOnce for ImageThumb {
                 img(self.source)
                     .size_full()
                     .rounded(radius)
-                    .object_fit(ObjectFit::Cover),
+                    .object_fit(if self.aspect.is_some() { ObjectFit::Contain } else { ObjectFit::Cover }),
             )
             .children(remove)
     }

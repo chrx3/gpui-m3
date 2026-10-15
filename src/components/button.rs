@@ -16,7 +16,7 @@ use gpui::{
 };
 
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
-use crate::interaction::{interactive, state_layer, use_interaction};
+use crate::interaction::{interactive, keyboard_focus, state_layer, use_interaction};
 use crate::motion::{
     Spring, animate_color, animate_f32, animate_on_activate, cubic_bezier, key, replay,
 };
@@ -137,6 +137,8 @@ pub struct Button {
     label_on_hover: bool,
     icon_only: bool,
     truncate: bool,
+    autofocus: bool,
+    tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
 
@@ -157,6 +159,8 @@ impl Button {
             label_on_hover: false,
             icon_only: false,
             truncate: false,
+            autofocus: false,
+            tooltip: None,
             on_click: None,
         }
     }
@@ -173,6 +177,19 @@ impl Button {
     /// are cut with an ellipsis instead of pushing the button out of its container.
     pub fn truncate(mut self, truncate: bool) -> Self {
         self.truncate = truncate;
+        self
+    }
+
+    /// Takes the keyboard focus the first time it appears (e.g. the primary button of a
+    /// permission card), never again after that.
+    pub fn autofocus(mut self, autofocus: bool) -> Self {
+        self.autofocus = autofocus;
+        self
+    }
+
+    /// Tooltip shown on hover. An icon-only button builds its own from the label.
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
         self
     }
 
@@ -333,10 +350,12 @@ impl RenderOnce for Button {
             });
 
         let icon_only = self.icon_only && self.icon.is_some() && !self.label_on_hover;
-        let tooltip = icon_only.then(|| match (&self.label, &self.sublabel) {
-            (Some(label), Some(sub)) => SharedString::from(format!("{label} {sub}")),
-            (Some(label), None) => label.clone(),
-            _ => SharedString::default(),
+        let tooltip = self.tooltip.clone().or_else(|| {
+            icon_only.then(|| match (&self.label, &self.sublabel) {
+                (Some(label), Some(sub)) => SharedString::from(format!("{label} {sub}")),
+                (Some(label), None) => label.clone(),
+                _ => SharedString::default(),
+            })
         });
         let mut el = div()
             .id(self.id.clone())
@@ -440,6 +459,9 @@ impl RenderOnce for Button {
             el = el.tooltip(super::Tooltip::text(tooltip));
         }
         let mut el = interactive(el, &state, enabled, true);
+        if enabled {
+            el = keyboard_focus(el, &self.id, all(radius), self.autofocus, window, cx);
+        }
         if enabled && (self.on_click.is_some() || confirmed_at.is_some()) {
             let f = self.on_click;
             let duration = self.confirm.as_ref().map(|(_, d)| *d);

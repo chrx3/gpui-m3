@@ -10,7 +10,7 @@ use gpui::{
 };
 
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
-use crate::interaction::{interactive, state_layer, use_interaction};
+use crate::interaction::{interactive, keyboard_focus, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, key};
 use crate::theme::{FONT_FAMILY, Theme, alpha};
 
@@ -189,6 +189,7 @@ pub struct ChoiceRow {
     mark: ChoiceMark,
     selected: bool,
     disabled: bool,
+    autofocus: bool,
     trailing: Option<AnyElement>,
     on_click: Option<ClickHandler>,
 }
@@ -221,6 +222,7 @@ impl ChoiceRow {
             mark,
             selected,
             disabled: false,
+            autofocus: false,
             trailing: None,
             on_click: None,
         }
@@ -233,6 +235,12 @@ impl ChoiceRow {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Takes the keyboard focus the first time it appears (the first option of a question).
+    pub fn autofocus(mut self, autofocus: bool) -> Self {
+        self.autofocus = autofocus;
         self
     }
 
@@ -331,6 +339,9 @@ impl RenderOnce for ChoiceRow {
             .child(text)
             .children(self.trailing);
         let mut row = interactive(row, &state, enabled, true);
+        if enabled {
+            row = keyboard_focus(row, &self.id, all(radius), self.autofocus, window, cx);
+        }
         if let (Some(f), true) = (self.on_click, enabled) {
             row = row.on_click(move |e, w, cx| f(e, w, cx));
         }

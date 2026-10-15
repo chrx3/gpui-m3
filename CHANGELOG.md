@@ -94,4 +94,13 @@ First release.
   as a tooltip, for narrow containers) and `Button::truncate` (the button shrinks and cuts its
   label with an ellipsis instead of overflowing its row).
 - Interaction: hover state layer and ripples clipped to each component's rounded shape.
+- `ImageThumb` keeps the image's aspect ratio: `size` caps the longest side and `aspect(w, h)`
+  shapes the box from the image's real size, so an attached screenshot shows whole (a wide one
+  comes out landscape) instead of being cropped into a square or stretched. Used by the
+  composer's attachments and the images of a user message.
+- Added for Atic Code's permission cards: `interaction::keyboard_focus` wires the Tab stop and
+  the M3 focus ring in one step; `Button` and `ChoiceRow` are keyboard-focusable (Enter / Space
+  click them), `Button::autofocus` / `ChoiceRow::autofocus` take the focus the first time the
+  element appears, and `Button::tooltip` shows a hover tip (icon-only buttons keep building
+  theirs from the label).
 - Gallery example to try every component in light and dark, with any seed color and slow motion.

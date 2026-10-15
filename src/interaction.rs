@@ -7,8 +7,8 @@ use std::{cell::Cell, f32::consts::FRAC_PI_2, rc::Rc, time::Instant};
 
 use gpui::{
     App, Bounds, Corners, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement,
-    IntoElement, MouseButton, PathBuilder, Pixels, Point, Stateful, StatefulInteractiveElement,
-    Styled, Window, canvas, div, fill, point, px,
+    IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Stateful,
+    StatefulInteractiveElement, Styled, Window, canvas, div, fill, point, px,
 };
 
 use crate::motion::{self, Spring, animate_f32, cubic_bezier, key};
@@ -269,6 +269,29 @@ pub fn focus_ring(
             .rounded_br(grow(radii.bottom_right))
             .rounded_bl(grow(radii.bottom_left)),
     )
+}
+
+/// Wires keyboard focus to an interactive element: a Tab stop with the M3 focus ring. With
+/// `autofocus`, the element takes the focus the first time it appears (e.g. the primary
+/// button of a permission card), never again after that.
+pub fn keyboard_focus(
+    el: Stateful<Div>,
+    id: &ElementId,
+    radii: Corners<Pixels>,
+    autofocus: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let (state, handle, ring_visible) = use_focus(id, window, cx);
+    if autofocus && !handle.is_focused(window) {
+        let asked = window.use_keyed_state(key(id, "autofocus"), cx, |_, _| false);
+        if !*asked.read(cx) {
+            asked.update(cx, |asked, _| *asked = true);
+            window.focus(&handle);
+        }
+    }
+    let ring = focus_ring(id, ring_visible, radii, window, cx);
+    focusable(el, &state, &handle).children(ring)
 }
 
 /// Absolute container that fills its parent (for indicators and layers).
