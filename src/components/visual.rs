@@ -128,7 +128,9 @@ fn triangle(phase: f32) -> f32 {
 impl RenderOnce for Shape {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let color = self.color.unwrap_or(Theme::of(cx).primary_container);
-        let animated = self.morph.is_some() || self.spin.is_some();
+        // Ambient shapes hold still while the window is in the background: no reason to
+        // redraw it at 30 fps nobody is looking at (CPU and battery).
+        let animated = (self.morph.is_some() || self.spin.is_some()) && window.is_window_active();
         // Ambient motion: it is slow, so 30 fps is enough.
         let t = if animated {
             continuous_at(30., window, cx)

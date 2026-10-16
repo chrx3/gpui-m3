@@ -327,6 +327,8 @@ fn animate_inner<const N: usize>(
     cx: &mut App,
 ) -> [f32; N] {
     let settings = MotionSettings::get(cx);
+    #[cfg(feature = "frame-stats")]
+    let label = id.clone();
     let (value, moving) = element_state(id, window, |state: Option<SpringValue<N>>, _| {
         let mut s = state.unwrap_or_else(|| {
             let mut value = SpringValue::new(spring, target);
@@ -344,6 +346,12 @@ fn animate_inner<const N: usize>(
         }
         let now = Instant::now();
         let t = now.duration_since(s.start).as_secs_f32() / settings.time_scale.max(0.01);
+        // Retargeted again right after starting: two live elements share this id and keep
+        // flipping each other's target every frame, so the window never stops redrawing.
+        #[cfg(feature = "frame-stats")]
+        if (target != s.target || spring != s.spring) && t < 0.004 {
+            log::warn!("spring {label:?} retargeted twice within a frame (duplicate element id)");
+        }
         (s.update(target, spring, t, now), s)
     });
     if moving {
