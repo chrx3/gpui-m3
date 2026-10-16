@@ -6,6 +6,7 @@ use gpui::{
 use crate::motion::{Spring, entrance, key};
 
 /// Stroke icon from the library (`m3/icons/<name>.svg`, see [`crate::Assets::icon_names`]).
+/// A name ending in `.svg` is taken as a full asset path, for the app's own icons.
 #[derive(IntoElement)]
 pub struct Icon {
     name: SharedString,
@@ -68,8 +69,13 @@ impl RenderOnce for Icon {
             scale *= 0.2 + 0.8 * p;
             opacity = p.clamp(0., 1.);
         }
+        let path: SharedString = if self.name.ends_with(".svg") {
+            self.name.clone()
+        } else {
+            format!("{}{}.svg", crate::assets::ICON_PREFIX, self.name).into()
+        };
         let mut el = svg()
-            .path(format!("{}{}.svg", crate::assets::ICON_PREFIX, self.name))
+            .path(path)
             .size(self.size)
             .flex_none();
         if let Some(color) = self.color {
