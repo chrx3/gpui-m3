@@ -134,6 +134,15 @@ static FRAME_REQUESTS: std::sync::Mutex<Vec<(&'static std::panic::Location<'stat
 
 #[track_caller]
 pub(crate) fn request_frame(window: &mut Window) {
+    count_frame_request();
+    window.request_animation_frame();
+}
+
+/// Counts a frame request from the caller's call site (see [`take_frame_requests`]). The
+/// timed redraws of [`continuous_at`] count too: they are frames as much as an animation
+/// frame, and without them a window kept busy by spinners showed no culprit.
+#[track_caller]
+fn count_frame_request() {
     #[cfg(feature = "frame-stats")]
     {
         let at = std::panic::Location::caller();
@@ -144,7 +153,42 @@ pub(crate) fn request_frame(window: &mut Window) {
             }
         }
     }
-    window.request_animation_frame();
+}
+
+/// Shared grid for timed redraws, in ticks per second. Every [`tick_delay`] lands on it, so a
+/// spinner at 30 fps, a caret at 4 fps and an app's coalesced updates fire at the same
+/// instants and GPUI draws them in one frame instead of interleaving them (30 + 33 updates
+/// per second used to be ~50 frames).
+const TICK_GRID: f64 = 60.;
+
+/// Start of the tick grid (not scaled by the motion settings: it paces timers, not values).
+fn tick_origin() -> Instant {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    *START.get_or_init(Instant::now)
+}
+
+/// Time until the next tick of a `fps` ticker on the shared grid. Use it to pace redraws that
+/// do not need every frame (streamed text, clocks): `fps` ticks per second at most, in step
+/// with the motion helpers' own timed redraws.
+pub fn tick_delay(fps: f32) -> Duration {
+    let now = tick_origin().elapsed().as_secs_f64();
+    Duration::from_secs_f64(delay_to_tick(now, fps as f64))
+}
+
+/// Seconds from `now` (seconds since the grid origin) to the next multiple of `1 / fps`,
+/// moved forward onto the [`TICK_GRID`] when that multiple is not on it. Never zero, so a
+/// redraw that lands right on a tick waits for the next one instead of firing twice.
+fn delay_to_tick(now: f64, fps: f64) -> f64 {
+    let period = 1. / fps.clamp(0.1, TICK_GRID);
+    let mut next = ((now / period).floor() + 1.) * period;
+    if next - now < 1e-4 {
+        // `now` is on a tick (float error put it just before): the next one.
+        next += period;
+    }
+    // The epsilon keeps a tick that is already on the grid (k/30 → 2k/60) from rounding a
+    // whole grid step up because of float error.
+    let next = ((next * TICK_GRID) - 1e-6).ceil() / TICK_GRID;
+    (next - now).max(1e-4)
 }
 
 /// The frame requests since the last call, as `file:line` and count, most frequent first.
@@ -177,6 +221,9 @@ pub fn continuous(window: &mut Window, cx: &App) -> f32 {
     clock(cx)
 }
 
+/// Frame rate cap for [`continuous_at`] while its window is not the active one.
+const BACKGROUND_FPS: f32 = 12.;
+
 thread_local! {
     /// Views that already have a redraw scheduled by [`continuous_at`] (avoids piling up timers).
     static PENDING: RefCell<HashSet<EntityId>> = RefCell::new(HashSet::new());
@@ -189,15 +236,18 @@ pub fn continuous_at(fps: f32, window: &mut Window, cx: &mut App) -> f32 {
     if MotionSettings::get(cx).reduced {
         return 0.;
     }
+    // In a background window it keeps moving (it may still be on screen), but slower:
+    // every tick redraws the whole view, not just the 16 px spinner.
+    let fps = if window.is_window_active() { fps } else { fps.min(BACKGROUND_FPS) };
     if fps >= 60. {
         request_frame(window);
         return clock(cx);
     }
     let view = window.current_view();
     if PENDING.with(|p| p.borrow_mut().insert(view)) {
-        let timer = cx
-            .background_executor()
-            .timer(Duration::from_secs_f32(1. / fps.max(1.)));
+        count_frame_request();
+        // On the shared grid: other timed redraws of this window land on the same frame.
+        let timer = cx.background_executor().timer(tick_delay(fps.max(1.)));
         cx.spawn(async move |cx| {
             timer.await;
             PENDING.with(|p| p.borrow_mut().remove(&view));
@@ -742,6 +792,30 @@ pub fn key(id: &ElementId, name: &'static str) -> ElementId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ticks_land_on_a_shared_grid() {
+        let at = |now: f64, fps: f64| now + delay_to_tick(now, fps);
+        let on_grid = |t: f64| ((t * 60.) - (t * 60.).round()).abs() < 1e-6;
+        // 30 fps: the next multiple of 1/30, always ahead of `now`.
+        assert!((at(0.010, 30.) - 1. / 30.).abs() < 1e-9);
+        assert!((at(1. / 30., 30.) - 2. / 30.).abs() < 1e-9);
+        // A caret at 4 fps and a spinner at 30 fps tick on the same 60 Hz grid.
+        assert!((at(0.20, 4.) - 0.25).abs() < 1e-9);
+        for i in 0..200 {
+            let now = i as f64 * 0.0137;
+            assert!(on_grid(at(now, 30.)) && on_grid(at(now, 4.)) && on_grid(at(now, 12.)));
+        }
+        // A rate that is not on the grid moves forward onto it.
+        let t = at(0.0, 24.);
+        assert!(t >= 1. / 24. && on_grid(t));
+        // Never fires twice on the same tick, never waits more than a period plus a grid step.
+        for i in 0..1000 {
+            let now = i as f64 * 0.00731;
+            let delay = delay_to_tick(now, 30.);
+            assert!(delay > 0. && delay <= 1. / 30. + 1. / 60. + 1e-3);
+        }
+    }
 
     #[test]
     fn springs_settle_on_target() {

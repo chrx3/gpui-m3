@@ -12,7 +12,7 @@ use gpui::prelude::FluentBuilder as _;
 
 use super::{ClickHandler, RoundedExt, all};
 use crate::motion::{Spring, animate_f32, entrance, key};
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{FONT_FAMILY, Scheme, Theme, alpha};
 
 /// Modal dialog: a scrim over the whole window and a 28 px card that rises in with the
 /// spatial spring. Render it anywhere while it is open: it covers the whole window.
@@ -253,8 +253,8 @@ impl RenderOnce for Toast {
             .pl(px(16. * grow))
             .pr(px(if self.action.is_some() { 8. } else { 16. } * grow))
             .rounded(px(14. - 6. * rest))
-            .bg(s.on_surface)
-            .text_color(s.surface)
+            .bg(inverse(&s).0)
+            .text_color(inverse(&s).1)
             .font_family(FONT_FAMILY)
             .text_size(px(13.5))
             .shadow(super::shadow_pop(&s))
@@ -292,6 +292,22 @@ pub fn context_menu(position: Point<Pixels>, content: impl IntoElement) -> impl 
     .with_priority(1)
 }
 
+/// Inverse surface colors (background, content) for tooltips and toasts: `on_surface`
+/// as the background and `surface` as the text. A scheme painted over a blurred window
+/// (glass) has a translucent `surface`, and the text vanished on the light background (an
+/// empty white box): then the text takes near black or near white, whichever reads.
+fn inverse(s: &Scheme) -> (gpui::Hsla, gpui::Hsla) {
+    let bg = gpui::Hsla { a: 1., ..s.on_surface };
+    let fg = if s.surface.a >= 0.95 {
+        s.surface
+    } else if bg.l > 0.5 {
+        gpui::hsla(0., 0., 0.1, 1.)
+    } else {
+        gpui::hsla(0., 0., 0.96, 1.)
+    };
+    (bg, fg)
+}
+
 /// Plain tooltip (M3): inverse surface, small corners. Use with GPUI's `.tooltip(...)`:
 ///
 /// ```ignore
@@ -313,12 +329,13 @@ impl Tooltip {
 impl Render for Tooltip {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
+        let (bg, fg) = inverse(&s);
         div()
             .px(px(8.))
             .py(px(4.))
             .rounded(px(4.))
-            .bg(s.on_surface)
-            .text_color(s.surface)
+            .bg(bg)
+            .text_color(fg)
             .font_family(FONT_FAMILY)
             .text_size(px(12.))
             .child(self.text.clone())
