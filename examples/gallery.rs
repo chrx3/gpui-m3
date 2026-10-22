@@ -16,15 +16,15 @@ use gpui_m3::{
     Avatar, Badge, Banner, Bubble, BubbleKind, Button, ButtonSize, ButtonVariant, Card, Chip,
     ChipSize, ChoiceRow, CodeBuffer, CodeEditor, CodeEditorEvent, ColorSwatches, Command,
     CommandPalette, CommandPaletteEvent, Dialog, DividerLabel, DotShape, DropZone, Exit,
-    ExpandableCard, Fab, FavStar, HsvPicker, Icon, IconButton, IconTab, IconTabs, ImageCropper,
+    ExpandableCard, Fab, FabSize, FavStar, HsvPicker, Icon, IconButton, IconButtonWidth, IconTab, IconTabs, ImageCropper,
     ImageCropperEvent, ImageThumb, Kbd, KeyCombo, KeyNames, LineHighlighter, LineHighlights,
-    LinearProgress, ListGroup, ListItem, LoadingIndicator, Menu, MenuItem, MorphDot,
+    LinearProgress, ListGroup, ListItem, LoadingIndicator, M3ButtonSize, Menu, MenuItem, MorphDot,
     MotionSettings, NavItem, PopDirection, Popover, Presence, RailItem, ReorderEvent, ReorderList,
     Ring, Segment, SegmentedButtons, SelectCard, SettingRow, Shape, ShapeName, Slider, SplitButton,
     Splitter, Spring, StopSlider, Suggestion, SuggestionAccept, SuggestionDismiss, SuggestionList,
     SuggestionNav, SuggestionNext, SuggestionPrevious, Switch, Tab, TabStrip, TextArea,
     TextAreaEvent, TextField, TextFieldEvent, Theme, ThemeReveal, Toast, Tone, TreeRow,
-    WavyProgress, animate_theme, apply_reorder, context_menu,
+    WavyCircularProgress, WavyProgress, animate_theme, apply_reorder, context_menu,
     motion::{animate_color, animate_f32, key, pulse},
     rank_mentions,
     theme::{FONT_FAMILY, alpha, hex},
@@ -894,6 +894,45 @@ impl Demos {
                 "56 px with 16 px corners; rounds on hover and shrinks when pressed (.rail-fab, .nav-row.new).",
                 row().child(Fab::new("fab", "pen")).child(Fab::new("fab-ext", "plus").label("New chat")),
             ))
+            .child(demo(
+                "M3 Expressive sizes",
+                "Opt-in scale (`m3_size`): XS 32, S 40, M 56, L 96, XL 136. `square` starts square and turns round when selected; icon buttons come narrow, default or wide; FABs small, baseline, medium and large.",
+                column()
+                    .child(
+                        row()
+                            .items_end()
+                            .child(Button::new("m3-xs", "XS").icon("plus").filled().m3_size(M3ButtonSize::Xs))
+                            .child(Button::new("m3-s", "Small").icon("plus").filled().m3_size(M3ButtonSize::S))
+                            .child(Button::new("m3-m", "Medium").icon("plus").outlined().m3_size(M3ButtonSize::M))
+                            .child(Button::new("m3-l", "Large").icon("plus").tonal().square(true).m3_size(M3ButtonSize::L)),
+                    )
+                    .child(Button::new("m3-xl", "Extra large").icon("plus").outlined().m3_size(M3ButtonSize::Xl))
+                    .child(
+                        row()
+                            .items_end()
+                            .child(IconButton::new("m3-i-xs", "search").tonal().m3_size(M3ButtonSize::Xs).width(IconButtonWidth::Narrow))
+                            .child(IconButton::new("m3-i-s", "search").tonal().m3_size(M3ButtonSize::S))
+                            .child(IconButton::new("m3-i-m", "search").outlined().m3_size(M3ButtonSize::M).width(IconButtonWidth::Wide))
+                            .child(
+                                IconButton::new("m3-i-l", "star")
+                                    .filled()
+                                    .square(true)
+                                    .m3_size(M3ButtonSize::L)
+                                    .selected(self.icon_toggle)
+                                    .on_click(click(cx, |this, _| this.icon_toggle = !this.icon_toggle)),
+                            )
+                            .child(IconButton::new("m3-i-xl", "pen").filled().m3_size(M3ButtonSize::Xl)),
+                    )
+                    .child(
+                        row()
+                            .items_end()
+                            .child(Fab::new("fab-s", "pen").small())
+                            .child(Fab::new("fab-b", "pen").size(FabSize::Baseline))
+                            .child(Fab::new("fab-m", "pen").medium())
+                            .child(Fab::new("fab-l", "pen").large())
+                            .child(Fab::new("fab-m-ext", "plus").medium().label("New chat")),
+                    ),
+            ))
             .into_any_element()
     }
 
@@ -1390,7 +1429,7 @@ impl Demos {
         page()
             .child(demo(
                 "Loading indicator",
-                "A shape that spins and morphs into the next one (softBurst → cookie9 → pentagon → oval → sunny → cookie4 → clover4).",
+                "A shape that spins and morphs into the next one every 650 ms (softBurst → cookie9 → pentagon → pill → sunny → cookie4 → oval).",
                 row()
                     .gap(px(24.))
                     .child(LoadingIndicator::new().size(px(24.)))
@@ -1413,6 +1452,15 @@ impl Demos {
                     )
                     .child(div().text_size(px(12.)).text_color(s.on_surface_variant).child("Indeterminate"))
                     .child(WavyProgress::new("wavy-ind", None)),
+            ))
+            .child(demo(
+                "Wavy circular progress",
+                "48 px, 4 px stroke, a 1.6 px wave every 15 px and a 4 px gap to the track. The wave flattens near 0 and 100 %.",
+                row()
+                    .gap(px(24.))
+                    .child(WavyCircularProgress::new("wavy-circ", Some(self.progress)))
+                    .child(WavyCircularProgress::new("wavy-circ-ind", None))
+                    .child(WavyCircularProgress::new("wavy-circ-l", Some(self.progress)).size(px(72.)).stroke(6.)),
             ))
             .child(demo(
                 "Ring",

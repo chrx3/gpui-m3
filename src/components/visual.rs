@@ -463,8 +463,10 @@ impl RenderOnce for LoadingIndicator {
         let s = *Theme::of(cx);
         // 30 fps: it looks just as smooth and each frame redraws the view that holds it.
         let t = continuous_at(30., window, cx);
-        // Each shape lasts 0.7 s and reaches the next one with a bouncy spring; the rotation is continuous.
-        const SEGMENT: f32 = 0.7;
+        // As in Compose: a new morph every 650 ms driven by a bouncy spring, each one adding a
+        // quarter turn, on top of a constant full turn every 4666 ms.
+        const SEGMENT: f32 = 0.65;
+        const SPIN_PERIOD: f32 = 4.666;
         let n = LOADING_SEQUENCE.len();
         let index = (t / SEGMENT) as usize;
         let local = t - index as f32 * SEGMENT;
@@ -477,14 +479,16 @@ impl RenderOnce for LoadingIndicator {
             from: LOADING_SEQUENCE[index % n],
             to: LOADING_SEQUENCE[(index + 1) % n],
             t: progress,
-            rotation: (t / 1.4).fract() * TAU,
+            rotation: ((index % 4) as f32 + progress) * (PI / 2.) + (t / SPIN_PERIOD).fract() * TAU,
             toward: None,
         };
-        let (color, scale) = if self.contained {
-            (s.on_primary_container, 0.62)
+        let color = if self.contained {
+            s.on_primary_container
         } else {
-            (s.primary, 0.78)
+            s.primary
         };
+        // The shape takes 38 of the 48 px container.
+        let scale = 38. / 48.;
         let size = f32::from(self.size);
         let inner = size * scale;
 
@@ -685,6 +689,137 @@ impl RenderOnce for Ring {
                 if v > 0.001 {
                     paint_polyline(&arc(-PI / 2., -PI / 2. + TAU * v), stroke, active, window);
                 }
+            },
+        )
+        .flex_none()
+        .size(self.size)
+    }
+}
+
+/// Wavy circular progress indicator (M3 Expressive). `value` between 0 and 1; `None` =
+/// indeterminate. 48 px with a 4 px stroke by default; the wave has a 1.6 px amplitude and a
+/// 15 px wavelength, and the track stays 4 px clear of the indicator.
+#[derive(IntoElement)]
+pub struct WavyCircularProgress {
+    id: ElementId,
+    value: Option<f32>,
+    size: Pixels,
+    stroke: f32,
+}
+
+impl WavyCircularProgress {
+    pub fn new(id: impl Into<ElementId>, value: Option<f32>) -> Self {
+        Self {
+            id: id.into(),
+            value,
+            size: px(48.),
+            stroke: 4.,
+        }
+    }
+
+    pub fn size(mut self, size: Pixels) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn stroke(mut self, stroke: f32) -> Self {
+        self.stroke = stroke;
+        self
+    }
+}
+
+impl RenderOnce for WavyCircularProgress {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let s = *Theme::of(cx);
+        // 30 fps: it looks just as smooth and each frame redraws the view that holds it.
+        let t = continuous_at(30., window, cx);
+        let indeterminate = self.value.is_none();
+        let value = animate_f32(
+            key(&self.id, "value"),
+            Spring::SPATIAL,
+            self.value.unwrap_or(0.).clamp(0., 1.),
+            window,
+            cx,
+        );
+        let stroke = self.stroke;
+        let (active, track) = (s.primary, s.secondary_container);
+        canvas(
+            |_, _, _| {},
+            move |bounds, _, window, _| {
+                const AMPLITUDE: f32 = 1.6;
+                const WAVELENGTH: f32 = 15.;
+                const GAP: f32 = 4.;
+                let size = f32::from(bounds.size.width).min(f32::from(bounds.size.height));
+                let r = (size - stroke) / 2. - AMPLITUDE;
+                if r <= 0. {
+                    return;
+                }
+                let c = bounds.center();
+                let at = |a: f32, radius: f32| {
+                    point(c.x + px(radius * a.cos()), c.y + px(radius * a.sin()))
+                };
+
+                // Where the indicator starts and how far it sweeps, in radians.
+                let (start, sweep) = if indeterminate {
+                    // Each 1.333 s cycle the head runs ahead (the arc grows from 0.1 to 0.75
+                    // of a turn), then the tail catches up; the whole thing also turns slowly.
+                    const CYCLE: f32 = 1.333;
+                    let cycle = t / CYCLE;
+                    // 20 cycles advance a whole number of turns (13), so wrapping is seamless.
+                    let base = (cycle.floor() as u64 % 20) as f32 * 0.65;
+                    let p = cycle.fract();
+                    let ease = cubic_bezier(0.4, 0., 0.2, 1.);
+                    let (tail, head) = if p < 0.5 {
+                        (base, base + 0.1 + 0.65 * ease(p * 2.))
+                    } else {
+                        (base + 0.65 * ease((p - 0.5) * 2.), base + 0.75)
+                    };
+                    let spin = (t / 2.).fract();
+                    ((tail + spin) * TAU - PI / 2., (head - tail) * TAU)
+                } else {
+                    (-PI / 2., TAU * value.clamp(0., 1.))
+                };
+
+                // Track: the rest of the circle, clear of both ends of the indicator (the
+                // round caps add half a stroke on each side).
+                if sweep <= 0.001 {
+                    let ring: Vec<Point<Pixels>> =
+                        (0..64).map(|i| at(i as f32 / 64. * TAU, r)).collect();
+                    let mut builder = PathBuilder::stroke(px(stroke));
+                    builder.add_polygon(&ring, true);
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, track);
+                    }
+                    return;
+                }
+                let gap = (GAP + stroke) / r;
+                let track_sweep = TAU - sweep - 2. * gap;
+                if track_sweep > 0.01 {
+                    let from = start + sweep + gap;
+                    let steps = (track_sweep / TAU * 64.).ceil().max(2.) as usize;
+                    let points: Vec<Point<Pixels>> = (0..=steps)
+                        .map(|i| at(from + track_sweep * i as f32 / steps as f32, r))
+                        .collect();
+                    paint_polyline(&points, stroke, track, window);
+                }
+
+                // Indicator: a whole number of waves around the circle, travelling one
+                // wavelength per second. When determinate, the wave flattens near empty and full.
+                let amplitude = if indeterminate {
+                    AMPLITUDE
+                } else {
+                    AMPLITUDE * (value / 0.1).min((1. - value) / 0.05).clamp(0., 1.)
+                };
+                let waves = (TAU * r / WAVELENGTH).round().max(1.);
+                let phase = (t % 1.) * TAU;
+                let steps = (sweep * r / 1.5).ceil().max(2.) as usize;
+                let points: Vec<Point<Pixels>> = (0..=steps)
+                    .map(|i| {
+                        let a = start + sweep * i as f32 / steps as f32;
+                        at(a, r + amplitude * (waves * a - phase).sin())
+                    })
+                    .collect();
+                paint_polyline(&points, stroke, active, window);
             },
         )
         .flex_none()

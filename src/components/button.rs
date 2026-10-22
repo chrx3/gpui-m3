@@ -20,7 +20,10 @@ use crate::interaction::{interactive, keyboard_focus, state_layer, use_interacti
 use crate::motion::{
     Spring, animate_color, animate_f32, animate_on_activate, cubic_bezier, key, replay,
 };
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::type_scale::{
+    HEADLINE_LARGE, HEADLINE_SMALL, LABEL_LARGE, TITLE_LARGE, TITLE_MEDIUM, TypeStyle,
+};
+use crate::theme::{FONT_FAMILY, Theme, alpha, corner};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
@@ -67,6 +70,90 @@ impl ButtonSize {
             ButtonSize::Large => (48., 22., 14., 16., 12.),
         }
     }
+}
+
+/// M3 Expressive size scale for [`Button`] and [`IconButton`] (opt in with `m3_size`; without
+/// it they keep their own sizes).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum M3ButtonSize {
+    /// 32 px tall.
+    Xs,
+    /// 40 px tall (the M3 default).
+    #[default]
+    S,
+    /// 56 px tall.
+    M,
+    /// 96 px tall.
+    L,
+    /// 136 px tall.
+    Xl,
+}
+
+/// Measurements of one step of the [`M3ButtonSize`] scale, in pixels.
+struct M3Metrics {
+    height: f32,
+    /// Side padding of a button.
+    padding: f32,
+    /// Icon size of a button.
+    icon: f32,
+    /// Gap between a button's icon and its label.
+    gap: f32,
+    /// Corner radius of the square shape.
+    square: f32,
+    /// Corner radius while pressed.
+    pressed: f32,
+    /// Outline width of the outlined variants.
+    outline: f32,
+    /// Label typography of a button.
+    text: TypeStyle,
+}
+
+impl M3ButtonSize {
+    fn metrics(self) -> M3Metrics {
+        let (height, padding, icon, gap, square, pressed, outline, text) = match self {
+            M3ButtonSize::Xs => (32., 16., 20., 8., corner::M, corner::S, 1., LABEL_LARGE),
+            M3ButtonSize::S => (40., 16., 20., 8., corner::M, corner::S, 1., LABEL_LARGE),
+            M3ButtonSize::M => (56., 24., 24., 8., corner::L, corner::M, 1., TITLE_MEDIUM),
+            M3ButtonSize::L => (96., 48., 32., 12., corner::XL, corner::L, 2., HEADLINE_SMALL),
+            M3ButtonSize::Xl => (136., 64., 40., 16., corner::XL, corner::L, 3., HEADLINE_LARGE),
+        };
+        M3Metrics {
+            height,
+            padding,
+            icon,
+            gap,
+            square: f32::from(square),
+            pressed: f32::from(pressed),
+            outline,
+            text,
+        }
+    }
+
+    /// Icon size and side padding of an icon button of this size and `width`.
+    fn icon_button(self, width: IconButtonWidth) -> (f32, f32) {
+        let (icon, [narrow, default, wide]) = match self {
+            M3ButtonSize::Xs => (20., [4., 6., 10.]),
+            M3ButtonSize::S => (24., [4., 8., 14.]),
+            M3ButtonSize::M => (24., [12., 16., 24.]),
+            M3ButtonSize::L => (32., [16., 32., 48.]),
+            M3ButtonSize::Xl => (40., [32., 48., 72.]),
+        };
+        let padding = match width {
+            IconButtonWidth::Narrow => narrow,
+            IconButtonWidth::Default => default,
+            IconButtonWidth::Wide => wide,
+        };
+        (icon, padding)
+    }
+}
+
+/// Width of an [`IconButton`] on the [`M3ButtonSize`] scale: the side padding around the icon.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum IconButtonWidth {
+    Narrow,
+    #[default]
+    Default,
+    Wide,
 }
 
 /// Background, content and border colors of a button.
@@ -129,6 +216,8 @@ pub struct Button {
     icon: Option<SharedString>,
     variant: ButtonVariant,
     size: ButtonSize,
+    m3_size: Option<M3ButtonSize>,
+    square: bool,
     selected: Option<bool>,
     open: bool,
     disabled: bool,
@@ -151,6 +240,8 @@ impl Button {
             icon: None,
             variant: ButtonVariant::default(),
             size: ButtonSize::default(),
+            m3_size: None,
+            square: false,
             selected: None,
             open: false,
             disabled: false,
@@ -250,6 +341,20 @@ impl Button {
         self
     }
 
+    /// Sizes the button on the M3 Expressive scale (height, padding, icon, gap, label type,
+    /// corner radii and outline width) instead of [`Button::size`].
+    pub fn m3_size(mut self, size: M3ButtonSize) -> Self {
+        self.m3_size = Some(size);
+        self
+    }
+
+    /// Square shape (rounded corners) instead of the pill. As a toggle it swaps: square when
+    /// unselected, round when selected.
+    pub fn square(mut self, square: bool) -> Self {
+        self.square = square;
+        self
+    }
+
     pub fn icon(mut self, icon: impl Into<SharedString>) -> Self {
         self.icon = Some(icon.into());
         self
@@ -274,7 +379,11 @@ impl Button {
 
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (height, pad, font, selected_radius, pressed_radius) = self.size.metrics();
+        let m3 = self.m3_size.map(M3ButtonSize::metrics);
+        let (height, pad, font, selected_radius, pressed_radius) = match &m3 {
+            Some(m) => (m.height, m.padding, f32::from(m.text.size), m.square, m.pressed),
+            None => self.size.metrics(),
+        };
         let enabled = !self.disabled;
         let state = use_interaction(&self.id, window, cx);
         let (hovered, pressed) = {
@@ -291,9 +400,11 @@ impl RenderOnce for Button {
         };
         let ghost_on = self.variant == ButtonVariant::Ghost && (hovered || confirming);
 
+        // A square toggle goes the other way: round when selected.
+        let squared = (self.selected == Some(true)) != self.square || self.open;
         let radius_target = if pressed || ghost_on {
             pressed_radius
-        } else if self.selected == Some(true) || self.open {
+        } else if squared {
             selected_radius
         } else {
             height / 2.
@@ -370,6 +481,8 @@ impl RenderOnce for Button {
             .justify_center()
             .gap(px(if self.label_on_hover {
                 0.
+            } else if let Some(m) = &m3 {
+                m.gap
             } else if self.size == ButtonSize::Tiny {
                 5.
             } else {
@@ -377,7 +490,11 @@ impl RenderOnce for Button {
             }))
             .h(px(height))
             .when(!icon_only, |d| {
-                d.px(px(if self.icon.is_some() { pad - 2. } else { pad }))
+                d.px(px(if self.icon.is_some() && m3.is_none() {
+                    pad - 2.
+                } else {
+                    pad
+                }))
             })
             .corners(all(radius))
             .bg(bg)
@@ -388,7 +505,11 @@ impl RenderOnce for Button {
             .when(self.selected == Some(true), |d| d.children(indicator))
             .child(layer);
         if let Some(border) = border {
-            el = el.border_1().border_color(border);
+            el = match &m3 {
+                Some(m) => el.border(px(m.outline)),
+                None => el.border_1(),
+            }
+            .border_color(border);
         }
         let icon = if confirming {
             Some(SharedString::from("check"))
@@ -396,7 +517,9 @@ impl RenderOnce for Button {
             self.icon
         };
         if let Some(icon) = icon {
-            let size = if self.size == ButtonSize::Tiny {
+            let size = if let Some(m) = &m3 {
+                m.icon
+            } else if self.size == ButtonSize::Tiny {
                 14.
             } else {
                 font + 4.
@@ -507,6 +630,9 @@ pub struct IconButton {
     icon: SharedString,
     variant: IconButtonVariant,
     size: Pixels,
+    m3_size: Option<M3ButtonSize>,
+    width: IconButtonWidth,
+    square: bool,
     selected: Option<bool>,
     hover_morph: bool,
     disabled: bool,
@@ -522,6 +648,9 @@ impl IconButton {
             icon: icon.into(),
             variant: IconButtonVariant::default(),
             size: px(32.),
+            m3_size: None,
+            width: IconButtonWidth::default(),
+            square: false,
             selected: None,
             hover_morph: false,
             disabled: false,
@@ -557,6 +686,26 @@ impl IconButton {
 
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = size;
+        self
+    }
+
+    /// Sizes the button on the M3 Expressive scale (container, icon, corner radii and outline
+    /// width) instead of [`IconButton::size`]. See also [`IconButton::width`].
+    pub fn m3_size(mut self, size: M3ButtonSize) -> Self {
+        self.m3_size = Some(size);
+        self
+    }
+
+    /// Narrow, default or wide container. Only applies together with [`IconButton::m3_size`].
+    pub fn width(mut self, width: IconButtonWidth) -> Self {
+        self.width = width;
+        self
+    }
+
+    /// Square shape (rounded corners) instead of the circle. As a toggle it swaps: square when
+    /// unselected, round when selected.
+    pub fn square(mut self, square: bool) -> Self {
+        self.square = square;
         self
     }
 
@@ -596,13 +745,28 @@ impl RenderOnce for IconButton {
             let st = state.read(cx);
             (st.hovered && enabled, st.pressed && enabled)
         };
-        let size = f32::from(self.size);
+        // Container width and height, icon size, square and pressed radii, outline width.
+        let (width, height, icon_size, square_radius, pressed_radius, outline) =
+            match self.m3_size {
+                Some(m3) => {
+                    let m = m3.metrics();
+                    let (icon, padding) = m3.icon_button(self.width);
+                    (icon + 2. * padding, m.height, icon, m.square, m.pressed, m.outline)
+                }
+                None => {
+                    let size = f32::from(self.size);
+                    let icon = (size * 0.56).round().min(22.);
+                    (size, size, icon, (size * 0.33).round(), 8., 1.)
+                }
+            };
+        // A square toggle goes the other way: round when selected.
+        let squared = (self.selected == Some(true)) != self.square || (self.hover_morph && hovered);
         let radius_target = if pressed {
-            8.
-        } else if self.selected == Some(true) || (self.hover_morph && hovered) {
-            (size * 0.33).round()
+            pressed_radius
+        } else if squared {
+            square_radius
         } else {
-            size / 2.
+            height / 2.
         };
         let radius = px(animate_f32(
             key(&self.id, "radius"),
@@ -626,7 +790,7 @@ impl RenderOnce for IconButton {
             .map(launch_frame);
         let (radius, scale) = match launch {
             Some(frame) => (
-                radius + (px(size / 2.) - radius) * frame.round,
+                radius + (px(height / 2.) - radius) * frame.round,
                 scale * frame.scale,
             ),
             None => (radius, scale),
@@ -668,14 +832,14 @@ impl RenderOnce for IconButton {
         let bg = animate_color(key(&self.id, "bg"), Spring::EFFECTS, bg, window, cx);
         let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
 
-        let inner = size * scale;
-        let inset = (size - inner) / 2.;
+        let (inner_w, inner_h) = (width * scale, height * scale);
         let layer = state_layer(&self.id, &state, all(radius), fg, window, cx);
         let mut face = div()
             .absolute()
-            .top(px(inset))
-            .left(px(inset))
-            .size(px(inner))
+            .top(px((height - inner_h) / 2.))
+            .left(px((width - inner_w) / 2.))
+            .w(px(inner_w))
+            .h(px(inner_h))
             .flex()
             .items_center()
             .justify_center()
@@ -689,18 +853,24 @@ impl RenderOnce for IconButton {
                     .opacity(launch.map_or(1., |frame| frame.icon_opacity))
                     .child(
                         Icon::new(self.icon)
-                            .size(px((size * 0.56).round().min(22.) * scale))
+                            .size(px(icon_size * scale))
                             .color(fg),
                     ),
             );
         if let Some(border) = border {
-            face = face.border_1().border_color(border);
+            face = if outline == 1. {
+                face.border_1()
+            } else {
+                face.border(px(outline))
+            }
+            .border_color(border);
         }
         let mut el = div()
             .id(self.id.clone())
             .relative()
             .flex_none()
-            .size(self.size)
+            .w(px(width))
+            .h(px(height))
             .child(face);
         if let Some(text) = self.tooltip {
             el = el.tooltip(super::Tooltip::text(text));
@@ -754,12 +924,40 @@ fn smoothstep(x: f32) -> f32 {
     x * x * (3. - 2. * x)
 }
 
-/// Floating action button (56 px). It rounds out on hover and shrinks on press.
+/// M3 Expressive FAB size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FabSize {
+    /// 40 px, 12 px corners, 24 px icon.
+    Small,
+    /// 56 px, 16 px corners, 24 px icon.
+    #[default]
+    Baseline,
+    /// 80 px, 20 px corners, 28 px icon.
+    Medium,
+    /// 96 px, 28 px corners, 32 px icon.
+    Large,
+}
+
+impl FabSize {
+    /// Container size, corner radius and icon size.
+    fn metrics(self) -> (f32, f32, f32) {
+        match self {
+            FabSize::Small => (40., f32::from(corner::M), 24.),
+            FabSize::Baseline => (56., f32::from(corner::L), 24.),
+            FabSize::Medium => (80., f32::from(corner::LI), 28.),
+            FabSize::Large => (96., f32::from(corner::XL), 32.),
+        }
+    }
+}
+
+/// Floating action button (56 px; see [`Fab::small`], [`Fab::medium`] and [`Fab::large`]).
+/// It rounds out on hover and shrinks on press.
 #[derive(IntoElement)]
 pub struct Fab {
     id: ElementId,
     icon: SharedString,
     label: Option<SharedString>,
+    size: FabSize,
     hover_radius: Option<f32>,
     on_click: Option<ClickHandler>,
 }
@@ -770,9 +968,30 @@ impl Fab {
             id: id.into(),
             icon: icon.into(),
             label: None,
+            size: FabSize::default(),
             hover_radius: None,
             on_click: None,
         }
+    }
+
+    pub fn size(mut self, size: FabSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// 40 px FAB.
+    pub fn small(self) -> Self {
+        self.size(FabSize::Small)
+    }
+
+    /// 80 px FAB.
+    pub fn medium(self) -> Self {
+        self.size(FabSize::Medium)
+    }
+
+    /// 96 px FAB.
+    pub fn large(self) -> Self {
+        self.size(FabSize::Large)
     }
 
     /// Corner radius on hover (28 for the regular FAB; the extended one keeps 16 by default).
@@ -802,13 +1021,16 @@ impl RenderOnce for Fab {
             (st.hovered, st.pressed)
         };
         let extended = self.label.is_some();
-        let height = if extended { 42. } else { 56. };
+        let (size, rest_radius, icon_size) = self.size.metrics();
+        // The baseline extended FAB keeps its compact 42 px.
+        let compact = extended && self.size == FabSize::Baseline;
+        let height = if compact { 42. } else { size };
         let target = match (pressed, hovered, extended) {
-            (true, _, _) => 12.,
+            (true, _, _) => rest_radius * 0.75,
             (false, true, _) => self
                 .hover_radius
-                .unwrap_or(if extended { 16. } else { 28. }),
-            _ => 16.,
+                .unwrap_or(if extended { rest_radius } else { size / 2. }),
+            _ => rest_radius,
         };
         let radius = px(animate_f32(
             key(&self.id, "radius"),
@@ -850,7 +1072,11 @@ impl RenderOnce for Fab {
             .flex()
             .items_center()
             .justify_center()
-            .gap(px(10.))
+            .gap(px(match self.size {
+                FabSize::Small | FabSize::Baseline => 10.,
+                FabSize::Medium => 12.,
+                FabSize::Large => 16.,
+            }))
             .h(px(height * scale))
             .corners(all(radius))
             .bg(s.primary_container)
@@ -859,14 +1085,24 @@ impl RenderOnce for Fab {
             .child(layer)
             .child(
                 Icon::new(self.icon)
-                    .size(px(if extended { 19. } else { 24. }))
+                    .size(px(if compact { 19. } else { icon_size }))
                     .color(s.on_primary_container),
             );
         face = if let Some(label) = self.label {
-            face.pl(px(13.))
-                .pr(px(16.))
-                .font_family(FONT_FAMILY)
-                .text_size(px(13.5))
+            // Side padding and label size of the extended FAB.
+            let (pad, text) = match self.size {
+                FabSize::Baseline => (0., px(13.5)),
+                FabSize::Small => (16., TITLE_MEDIUM.size),
+                FabSize::Medium => (26., TITLE_LARGE.size),
+                FabSize::Large => (28., HEADLINE_SMALL.size),
+            };
+            let face = if compact {
+                face.pl(px(13.)).pr(px(16.))
+            } else {
+                face.px(px(pad))
+            };
+            face.font_family(FONT_FAMILY)
+                .text_size(text)
                 .font_weight(FontWeight(600.))
                 .child(label)
         } else {

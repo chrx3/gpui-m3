@@ -19,10 +19,11 @@ pub const MONO_FONT_FAMILY: &str = "Menlo";
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub const MONO_FONT_FAMILY: &str = "DejaVu Sans Mono";
 
-/// M3 corner scale (8 · 12 · 16 · 20 · 28 · 32 · full).
+/// M3 corner scale (0 · 4 · 8 · 12 · 16 · 20 · 28 · 32 · 48 · full).
 pub mod corner {
     use gpui::{Pixels, px};
 
+    pub const NONE: Pixels = px(0.);
     pub const XS: Pixels = px(4.);
     pub const S: Pixels = px(8.);
     pub const M: Pixels = px(12.);
@@ -30,6 +31,9 @@ pub mod corner {
     pub const LI: Pixels = px(20.);
     pub const XL: Pixels = px(28.);
     pub const XLI: Pixels = px(32.);
+    pub const XXL: Pixels = px(48.);
+    /// Fully round: GPUI clamps a radius to half the shorter side.
+    pub const FULL: Pixels = px(9999.);
 }
 
 /// M3 color roles. Names follow the spec; the reference design's CSS token is in parentheses.
@@ -304,4 +308,52 @@ pub mod text {
     pub const TITLE: Pixels = px(16.);
     pub const HEADLINE: Pixels = px(22.);
     pub const DISPLAY: Pixels = px(32.);
+}
+
+/// The M3 type scale (`TypeScaleTokens`), with the Expressive emphasized weights.
+/// Sizes are the spec's sp taken as px.
+pub mod type_scale {
+    use gpui::{FontWeight, Pixels, Styled, px};
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct TypeStyle {
+        pub size: Pixels,
+        pub line_height: Pixels,
+        pub weight: FontWeight,
+        /// The weight of the emphasized variant.
+        pub emphasized: FontWeight,
+    }
+
+    const fn style(size: f32, line: f32, weight: f32, emphasized: f32) -> TypeStyle {
+        TypeStyle { size: px(size), line_height: px(line), weight: FontWeight(weight), emphasized: FontWeight(emphasized) }
+    }
+
+    pub const DISPLAY_LARGE: TypeStyle = style(57., 64., 400., 500.);
+    pub const DISPLAY_MEDIUM: TypeStyle = style(45., 52., 400., 500.);
+    pub const DISPLAY_SMALL: TypeStyle = style(36., 44., 400., 500.);
+    pub const HEADLINE_LARGE: TypeStyle = style(32., 40., 400., 500.);
+    pub const HEADLINE_MEDIUM: TypeStyle = style(28., 36., 400., 500.);
+    pub const HEADLINE_SMALL: TypeStyle = style(24., 32., 400., 500.);
+    pub const TITLE_LARGE: TypeStyle = style(22., 28., 400., 500.);
+    pub const TITLE_MEDIUM: TypeStyle = style(16., 24., 500., 700.);
+    pub const TITLE_SMALL: TypeStyle = style(14., 20., 500., 700.);
+    pub const BODY_LARGE: TypeStyle = style(16., 24., 400., 500.);
+    pub const BODY_MEDIUM: TypeStyle = style(14., 20., 400., 500.);
+    pub const BODY_SMALL: TypeStyle = style(12., 16., 400., 500.);
+    pub const LABEL_LARGE: TypeStyle = style(14., 20., 500., 700.);
+    pub const LABEL_MEDIUM: TypeStyle = style(12., 16., 500., 700.);
+    pub const LABEL_SMALL: TypeStyle = style(11., 16., 500., 700.);
+
+    /// `.type_style(BODY_MEDIUM)` or `.type_emphasized(TITLE_MEDIUM)`.
+    pub trait TypeScaleExt: Styled + Sized {
+        fn type_style(self, style: TypeStyle) -> Self {
+            self.text_size(style.size).line_height(style.line_height).font_weight(style.weight)
+        }
+
+        fn type_emphasized(self, style: TypeStyle) -> Self {
+            self.text_size(style.size).line_height(style.line_height).font_weight(style.emphasized)
+        }
+    }
+
+    impl<E: Styled> TypeScaleExt for E {}
 }
