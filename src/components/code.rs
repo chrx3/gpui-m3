@@ -260,7 +260,7 @@ impl RenderOnce for CodeBlock {
     }
 }
 
-/// The code block's "Copy" pill (11 px, muted, `secondary` on hover; "Copied" in the success
+/// The code block's "Copiar" pill (11 px, muted, `secondary` on hover; "Copiado" in the success
 /// color afterwards).
 #[derive(IntoElement)]
 struct CopyPill {
@@ -300,7 +300,7 @@ impl RenderOnce for CopyPill {
             .text_size(px(11.))
             .text_color(fg)
             .child(layer)
-            .child(if copied { "Copied" } else { "Copy" });
+            .child(if copied { "Copiado" } else { "Copiar" });
         let text = self.text;
         interactive(el, &state, true, true).on_click(move |_, _, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
