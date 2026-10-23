@@ -111,7 +111,7 @@ struct M3Metrics {
 impl M3ButtonSize {
     fn metrics(self) -> M3Metrics {
         let (height, padding, icon, gap, square, pressed, outline, text) = match self {
-            M3ButtonSize::Xs => (32., 16., 20., 8., corner::M, corner::S, 1., LABEL_LARGE),
+            M3ButtonSize::Xs => (32., 12., 20., 4., corner::M, corner::S, 1., LABEL_LARGE),
             M3ButtonSize::S => (40., 16., 20., 8., corner::M, corner::S, 1., LABEL_LARGE),
             M3ButtonSize::M => (56., 24., 24., 8., corner::L, corner::M, 1., TITLE_MEDIUM),
             M3ButtonSize::L => (96., 48., 32., 12., corner::XL, corner::L, 2., HEADLINE_SMALL),
@@ -934,7 +934,7 @@ pub enum FabSize {
     Baseline,
     /// 80 px, 20 px corners, 28 px icon.
     Medium,
-    /// 96 px, 28 px corners, 32 px icon.
+    /// 96 px, 28 px corners, 36 px icon.
     Large,
 }
 
@@ -945,7 +945,7 @@ impl FabSize {
             FabSize::Small => (40., f32::from(corner::M), 24.),
             FabSize::Baseline => (56., f32::from(corner::L), 24.),
             FabSize::Medium => (80., f32::from(corner::LI), 28.),
-            FabSize::Large => (96., f32::from(corner::XL), 32.),
+            FabSize::Large => (96., f32::from(corner::XL), 36.),
         }
     }
 }
@@ -1022,9 +1022,14 @@ impl RenderOnce for Fab {
         };
         let extended = self.label.is_some();
         let (size, rest_radius, icon_size) = self.size.metrics();
-        // The baseline extended FAB keeps its compact 42 px.
+        // The baseline extended FAB keeps its compact 42 px; the small extended FAB is 56 px
+        // tall, not 40.
         let compact = extended && self.size == FabSize::Baseline;
-        let height = if compact { 42. } else { size };
+        let height = match (extended, self.size) {
+            _ if compact => 42.,
+            (true, FabSize::Small) => 56.,
+            _ => size,
+        };
         let target = match (pressed, hovered, extended) {
             (true, _, _) => rest_radius * 0.75,
             (false, true, _) => self
