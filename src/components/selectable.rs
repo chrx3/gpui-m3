@@ -1,34 +1,42 @@
 //! Text the reader can select and copy, like in a document: drag to select (across the
-//! paragraphs of a [`Markdown`](super::Markdown) too; past the edge of a scrolling list it
-//! scrolls), double-click for a word, triple-click for the paragraph, Shift+click to extend,
-//! and Cmd/Ctrl+C to copy. Cmd/Ctrl+A selects the whole group and Escape clears it. A right
-//! click opens a menu with Copy, Copy all and Select all ([`set_text_menu`] lets the app use
-//! its own, such as the native one on macOS).
+//! paragraphs of a [`Markdown`](super::Markdown), and across messages inside a
+//! [`SelectionScope`]; past the edge of a scrolling list it scrolls), double-click for a word,
+//! triple-click for the paragraph, Shift+click to extend, and Cmd/Ctrl+C to copy. Cmd/Ctrl+A
+//! selects everything and Escape clears it. A right click opens a menu with Copy, Copy all and
+//! Select all ([`set_text_menu`] lets the app use its own, such as the native one on macOS).
 //!
-//! A [`TextSelection`] is the state of one group of text blocks (one message). Each block
-//! is a [`StyledText`] wrapped by [`selectable_block`], numbered in paint order; the group's
-//! root ([`selection_root`]) follows the drag and takes focus once something is selected, so
-//! the copy key reaches it.
+//! A [`TextSelection`] is the state of one group of text blocks. Each block is a
+//! [`StyledText`] wrapped by [`selectable_block`]. The group's root ([`selection_root`])
+//! follows the drag and takes focus once something is selected, so the copy key reaches it.
+//!
+//! On its own, a `Markdown`, `CodeBlock`, `CodeOutput` or [`SelectableText`] is a group of its
+//! own. Inside a [`SelectionScope`] (one per message of a chat, all sharing the chat's
+//! selection), its blocks join that group under the scope's `owner`: the selection then runs
+//! from one message to the next, and remembers the text of messages that scrolled away.
 
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, Div, ElementId,
-    Entity, FocusHandle, Global, HitboxBehavior, Hsla, InteractiveElement, IntoElement,
-    KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, PlatformInput, Point, RenderOnce, ScrollDelta, ScrollWheelEvent,
-    SharedString, Styled, StyledText, TextLayout, TouchPhase, Window, anchored, canvas, deferred,
-    div, fill, point, px,
+    AnyElement, App, AppContext as _, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, Div, Element,
+    ElementId, Entity, FocusHandle, Global, GlobalElementId, HitboxBehavior, Hsla,
+    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Modifiers,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    PlatformInput, Point, RenderOnce, ScrollDelta, ScrollWheelEvent, SharedString, Styled,
+    StyledText, TextLayout, TouchPhase, Window, anchored, canvas, deferred, div, fill, point, px,
 };
 
 use super::{Menu, MenuItem};
 use crate::theme::{Theme, alpha};
 
-/// A position in a group: (block, byte offset in its text).
-type Spot = (usize, usize);
+/// A block: (owner, number within the owner), in reading order.
+type Key = (u64, u32);
+/// A position: (block, byte offset in its text).
+type Spot = (Key, usize);
 
 /// How often the list scrolls while a drag sits past its edge.
 const EDGE_TICK: Duration = Duration::from_millis(16);
@@ -40,15 +48,23 @@ struct Block {
     /// The part of it that shows.
     visible: Bounds<Pixels>,
     text: SharedString,
-    /// What goes before this block's text when the copy also takes the one before.
+    /// What goes before this block's text when the copy also takes the one before it in the
+    /// same owner (between owners, a blank line).
     joint: SharedString,
+    /// What "Copy all" copies on a right click over it (its Markdown source).
+    whole: Option<SharedString>,
+    /// The frame it was last painted in: blocks of messages that scrolled away keep their
+    /// text for a copy, but are not under the pointer.
+    frame: u64,
 }
 
 /// The selection of one group of text blocks.
 pub struct TextSelection {
     focus: FocusHandle,
-    /// The blocks painted in the last frame, in order.
-    blocks: Vec<Block>,
+    blocks: BTreeMap<Key, Block>,
+    /// Blocks painted so far in this frame, per owner.
+    counts: HashMap<u64, u32>,
+    frame: u64,
     anchor: Option<Spot>,
     head: Option<Spot>,
     dragging: bool,
@@ -57,31 +73,43 @@ pub struct TextSelection {
     /// The area the group shows in (its scrolling list's), to scroll on a drag past it.
     viewport: Option<Bounds<Pixels>>,
     edge_scrolling: bool,
-    /// What "Copy all" copies (the Markdown source); the blocks' text when `None`.
-    whole: Option<SharedString>,
-    /// Where the drawn right-click menu is open.
-    menu: Option<Point<Pixels>>,
+    /// When the root was last painted: one that scrolled out of view stops getting the
+    /// mouse, so the edge scroll must not go on for it.
+    painted: Option<Instant>,
+    /// Shared by the messages of a chat (made with [`TextSelection::shared`]).
+    shared: bool,
+    /// Where the drawn right-click menu is open, and the block it was opened on.
+    menu: Option<(Point<Pixels>, Key)>,
 }
 
 impl TextSelection {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(shared: bool, cx: &mut Context<Self>) -> Self {
         Self {
             focus: cx.focus_handle(),
-            blocks: Vec::new(),
+            blocks: BTreeMap::new(),
+            counts: HashMap::new(),
+            frame: 0,
             anchor: None,
             head: None,
             dragging: false,
             pointer: Point::default(),
             viewport: None,
             edge_scrolling: false,
-            whole: None,
+            painted: None,
+            shared,
             menu: None,
         }
     }
 
     /// The state of the group `id`, kept while it keeps being painted.
     pub fn of(id: impl Into<ElementId>, window: &mut Window, cx: &mut App) -> Entity<Self> {
-        window.use_keyed_state(id, cx, |_, cx| Self::new(cx))
+        window.use_keyed_state(id, cx, |_, cx| Self::new(false, cx))
+    }
+
+    /// A selection for a whole chat: keep it, wrap the chat in [`selection_root`] and each
+    /// message in a [`SelectionScope`].
+    pub fn shared(cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self::new(true, cx))
     }
 
     /// Start and end, in order; `None` when nothing is selected.
@@ -90,42 +118,47 @@ impl TextSelection {
         (a != h).then(|| if a <= h { (a, h) } else { (h, a) })
     }
 
-    /// The part of block `n` that is selected.
-    fn block_range(&self, n: usize) -> Option<Range<usize>> {
-        let ((sb, so), (eb, eo)) = self.range()?;
-        let text = &self.blocks.get(n)?.text;
-        if n < sb || n > eb {
+    /// The part of block `key` that is selected.
+    fn block_range(&self, key: Key) -> Option<Range<usize>> {
+        let ((sk, so), (ek, eo)) = self.range()?;
+        let text = &self.blocks.get(&key)?.text;
+        if key < sk || key > ek {
             return None;
         }
-        let start = if n == sb { floor_char(text, so) } else { 0 };
-        let end = if n == eb { floor_char(text, eo) } else { text.len() };
+        let start = if key == sk { floor_char(text, so) } else { 0 };
+        let end = if key == ek { floor_char(text, eo) } else { text.len() };
         (start < end).then_some(start..end)
     }
 
     /// The selected text, the blocks joined by their joints (a blank line between
-    /// paragraphs, a line break and the marker between list items, a tab between cells).
+    /// paragraphs and messages, a line break and the marker between list items, a tab
+    /// between cells).
     pub fn selected_text(&self) -> String {
+        let Some(((sk, _), (ek, _))) = self.range() else {
+            return String::new();
+        };
         let mut out = String::new();
-        for (n, block) in self.blocks.iter().enumerate() {
-            if let Some(range) = self.block_range(n) {
+        let mut last_owner = None;
+        for (&key, block) in self.blocks.range(sk..=ek) {
+            if let Some(range) = self.block_range(key) {
                 if !out.is_empty() {
-                    out.push_str(&block.joint);
+                    out.push_str(if last_owner == Some(key.0) { &block.joint } else { "\n\n" });
                 }
                 out.push_str(&block.text[range]);
+                last_owner = Some(key.0);
             }
         }
         out
     }
 
-    /// Everything in the group: the source given with [`TextSelection::set_whole`], or the
-    /// blocks' text.
-    pub fn whole_text(&self) -> String {
-        if let Some(whole) = &self.whole {
+    /// What "Copy all" copies for block `key`: its source, or its owner's text.
+    fn whole_text(&self, key: Key) -> String {
+        if let Some(whole) = self.blocks.get(&key).and_then(|b| b.whole.clone()) {
             return whole.to_string();
         }
         let mut out = String::new();
-        for (n, block) in self.blocks.iter().enumerate() {
-            if n > 0 {
+        for (k, block) in self.blocks.range((key.0, 0)..=(key.0, u32::MAX)) {
+            if k.1 > 0 {
                 out.push_str(&block.joint);
             }
             out.push_str(&block.text);
@@ -133,32 +166,36 @@ impl TextSelection {
         out
     }
 
-    /// What "Copy all" copies.
-    pub fn set_whole(&mut self, whole: Option<SharedString>) {
-        self.whole = whole;
-    }
-
     fn select_all(&mut self) -> bool {
-        let Some(last) = self.blocks.len().checked_sub(1) else {
+        let (Some((&first, _)), Some((&last, block))) =
+            (self.blocks.first_key_value(), self.blocks.last_key_value())
+        else {
             return false;
         };
-        self.anchor = Some((0, 0));
-        self.head = Some((last, self.blocks[last].text.len()));
+        self.anchor = Some((first, 0));
+        self.head = Some((last, block.text.len()));
         true
+    }
+
+    /// The blocks under the pointer this frame.
+    fn shown(&self) -> impl Iterator<Item = (&Key, &Block)> {
+        let frame = self.frame;
+        self.blocks.iter().filter(move |(_, b)| b.frame == frame)
     }
 
     /// Where the pointer at `pos` falls: inside a block, or the start of the next one.
     fn spot_at(&self, pos: Point<Pixels>) -> Option<Spot> {
-        let last = self.blocks.len().checked_sub(1)?;
-        for (n, block) in self.blocks.iter().enumerate() {
+        let mut last = None;
+        for (&key, block) in self.shown() {
             if pos.y < block.bounds.top() {
-                return Some((n, 0));
+                return Some((key, 0));
             }
             if pos.y <= block.bounds.bottom() {
-                return Some((n, index_at(block, pos)));
+                return Some((key, index_at(block, pos)));
             }
+            last = Some((key, block.text.len()));
         }
-        Some((last, self.blocks[last].text.len()))
+        last
     }
 
     fn clear(&mut self) -> bool {
@@ -167,6 +204,12 @@ impl TextSelection {
         self.head = None;
         self.dragging = false;
         had
+    }
+
+    /// Owner `owner` is about to paint its blocks again.
+    fn restart(&mut self, owner: u64) {
+        self.counts.remove(&owner);
+        self.blocks.retain(|k, _| k.0 != owner);
     }
 }
 
@@ -208,6 +251,102 @@ pub fn word_at(text: &str, ix: usize) -> Range<usize> {
     start..end
 }
 
+/* ─────────── Scope ─────────── */
+
+/// Where the selectable text being built goes: the group and its owner.
+#[derive(Clone)]
+pub struct Selection {
+    pub state: Entity<TextSelection>,
+    pub owner: u64,
+}
+
+thread_local! {
+    static SCOPE: RefCell<Vec<Selection>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The scope the element being laid out is in, if any.
+pub fn current_selection() -> Option<Selection> {
+    SCOPE.with(|s| s.borrow().last().cloned())
+}
+
+/// One message of a chat whose selection is shared: the selectable text inside joins
+/// `state` as `owner` (the message's place in the chat, so the order is the reading order).
+pub struct SelectionScope {
+    scope: Selection,
+    child: Option<AnyElement>,
+}
+
+impl SelectionScope {
+    pub fn new(state: Entity<TextSelection>, owner: u64, child: impl IntoElement) -> Self {
+        Self {
+            scope: Selection { state, owner },
+            child: Some(child.into_any_element()),
+        }
+    }
+}
+
+impl IntoElement for SelectionScope {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for SelectionScope {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, AnyElement) {
+        let mut child = self.child.take().expect("laid out once");
+        SCOPE.with(|s| s.borrow_mut().push(self.scope.clone()));
+        let id = child.request_layout(window, cx);
+        SCOPE.with(|s| s.borrow_mut().pop());
+        (id, child)
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        child: &mut AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        child.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        child: &mut AnyElement,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let owner = self.scope.owner;
+        self.scope.state.update(cx, |s, _| s.restart(owner));
+        child.paint(window, cx);
+    }
+}
+
 /* ─────────── Right-click menu ─────────── */
 
 /// What a right click on selectable text offers.
@@ -216,9 +355,9 @@ pub struct TextMenuRequest {
     pub at: Point<Pixels>,
     /// The selection, if there is one.
     pub selected: Option<String>,
-    /// Everything in the group ("Copy all").
+    /// The whole text under the click ("Copy all").
     pub all: String,
-    /// Selects the whole group.
+    /// Selects everything in the group.
     pub select_all: Rc<dyn Fn(&mut App)>,
 }
 
@@ -251,18 +390,24 @@ fn menu_labels(cx: &App) -> [SharedString; 3] {
         .unwrap_or_else(|| ["Copy".into(), "Copy all".into(), "Select all".into()])
 }
 
-fn open_menu(state: &Entity<TextSelection>, at: Point<Pixels>, window: &mut Window, cx: &mut App) {
+fn open_menu(
+    state: &Entity<TextSelection>,
+    key: Key,
+    at: Point<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let native = cx.try_global::<TextMenu>().and_then(|m| m.native.clone());
     let Some(native) = native else {
         state.update(cx, |s, cx| {
-            s.menu = Some(at);
+            s.menu = Some((at, key));
             cx.notify();
         });
         return;
     };
     let sel = state.read(cx);
     let selected = Some(sel.selected_text()).filter(|t| !t.is_empty());
-    let all = sel.whole_text();
+    let all = sel.whole_text(key);
     let target = state.clone();
     let select_all: Rc<dyn Fn(&mut App)> = Rc::new(move |cx: &mut App| {
         target.update(cx, |s, cx| {
@@ -274,11 +419,11 @@ fn open_menu(state: &Entity<TextSelection>, at: Point<Pixels>, window: &mut Wind
     native(TextMenuRequest { at, selected, all, select_all }, window, cx);
 }
 
-fn drawn_menu(state: &Entity<TextSelection>, at: Point<Pixels>, cx: &App) -> AnyElement {
+fn drawn_menu(state: &Entity<TextSelection>, at: Point<Pixels>, key: Key, cx: &App) -> AnyElement {
     let [copy, copy_all, select_all] = menu_labels(cx);
     let sel = state.read(cx);
     let selected = sel.selected_text();
-    let all = sel.whole_text();
+    let all = sel.whole_text(key);
     let close = |state: &Entity<TextSelection>| {
         let state = state.clone();
         move |cx: &mut App| {
@@ -323,8 +468,8 @@ fn drawn_menu(state: &Entity<TextSelection>, at: Point<Pixels>, cx: &App) -> Any
 /* ─────────── Root and blocks ─────────── */
 
 /// The root of a group: follows the drag across its blocks, takes the copy and select-all
-/// keys once it has focus, and shows the drawn right-click menu. Give it `relative()`
-/// positioning room: it adds an absolutely placed layer.
+/// keys once it has focus, and shows the drawn right-click menu. It adds an absolutely
+/// placed layer, so it makes `root` `relative()`.
 pub fn selection_root(state: &Entity<TextSelection>, root: Div, cx: &App) -> Div {
     let focus = state.read(cx).focus.clone();
     let menu = state.read(cx).menu;
@@ -336,12 +481,17 @@ pub fn selection_root(state: &Entity<TextSelection>, root: Div, cx: &App) -> Div
         .child(
             canvas(
                 |_, _, _| {},
-                move |_, _, window, cx| {
-                    // The clip around the group: its scrolling list's area.
-                    let viewport = window.content_mask().bounds;
+                move |bounds, _, window, cx| {
+                    let mask = window.content_mask().bounds;
                     paint_state.update(cx, |s, _| {
-                        s.blocks.clear();
-                        s.viewport = Some(viewport);
+                        s.frame += 1;
+                        // A chat's root is its list: scroll at its edges. A message on its
+                        // own scrolls the list it is in, at the clip around it.
+                        s.viewport = Some(if s.shared { bounds.intersect(&mask) } else { mask });
+                        s.painted = Some(Instant::now());
+                        if !s.shared {
+                            s.restart(0);
+                        }
                     });
                     follow(&paint_state, window);
                 },
@@ -351,7 +501,7 @@ pub fn selection_root(state: &Entity<TextSelection>, root: Div, cx: &App) -> Div
             .left_0()
             .size_full(),
         )
-        .when_some(menu, |root, at| root.child(drawn_menu(state, at, cx)))
+        .when_some(menu, |root, (at, key)| root.child(drawn_menu(state, at, key, cx)))
 }
 
 fn on_key(state: &Entity<TextSelection>, event: &KeyDownEvent, cx: &mut App) {
@@ -386,13 +536,15 @@ fn on_key(state: &Entity<TextSelection>, event: &KeyDownEvent, cx: &mut App) {
 
 /// The drag over the whole group: moves the end of the selection, scrolls the list when
 /// the pointer goes past its edge, and clears the selection on a press outside the group.
+/// All in the capture phase: an element painted above the text (the list, the composer) may
+/// stop these events on their way up.
 fn follow(state: &Entity<TextSelection>, window: &mut Window) {
     let s = state.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
         if phase != DispatchPhase::Capture {
             return;
         }
-        let inside = s.read(cx).blocks.iter().any(|b| b.visible.contains(&event.position));
+        let inside = s.read(cx).shown().any(|(_, b)| b.visible.contains(&event.position));
         if !inside {
             s.update(cx, |sel, cx| {
                 if sel.clear() {
@@ -402,8 +554,6 @@ fn follow(state: &Entity<TextSelection>, window: &mut Window) {
         }
     });
     let s = state.clone();
-    // The drag goes in the capture phase: an element painted above the text (the list, the
-    // composer) may stop the bubbling move before it gets here.
     window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
         if phase != DispatchPhase::Capture || !s.read(cx).dragging {
             return;
@@ -445,12 +595,21 @@ fn edge_step(state: &Entity<TextSelection>, cx: &App) -> Option<(Pixels, Point<P
     if !s.dragging {
         return None;
     }
+    // A message on its own scrolls only while it has text past that edge: scrolled out of
+    // view, it would no longer hear the release. A chat's root is always there.
+    let (mut top, mut bottom) = (view.top(), view.bottom());
+    if !s.shared {
+        for (_, b) in s.shown() {
+            top = if b.bounds.top() < top { b.bounds.top() } else { top };
+            bottom = if b.bounds.bottom() > bottom { b.bounds.bottom() } else { bottom };
+        }
+    }
     let pos = s.pointer;
     let x = pos.x.clamp(view.left() + px(1.), view.right() - px(1.));
     let speed = |past: Pixels| (past / px(4.)).clamp(2., 40.);
-    if pos.y < view.top() {
+    if pos.y < view.top() && (s.shared || top < view.top()) {
         Some((px(speed(view.top() - pos.y)), point(x, view.top() + px(1.))))
-    } else if pos.y > view.bottom() {
+    } else if pos.y > view.bottom() && (s.shared || bottom > view.bottom()) {
         Some((px(-speed(pos.y - view.bottom())), point(x, view.bottom() - px(1.))))
     } else {
         None
@@ -467,6 +626,11 @@ fn edge_scroll(state: &Entity<TextSelection>, window: &mut Window, cx: &mut App)
         loop {
             cx.background_executor().timer(EDGE_TICK).await;
             let more = handle.update(cx, |_, window, cx| {
+                // Not painted lately: it left the view and no longer hears the release.
+                if state.read(cx).painted.is_none_or(|t| t.elapsed() > EDGE_TICK * 8) {
+                    state.update(cx, |s, _| s.dragging = false);
+                    return false;
+                }
                 let Some((dy, at)) = edge_step(&state, cx) else {
                     return false;
                 };
@@ -497,18 +661,21 @@ fn edge_scroll(state: &Entity<TextSelection>, window: &mut Window, cx: &mut App)
     .detach();
 }
 
-/// A block of the group (numbered in paint order): the text of `layout` (a `StyledText`'s) drawn by `inner` (that
-/// `StyledText`, or an `InteractiveText` around it), with the selection painted behind.
-/// `joint` goes before its text when a copy also takes the block before it.
+/// A selectable block in `group` (numbered in paint order within its owner): the text of
+/// `layout` (a `StyledText`'s) drawn by `inner` (that `StyledText`, or an `InteractiveText`
+/// around it), with the selection painted behind. `joint` goes before its text when a copy
+/// also takes the block before it; `whole` is what "Copy all" copies over it.
 pub fn selectable_block(
-    state: &Entity<TextSelection>,
+    group: &Selection,
     layout: TextLayout,
     source: SharedString,
     joint: SharedString,
+    whole: Option<SharedString>,
     inner: AnyElement,
     color: Hsla,
 ) -> AnyElement {
-    let state = state.clone();
+    let state = group.state.clone();
+    let owner = group.owner;
     div()
         .relative()
         .child(
@@ -517,21 +684,29 @@ pub fn selectable_block(
                 move |bounds, hitbox, window, cx| {
                     window.set_cursor_style(CursorStyle::IBeam, &hitbox);
                     let visible = window.content_mask().bounds.intersect(&bounds);
-                    let (n, selected) = state.update(cx, |s, _| {
-                        let n = s.blocks.len();
-                        s.blocks.push(Block {
-                            layout: layout.clone(),
-                            bounds,
-                            visible,
-                            text: source.clone(),
-                            joint: joint.clone(),
-                        });
-                        (n, s.block_range(n))
+                    let (key, selected) = state.update(cx, |s, _| {
+                        let n = s.counts.entry(owner).or_default();
+                        let key = (owner, *n);
+                        *n += 1;
+                        let frame = s.frame;
+                        s.blocks.insert(
+                            key,
+                            Block {
+                                layout: layout.clone(),
+                                bounds,
+                                visible,
+                                text: source.clone(),
+                                joint: joint.clone(),
+                                whole: whole.clone(),
+                                frame,
+                            },
+                        );
+                        (key, s.block_range(key))
                     });
                     if let Some(range) = selected {
                         paint_range(&layout, bounds, range, color, window);
                     }
-                    press(&state, n, hitbox, window);
+                    press(&state, key, hitbox, window);
                 },
             )
             .absolute()
@@ -541,6 +716,15 @@ pub fn selectable_block(
         )
         .child(inner)
         .into_any_element()
+}
+
+/// The group for a selectable component: the scope it is in, or its own (`own` is then
+/// true and the component wraps itself in [`selection_root`]).
+pub fn group_for(id: ElementId, window: &mut Window, cx: &mut App) -> (Selection, bool) {
+    match current_selection() {
+        Some(scope) => (scope, false),
+        None => (Selection { state: TextSelection::of(id, window, cx), owner: 0 }, true),
+    }
 }
 
 fn paint_range(
@@ -571,31 +755,31 @@ fn paint_range(
     window.paint_quad(rect(bounds.left(), b.y, b.x, b.y + lh));
 }
 
-/// A press on block `n`: starts a selection there (a word on a double click, the block on
-/// a triple click, up to there with Shift); a right click opens the menu.
-fn press(state: &Entity<TextSelection>, n: usize, hitbox: gpui::Hitbox, window: &mut Window) {
+/// A press on block `key`: starts a selection there (a word on a double click, the block
+/// on a triple click, up to there with Shift); a right click opens the menu. In the capture
+/// phase too, like the drag.
+fn press(state: &Entity<TextSelection>, key: Key, hitbox: gpui::Hitbox, window: &mut Window) {
     let s = state.clone();
-    // In the capture phase too: an element above the text may stop the press on its way up.
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
         if phase != DispatchPhase::Capture || !hitbox.is_hovered(window) {
             return;
         }
         if event.button == MouseButton::Right {
-            open_menu(&s, event.position, window, cx);
+            open_menu(&s, key, event.position, window, cx);
             return;
         }
         if event.button != MouseButton::Left {
             return;
         }
         s.update(cx, |sel, cx| {
-            let Some(block) = sel.blocks.get(n) else {
+            let Some(block) = sel.blocks.get(&key) else {
                 return;
             };
             let ix = index_at(block, event.position);
             let len = block.text.len();
             sel.pointer = event.position;
             if event.modifiers.shift && sel.anchor.is_some() {
-                sel.head = Some((n, ix));
+                sel.head = Some((key, ix));
                 sel.dragging = true;
             } else {
                 let range = match event.click_count {
@@ -603,8 +787,8 @@ fn press(state: &Entity<TextSelection>, n: usize, hitbox: gpui::Hitbox, window: 
                     2 => word_at(&block.text, ix),
                     _ => 0..len,
                 };
-                sel.anchor = Some((n, range.start));
-                sel.head = Some((n, range.end));
+                sel.anchor = Some((key, range.start));
+                sel.head = Some((key, range.end));
                 sel.dragging = event.click_count <= 1;
             }
             sel.menu = None;
@@ -636,18 +820,20 @@ impl SelectableText {
 impl RenderOnce for SelectableText {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let color = alpha(Theme::of(cx).primary, 0.3);
-        let state = TextSelection::of(self.id, window, cx);
+        let (group, own) = group_for(self.id, window, cx);
         let styled = StyledText::new(self.text.clone());
         let layout = styled.layout().clone();
         let block = selectable_block(
-            &state,
+            &group,
             layout,
             self.text,
             SharedString::default(),
+            None,
             styled.into_any_element(),
             color,
         );
-        selection_root(&state, div(), cx).child(block)
+        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
+        root.child(block)
     }
 }
 

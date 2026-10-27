@@ -18,7 +18,7 @@ use gpui::{
 };
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
-use super::{CodeBlock, Icon, TextSelection, selectable_block, selection_root};
+use super::{CodeBlock, Icon, Selection, group_for, selectable_block, selection_root};
 use crate::cache::{Lru, content_key};
 use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, alpha, text};
 
@@ -655,7 +655,7 @@ type ImageRenderer = Rc<dyn Fn(&MarkdownImage, &mut Window, &mut App) -> AnyElem
 /// nested and numbered lists, task boxes, quotes with a side rule, tables, [`CodeBlock`]s and
 /// links in the primary color.
 ///
-/// Its text can be selected and copied like a document's (see [`TextSelection`]); code
+/// Its text can be selected and copied like a document's (see [`super::TextSelection`]); code
 /// blocks keep their own Copy button.
 #[derive(IntoElement)]
 pub struct Markdown {
@@ -724,8 +724,10 @@ struct Render<'a> {
     on_link: Option<LinkHandler>,
     on_path: Option<LinkHandler>,
     on_image: Option<ImageRenderer>,
-    selection: gpui::Entity<TextSelection>,
-    /// What goes before the next text block in a copy (see [`TextSelection::selected_text`]);
+    group: Selection,
+    /// The Markdown source, for "Copy all".
+    whole: SharedString,
+    /// What goes before the next text block in a copy (see [`super::TextSelection::selected_text`]);
     /// a blank line when `None`.
     joint: Option<String>,
 }
@@ -787,7 +789,7 @@ impl Render<'_> {
         let layout = styled.layout().clone();
         let joint: SharedString = self.joint.take().unwrap_or_else(|| "\n\n".into()).into();
         let select = |inner: AnyElement, this: &Self| {
-            selectable_block(&this.selection, layout, rich.text.clone().into(), joint, inner, alpha(s.primary, 0.3))
+            selectable_block(&this.group, layout, rich.text.clone().into(), joint, Some(this.whole.clone()), inner, alpha(s.primary, 0.3))
         };
 
         let mut targets: Vec<(Range<usize>, Target)> = Vec::new();
@@ -883,7 +885,7 @@ impl Render<'_> {
                 let joint = self.joint.take().unwrap_or_else(|| "\n\n".into());
                 CodeBlock::new(self.next_id("code"), code.clone())
                     .language(language.clone())
-                    .selection(self.selection.clone(), joint.into())
+                    .selection(self.group.clone(), joint.into(), Some(self.whole.clone()))
                     .into_any_element()
             }
             MarkdownBlock::Quote(blocks) => {
@@ -1121,7 +1123,7 @@ impl RenderOnce for Markdown {
         let s = *Theme::of(cx);
         let blocks = parse_markdown_cached(&self.text);
         let size = f32::from(self.size);
-        let selection = TextSelection::of(self.id.clone(), window, cx);
+        let (group, own) = group_for(self.id.clone(), window, cx);
         let mut r = Render {
             id: &self.id,
             counts: Vec::new(),
@@ -1130,13 +1132,13 @@ impl RenderOnce for Markdown {
             on_link: self.on_link,
             on_path: self.on_path,
             on_image: self.on_image,
-            selection: selection.clone(),
+            group: group.clone(),
+            whole: self.text.clone(),
             joint: None,
         };
-        selection.update(cx, |sel, _| sel.set_whole(Some(self.text.clone())));
         let children = r.blocks(&blocks, 0, window, cx);
-        selection_root(&selection, div(), cx)
-            .flex()
+        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
+        root.flex()
             .flex_col()
             .gap(px(size * 0.75))
             .min_w_0()

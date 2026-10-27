@@ -4,12 +4,12 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ClipboardItem, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
+    App, ClipboardItem, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div, px,
     relative,
 };
 
-use super::{TextSelection, all, child_id, selectable_block, selection_root};
+use super::{Selection, all, child_id, group_for, selectable_block, selection_root};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, key};
 use crate::syntax::{SyntaxPalette, highlight_cached, language};
@@ -100,14 +100,13 @@ impl RenderOnce for CodeOutput {
             clipped.to_string().into()
         };
         // Selectable; "Copy all" takes the whole output, also the lines not shown.
-        let selection = TextSelection::of(child_id(&self.id, "select"), window, cx);
-        selection.update(cx, |sel, _| sel.set_whole(Some(self.text.clone())));
+        let (group, own) = group_for(child_id(&self.id, "select"), window, cx);
         let text = StyledText::new(shown.clone());
         let layout = text.layout().clone();
-        let shown = selectable_block(&selection, layout, shown, SharedString::default(), text.into_any_element(), alpha(s.primary, 0.3));
+        let shown = selectable_block(&group, layout, shown, SharedString::default(), Some(self.text.clone()), text.into_any_element(), alpha(s.primary, 0.3));
+        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
 
-        selection_root(&selection, div(), cx)
-            .flex()
+        root.flex()
             .flex_col()
             .min_w_0()
             .rounded(px(12.))
@@ -168,8 +167,9 @@ pub struct CodeBlock {
     code: SharedString,
     language: SharedString,
     max_height: Pixels,
-    /// The selection it shares (a Markdown's) and what goes before it in a copy.
-    selection: Option<(Entity<TextSelection>, SharedString)>,
+    /// The selection it shares (a Markdown's), what goes before it in a copy and what
+    /// "Copy all" copies over it.
+    selection: Option<(Selection, SharedString, Option<SharedString>)>,
 }
 
 impl CodeBlock {
@@ -183,10 +183,10 @@ impl CodeBlock {
         }
     }
 
-    /// Selects as part of another group (the Markdown it is in), with `joint` before its
-    /// text in a copy; on its own it is a group of its own.
-    pub fn selection(mut self, state: Entity<TextSelection>, joint: SharedString) -> Self {
-        self.selection = Some((state, joint));
+    /// Selects as part of the Markdown it is in, with `joint` before its text in a copy and
+    /// `whole` for "Copy all"; otherwise it joins the scope it is in, or is a group of its own.
+    pub fn selection(mut self, group: Selection, joint: SharedString, whole: Option<SharedString>) -> Self {
+        self.selection = Some((group, joint, whole));
         self
     }
 
@@ -213,10 +213,13 @@ fn display_code(code: &str) -> String {
 impl RenderOnce for CodeBlock {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let own = self.selection.is_none();
-        let (selection, joint) = self.selection.unwrap_or_else(|| {
-            (TextSelection::of(child_id(&self.id, "select"), window, cx), SharedString::default())
-        });
+        let (group, joint, whole, own) = match self.selection {
+            Some((group, joint, whole)) => (group, joint, whole, false),
+            None => {
+                let (group, own) = group_for(child_id(&self.id, "select"), window, cx);
+                (group, SharedString::default(), Some(self.code.clone()), own)
+            }
+        };
         let info = language(&self.language);
         let code = display_code(&self.code);
         let tokens = info
@@ -230,13 +233,8 @@ impl RenderOnce for CodeBlock {
             text = text.with_highlights(palette.highlights(&tokens));
         }
         let layout = text.layout().clone();
-        let text = selectable_block(&selection, layout, source, joint, text.into_any_element(), alpha(s.primary, 0.3));
-        let root = if own {
-            selection.update(cx, |sel, _| sel.set_whole(Some(self.code.clone())));
-            selection_root(&selection, div(), cx)
-        } else {
-            div()
-        };
+        let text = selectable_block(&group, layout, source, joint, whole, text.into_any_element(), alpha(s.primary, 0.3));
+        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
 
         root.flex()
             .flex_col()
