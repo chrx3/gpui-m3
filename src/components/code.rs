@@ -4,16 +4,16 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ClipboardItem, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
+    App, ClipboardItem, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div, px,
     relative,
 };
 
-use super::{all, child_id};
+use super::{TextSelection, all, child_id, selectable_block, selection_root};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, key};
 use crate::syntax::{SyntaxPalette, highlight_cached, language};
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Theme};
+use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Theme, alpha};
 
 /// How long "Copied" stays after copying a code block.
 pub const COPIED_FOR: Duration = Duration::from_millis(1400);
@@ -99,8 +99,14 @@ impl RenderOnce for CodeOutput {
         } else {
             clipped.to_string().into()
         };
+        // Selectable; "Copy all" takes the whole output, also the lines not shown.
+        let selection = TextSelection::of(child_id(&self.id, "select"), window, cx);
+        selection.update(cx, |sel, _| sel.set_whole(Some(self.text.clone())));
+        let text = StyledText::new(shown.clone());
+        let layout = text.layout().clone();
+        let shown = selectable_block(&selection, layout, shown, SharedString::default(), text.into_any_element(), alpha(s.primary, 0.3));
 
-        div()
+        selection_root(&selection, div(), cx)
             .flex()
             .flex_col()
             .min_w_0()
@@ -162,6 +168,8 @@ pub struct CodeBlock {
     code: SharedString,
     language: SharedString,
     max_height: Pixels,
+    /// The selection it shares (a Markdown's) and what goes before it in a copy.
+    selection: Option<(Entity<TextSelection>, SharedString)>,
 }
 
 impl CodeBlock {
@@ -171,7 +179,15 @@ impl CodeBlock {
             code: code.into(),
             language: SharedString::default(),
             max_height: px(480.),
+            selection: None,
         }
+    }
+
+    /// Selects as part of another group (the Markdown it is in), with `joint` before its
+    /// text in a copy; on its own it is a group of its own.
+    pub fn selection(mut self, state: Entity<TextSelection>, joint: SharedString) -> Self {
+        self.selection = Some((state, joint));
+        self
     }
 
     /// The fence's info string (`"ts"`, `"rust title=main.rs"`…); empty for plain text.
@@ -195,8 +211,12 @@ fn display_code(code: &str) -> String {
 }
 
 impl RenderOnce for CodeBlock {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        let own = self.selection.is_none();
+        let (selection, joint) = self.selection.unwrap_or_else(|| {
+            (TextSelection::of(child_id(&self.id, "select"), window, cx), SharedString::default())
+        });
         let info = language(&self.language);
         let code = display_code(&self.code);
         let tokens = info
@@ -204,13 +224,21 @@ impl RenderOnce for CodeBlock {
             .then(|| highlight_cached(&code, &self.language))
             .flatten();
         let palette = SyntaxPalette::of(cx);
+        let source: SharedString = code.clone().into();
         let mut text = StyledText::new(code);
         if let Some(tokens) = tokens {
             text = text.with_highlights(palette.highlights(&tokens));
         }
+        let layout = text.layout().clone();
+        let text = selectable_block(&selection, layout, source, joint, text.into_any_element(), alpha(s.primary, 0.3));
+        let root = if own {
+            selection.update(cx, |sel, _| sel.set_whole(Some(self.code.clone())));
+            selection_root(&selection, div(), cx)
+        } else {
+            div()
+        };
 
-        div()
-            .flex()
+        root.flex()
             .flex_col()
             .min_w_0()
             .bg(s.surface)

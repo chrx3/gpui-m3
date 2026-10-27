@@ -18,9 +18,9 @@ use gpui::{
 };
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
-use super::{CodeBlock, Icon};
+use super::{CodeBlock, Icon, TextSelection, selectable_block, selection_root};
 use crate::cache::{Lru, content_key};
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, text};
+use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, alpha, text};
 
 /* ─────────── Model ─────────── */
 
@@ -655,7 +655,8 @@ type ImageRenderer = Rc<dyn Fn(&MarkdownImage, &mut Window, &mut App) -> AnyElem
 /// nested and numbered lists, task boxes, quotes with a side rule, tables, [`CodeBlock`]s and
 /// links in the primary color.
 ///
-/// GPUI does not select text; offer a Copy action next to messages instead.
+/// Its text can be selected and copied like a document's (see [`TextSelection`]); code
+/// blocks keep their own Copy button.
 #[derive(IntoElement)]
 pub struct Markdown {
     id: ElementId,
@@ -723,6 +724,10 @@ struct Render<'a> {
     on_link: Option<LinkHandler>,
     on_path: Option<LinkHandler>,
     on_image: Option<ImageRenderer>,
+    selection: gpui::Entity<TextSelection>,
+    /// What goes before the next text block in a copy (see [`TextSelection::selected_text`]);
+    /// a blank line when `None`.
+    joint: Option<String>,
 }
 
 impl Render<'_> {
@@ -779,6 +784,11 @@ impl Render<'_> {
             })
             .collect();
         let styled = StyledText::new(rich.text.clone()).with_runs(runs);
+        let layout = styled.layout().clone();
+        let joint: SharedString = self.joint.take().unwrap_or_else(|| "\n\n".into()).into();
+        let select = |inner: AnyElement, this: &Self| {
+            selectable_block(&this.selection, layout, rich.text.clone().into(), joint, inner, alpha(s.primary, 0.3))
+        };
 
         let mut targets: Vec<(Range<usize>, Target)> = Vec::new();
         if self.on_link.is_some() {
@@ -795,12 +805,12 @@ impl Render<'_> {
             }));
         }
         if targets.is_empty() {
-            return styled.into_any_element();
+            return select(styled.into_any_element(), self);
         }
         targets.sort_by_key(|(r, _)| r.start);
         let ranges = targets.iter().map(|(r, _)| r.clone()).collect();
         let (on_link, on_path) = (self.on_link.clone(), self.on_path.clone());
-        InteractiveText::new(self.next_id("text"), styled)
+        let text = InteractiveText::new(self.next_id("text"), styled)
             .on_click(ranges, move |ix, window, cx| match &targets[ix].1 {
                 Target::Link(url) => {
                     if let Some(f) = &on_link {
@@ -813,7 +823,14 @@ impl Render<'_> {
                     }
                 }
             })
-            .into_any_element()
+            .into_any_element();
+        select(text, self)
+    }
+
+    /// Adds `mark` after the joint of the next text block (a heading's `## `).
+    fn lead(&mut self, mark: &str) {
+        let base = self.joint.take().unwrap_or_else(|| "\n\n".into());
+        self.joint = Some(base + mark);
     }
 
     fn blocks(
@@ -852,6 +869,7 @@ impl Render<'_> {
                     _ => 1.,
                 };
                 let muted = *level >= 4;
+                self.lead(&format!("{} ", "#".repeat(*level as usize)));
                 let rich = self.rich(text, FontWeight::SEMIBOLD);
                 div()
                     .when(!first, |d| d.pt(px(size * 0.5)))
@@ -862,8 +880,10 @@ impl Render<'_> {
                     .into_any_element()
             }
             MarkdownBlock::Code { language, code } => {
+                let joint = self.joint.take().unwrap_or_else(|| "\n\n".into());
                 CodeBlock::new(self.next_id("code"), code.clone())
                     .language(language.clone())
+                    .selection(self.selection.clone(), joint.into())
                     .into_any_element()
             }
             MarkdownBlock::Quote(blocks) => {
@@ -904,6 +924,14 @@ impl Render<'_> {
                             .child(["•", "◦", "▪"][depth % 3])
                             .into_any_element(),
                     };
+                    // A copy keeps the list as Markdown: a line per item, with its marker.
+                    let mark = match (item.task, start) {
+                        (Some(true), _) => "- [x] ".to_string(),
+                        (Some(false), _) => "- [ ] ".to_string(),
+                        (None, Some(n)) => format!("{}. ", n + i as u64),
+                        (None, None) => "- ".to_string(),
+                    };
+                    self.joint = Some(format!("\n{}{mark}", "  ".repeat(depth)));
                     let children = self.blocks(&item.blocks, depth + 1, window, cx);
                     list = list.child(
                         div()
@@ -975,6 +1003,12 @@ impl Render<'_> {
             }
             for (c, weight) in weights.iter().enumerate() {
                 let content = cells.get(c).map(|cell| {
+                    // A copy keeps the table as text: a tab between cells, a line per row.
+                    if c > 0 {
+                        this.joint = Some("\t".into());
+                    } else if !header {
+                        this.joint = Some("\n".into());
+                    }
                     this.rich(
                         cell,
                         if header {
@@ -1087,6 +1121,7 @@ impl RenderOnce for Markdown {
         let s = *Theme::of(cx);
         let blocks = parse_markdown_cached(&self.text);
         let size = f32::from(self.size);
+        let selection = TextSelection::of(self.id.clone(), window, cx);
         let mut r = Render {
             id: &self.id,
             counts: Vec::new(),
@@ -1095,9 +1130,12 @@ impl RenderOnce for Markdown {
             on_link: self.on_link,
             on_path: self.on_path,
             on_image: self.on_image,
+            selection: selection.clone(),
+            joint: None,
         };
+        selection.update(cx, |sel, _| sel.set_whole(Some(self.text.clone())));
         let children = r.blocks(&blocks, 0, window, cx);
-        div()
+        selection_root(&selection, div(), cx)
             .flex()
             .flex_col()
             .gap(px(size * 0.75))
