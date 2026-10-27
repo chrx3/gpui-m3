@@ -389,7 +389,7 @@ fn on_key(state: &Entity<TextSelection>, event: &KeyDownEvent, cx: &mut App) {
 fn follow(state: &Entity<TextSelection>, window: &mut Window) {
     let s = state.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
-        if phase != DispatchPhase::Bubble {
+        if phase != DispatchPhase::Capture {
             return;
         }
         let inside = s.read(cx).blocks.iter().any(|b| b.visible.contains(&event.position));
@@ -575,8 +575,9 @@ fn paint_range(
 /// a triple click, up to there with Shift); a right click opens the menu.
 fn press(state: &Entity<TextSelection>, n: usize, hitbox: gpui::Hitbox, window: &mut Window) {
     let s = state.clone();
+    // In the capture phase too: an element above the text may stop the press on its way up.
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-        if phase != DispatchPhase::Bubble || !hitbox.is_hovered(window) {
+        if phase != DispatchPhase::Capture || !hitbox.is_hovered(window) {
             return;
         }
         if event.button == MouseButton::Right {
