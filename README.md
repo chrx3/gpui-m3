@@ -68,7 +68,7 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
 | Surfaces | `Menu` (header, back row, scrolling), `MenuItem` (dense, radio, danger, shortcuts), `Popover`, `Card`, `ExpandableCard`, `ListGroup`, `Bubble` |
 | Shapes & progress | `Shape` (14 shapes, breathe, breathe on hover, photo fill, spin), `Avatar` (initials or a photo), `LoadingIndicator`, `WavyProgress`, `Ring`, `LinearProgress` |
 | Attachments | `DropZone` (files from the system), `ImageThumb` |
-| Code | `Markdown` (GFM: tables, tasks, nested lists, quotes, links, paths; parsed with `pulldown-cmark` and cached), `CodeBlock` (language name, Copy → Copied, highlighting), `CodeOutput` (clipped tool output), `DiffView` / `Diff` (real line diff with `similar`, folding, `+N −M`), `DiffBar` |
+| Code | `CodeEditor` over a `CodeBuffer` (virtualized with `uniform_list`, line numbers, mouse and keyboard selection, clipboard, undo/redo, read-only mode, a `LineHighlighter` hook), `Markdown` (GFM: tables, tasks, nested lists, quotes, links, paths; parsed with `pulldown-cmark` and cached), `CodeBlock` (language name, Copy → Copied, highlighting), `CodeOutput` (clipped tool output), `DiffView` / `Diff` (real line diff with `similar`, folding, `+N −M`), `DiffBar` |
 | Appearance | `SelectCard`, `ColorSwatches`, `HsvPicker` |
 | Settings & keys | `SettingRow` (title, description and a control on the right, for a `ListGroup`), `Kbd` (one key cap), `KeyCombo` (a combination such as `ctrl-shift-k` in a row, clickable, with a pulsing "capturing" state), `KeyNames` (English or Spanish key words), `parse_keys` |
 | Foundations | `theme` (`Scheme`, `Theme`, `corner`), `syntax` (`SyntaxHighlighter` line by line, `SyntaxPalette`), `motion` (`Spring`, `animate*`, `entrance`, `presence`, `play_on_rise`), `Presence` (exit animations), `shapes`, `interaction` (state layer, ripples, focus ring) |
@@ -135,6 +135,7 @@ With nothing animating, the gallery does not redraw at all.
 - Roboto ships as a variable font with weights; width axes (`font-stretch`) are not available in GPUI.
 - Monospace text uses the platform font (Consolas, Menlo or DejaVu Sans Mono); none is bundled.
 - GPUI does not select text, so `Markdown` offers no selection; put a Copy action next to it.
+  `CodeEditor` does its own selection: use it with `.read_only(true)` for text people need to copy.
 - GPUI 0.2.2 caches text measurements without the truncation width, so text with `text_ellipsis()`
   can stay as "…" if its first layout was very narrow. `Button` and `SelectCard` clip instead.
 
@@ -142,7 +143,7 @@ With nothing animating, the gallery does not redraw at all.
 
 - `SuggestionList`: animate rows that appear while typing by identity, not by position.
 - Focus rings on the other clickable components (buttons, menu items, rows).
-- `CodeEditor`: code folding and multiple cursors.
+- `CodeEditor` (already usable): code folding and multiple cursors.
 - Syntax colors inside `DiffView` lines, and a side-by-side diff.
 - `Markdown`: selectable text, hover underline on links, footnotes and math.
 
