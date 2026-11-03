@@ -13,6 +13,10 @@ mod image_cropper;
 mod keys;
 mod lists;
 mod markdown;
+#[cfg(feature = "mermaid")]
+mod mermaid;
+#[cfg(feature = "mermaid")]
+pub use mermaid::MermaidDiagram;
 mod media;
 mod nav;
 mod overlays;

@@ -16,10 +16,15 @@ exclude = ["/docs", "/.github", "/.cargo"]
 [dependencies]
 gpui = "0.2.2"
 # The crate GPUI decodes images with; used to build shaped photo rasters.
-image = { version = "0.25", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
 log = "0.4"
 material-colors = "0.4"
 pulldown-cmark = { version = "0.13", default-features = false }
+# Only with the `mermaid` feature: diagrams as SVG (no browser), rasterized with the resvg that
+# GPUI already uses (same 0.45, so there is a single copy).
+mermaid-rs-renderer = { version = "0.3", default-features = false, optional = true }
+resvg = { version = "0.45", default-features = false, features = ["text", "system-fonts"], optional = true }
+usvg = { version = "0.45", default-features = false, features = ["text"], optional = true }
 similar = { version = "2", default-features = false, features = ["text"] }
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "regex-fancy", "yaml-load"] }
 unicode-segmentation = "1"
@@ -33,6 +38,9 @@ libc = ">=0.2.150, <0.2.190"
 # Counts which call sites keep requesting animation frames, for `motion::take_frame_requests`.
 # Off by default: it takes a lock on every frame request.
 frame-stats = []
+# Draws ```mermaid blocks of `Markdown` as diagrams (flowchart, sequence, class, state, ER, pie…)
+# with a pure-Rust renderer; a block that cannot be read stays a code block.
+mermaid = ["dep:mermaid-rs-renderer", "dep:resvg", "dep:usvg"]
 
 # Unoptimized GPUI is very slow. In development, dependencies are optimized (built once) and
 # this crate gets a light optimization that keeps rebuilds fast. Copy these into your app.

@@ -646,6 +646,167 @@ pub fn parse_markdown_cached(text: &str) -> Rc<Vec<MarkdownBlock>> {
     })
 }
 
+/* ─────────── Streaming ─────────── */
+
+/// Whether a line opens or closes a fenced code block, and with which fence.
+fn fence_of(line: &str) -> Option<(char, usize)> {
+    let t = line.trim_start();
+    let c = t.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let n = t.chars().take_while(|x| *x == c).count();
+    (n >= 3).then_some((c, n))
+}
+
+/// Whether a line continues the block before it even after a blank line (list items, indented
+/// text, quotes), so splitting there would cut one list into two.
+fn continues_block(line: &str) -> bool {
+    let t = line.trim_start();
+    if t.len() != line.len() || t.starts_with('>') {
+        return true;
+    }
+    let digits = t.chars().take_while(char::is_ascii_digit).count();
+    matches!(t.as_bytes(), [b'-' | b'*' | b'+', b' ', ..])
+        || (digits > 0 && matches!(t.as_bytes().get(digits..), Some([b'.' | b')', b' ', ..])))
+}
+
+/// Byte offset where the block still being written starts: everything before it is made of
+/// finished blocks (a blank line follows them, outside code fences) and interprets the same
+/// whether or not more text arrives. Lists and quotes are not cut in the middle.
+fn stream_split(text: &str) -> usize {
+    let mut starts: Vec<usize> = Vec::new();
+    let mut fence: Option<(char, usize)> = None;
+    let mut blank_before = false;
+    let mut in_list = false;
+    let mut at = 0;
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches(['\n', '\r']);
+        if let Some((c, n)) = fence {
+            // A closing fence has no info string and is at least as long as the opening one.
+            if fence_of(body).is_some_and(|(c2, n2)| c2 == c && n2 >= n)
+                && body.trim().chars().all(|x| x == c)
+            {
+                fence = None;
+            }
+        } else if body.trim().is_empty() {
+            blank_before = true;
+            at += line.len();
+            continue;
+        } else {
+            let continues = continues_block(body);
+            // A list (or quote) is one block however many blank lines it has: a new chunk
+            // that continues a list chunk is not a place to split.
+            if blank_before {
+                if !continues || !in_list {
+                    starts.push(at);
+                    in_list = continues;
+                }
+            } else if at == 0 {
+                in_list = continues;
+            }
+            fence = fence_of(body);
+        }
+        blank_before = false;
+        at += line.len();
+    }
+    starts.last().copied().unwrap_or(0)
+}
+
+/// Whether the text ends inside a code fence that is still open.
+fn fence_open(text: &str) -> bool {
+    text.lines().filter(|l| fence_of(l).is_some()).count() % 2 == 1
+}
+
+/// The block being written, made stable: unfinished inline marks are closed or hidden
+/// (`**bol` -> bold "bol", `[tex](ht` -> "tex") and a lone list or quote marker on the last line
+/// is dropped, so the text does not change shape when the rest of it arrives.
+fn stream_tail(tail: &str) -> String {
+    // Inside an unclosed code fence the text is code: nothing to repair.
+    if fence_open(tail) {
+        return tail.to_string();
+    }
+    let fences = tail.lines().filter(|l| fence_of(l).is_some()).count();
+    let mut region_at = 0;
+    if fences > 0 {
+        let mut at = 0;
+        for line in tail.split_inclusive('\n') {
+            at += line.len();
+            if fence_of(line).is_some() {
+                region_at = at;
+            }
+        }
+    }
+    let (head, region) = tail.split_at(region_at);
+    let mut region = region.to_string();
+    // A lone marker on the last line (`-`, `>`, `1.`, `##`) would read as something else
+    // (`text\n-` is a heading) until its text arrives.
+    let last_start = region.trim_end().rfind('\n').map_or(0, |i| i + 1);
+    let last = region[last_start..].trim();
+    let digits = last.chars().take_while(char::is_ascii_digit).count();
+    if matches!(last, "-" | "*" | "+" | ">")
+        || (!last.is_empty() && last.chars().all(|c| c == '#'))
+        || (digits > 0 && matches!(&last[digits..], "." | ")"))
+    {
+        region.truncate(last_start);
+    }
+    format!("{head}{}", close_inline(&region))
+}
+
+/// Closes the inline marks left open at the end of `text` (code, `**`, `~~`, links).
+fn close_inline(text: &str) -> String {
+    let mut out = text.trim_end_matches([' ', '\t']).to_string();
+    // `[text](partial-url` -> `text`; `[unclosed` -> `unclosed`.
+    if let Some(i) = out.rfind("](")
+        && !out[i..].contains(')')
+        && let Some(open) = out[..i].rfind('[')
+    {
+        let bang = open > 0 && out.as_bytes()[open - 1] == b'!';
+        let label = out[open + 1..i].to_string();
+        out.truncate(open - usize::from(bang));
+        out.push_str(&label);
+    } else if let Some(open) = out.rfind('[')
+        && !out[open..].contains(']')
+    {
+        out.remove(open);
+    }
+    let bytes = out.as_bytes();
+    let mut code: Option<usize> = None;
+    let mut open: Vec<(&'static str, usize)> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 1,
+            b'`' => code = if code.is_some() { None } else { Some(i) },
+            _ if code.is_some() => {}
+            b'*' | b'~' if bytes.get(i + 1) == Some(&bytes[i]) => {
+                let mark = if bytes[i] == b'*' { "**" } else { "~~" };
+                match open.iter().rposition(|(m, _)| *m == mark) {
+                    Some(at) => open.truncate(at),
+                    None => open.push((mark, i)),
+                }
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    // A mark with nothing after it yet is hidden instead of closed.
+    if let Some(at) = code.filter(|at| at + 1 == out.len()) {
+        out.truncate(at);
+        out.truncate(out.trim_end().len());
+    } else if code.is_some() {
+        out.push('`');
+    }
+    while let Some((mark, at)) = open.pop() {
+        if at + 2 == out.len() {
+            out.truncate(at);
+            out.truncate(out.trim_end().len());
+        } else {
+            out.truncate(out.trim_end().len());
+            out.push_str(mark);
+        }
+    }
+    out
+}
+
 /* ─────────── View ─────────── */
 
 type LinkHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
@@ -665,6 +826,9 @@ pub struct Markdown {
     on_link: Option<LinkHandler>,
     on_path: Option<LinkHandler>,
     on_image: Option<ImageRenderer>,
+    #[cfg(feature = "mermaid")]
+    on_diagram: Option<super::mermaid::DiagramHandler>,
+    streaming: bool,
 }
 
 impl Markdown {
@@ -676,12 +840,37 @@ impl Markdown {
             on_link: None,
             on_path: None,
             on_image: None,
+            #[cfg(feature = "mermaid")]
+            on_diagram: None,
+            streaming: false,
         }
+    }
+
+    /// Lets a drawn ```` ```mermaid ```` diagram be opened bigger: a click on it, or its
+    /// "Ampliar" button, calls `f` with the image (show it in a zoomable viewer). Without it
+    /// the diagram only offers "Copiar imagen".
+    #[cfg(feature = "mermaid")]
+    pub fn on_diagram(
+        mut self,
+        f: impl Fn(&super::mermaid::MermaidDiagram, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_diagram = Some(Rc::new(f));
+        self
     }
 
     /// Body text size (13.5 px by default); headings scale from it.
     pub fn text_size(mut self, size: Pixels) -> Self {
         self.size = size;
+        self
+    }
+
+    /// The text is still arriving (a model's reply): finished blocks (up to the last blank line
+    /// outside a code fence) are parsed once and kept, and only the block being written is
+    /// parsed again per change, with its unfinished marks (`**`, a backtick, `[text](ur`, a
+    /// lone `-`) closed or hidden so the layout does not jump on every token. Turn it off, with
+    /// the same text, when the reply ends. Off by default.
+    pub fn streaming(mut self, streaming: bool) -> Self {
+        self.streaming = streaming;
         self
     }
 
@@ -724,7 +913,11 @@ struct Render<'a> {
     on_link: Option<LinkHandler>,
     on_path: Option<LinkHandler>,
     on_image: Option<ImageRenderer>,
+    #[cfg(feature = "mermaid")]
+    on_diagram: Option<super::mermaid::DiagramHandler>,
     group: Selection,
+    /// Draw ```mermaid blocks as diagrams (not while their fence is still open).
+    diagrams: bool,
     /// The Markdown source, for "Copy all".
     whole: SharedString,
     /// What goes before the next text block in a copy (see [`super::TextSelection::selected_text`]);
@@ -882,6 +1075,15 @@ impl Render<'_> {
                     .into_any_element()
             }
             MarkdownBlock::Code { language, code } => {
+                #[cfg(feature = "mermaid")]
+                if self.diagrams
+                    && language.trim().eq_ignore_ascii_case("mermaid")
+                    && let Some(diagram) =
+                        super::mermaid::diagram(self.next_id("diagram"), code, &s, self.on_diagram.clone(), window, cx)
+                {
+                    self.joint = None;
+                    return diagram;
+                }
                 let joint = self.joint.take().unwrap_or_else(|| "\n\n".into());
                 CodeBlock::new(self.next_id("code"), code.clone())
                     .language(language.clone())
@@ -1121,7 +1323,15 @@ fn task_box(done: bool, size: f32, s: &Scheme) -> impl IntoElement {
 impl RenderOnce for Markdown {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let blocks = parse_markdown_cached(&self.text);
+        let mut tail_fence_open = false;
+        let (blocks, tail) = if self.streaming {
+            let at = stream_split(&self.text);
+            tail_fence_open = fence_open(&self.text[at..]);
+            let tail = (at < self.text.len()).then(|| parse_markdown(&stream_tail(&self.text[at..])));
+            (parse_markdown_cached(&self.text[..at]), tail)
+        } else {
+            (parse_markdown_cached(&self.text), None)
+        };
         let size = f32::from(self.size);
         let (group, own) = group_for(self.id.clone(), window, cx);
         let mut r = Render {
@@ -1132,11 +1342,22 @@ impl RenderOnce for Markdown {
             on_link: self.on_link,
             on_path: self.on_path,
             on_image: self.on_image,
+            #[cfg(feature = "mermaid")]
+            on_diagram: self.on_diagram,
             group: group.clone(),
+            diagrams: true,
             whole: self.text.clone(),
             joint: None,
         };
-        let children = r.blocks(&blocks, 0, window, cx);
+        let mut children = r.blocks(&blocks, 0, window, cx);
+        if let Some(tail) = &tail {
+            let first = blocks.is_empty();
+            for (i, block) in tail.iter().enumerate() {
+                // The last block is code whose fence is still open: it stays code until it closes.
+                r.diagrams = !(tail_fence_open && i + 1 == tail.len());
+                children.push(r.block(block, first && i == 0, 0, window, cx));
+            }
+        }
         let root = if own { selection_root(&group.state, div(), cx) } else { div() };
         root.flex()
             .flex_col()
@@ -1167,6 +1388,36 @@ mod tests {
             .filter(|(_, s)| f(s))
             .map(|(r, _)| &rich.text[r.clone()])
             .collect()
+    }
+
+    #[test]
+    fn streaming_splits_at_the_last_finished_block() {
+        let text = "One.\n\nTwo **bo";
+        assert_eq!(&text[stream_split(text)..], "Two **bo");
+        // Lists are not cut between items, code fences not at their blank lines.
+        let list = "Intro\n\n- a\n\n- b\n\n- c";
+        assert_eq!(&list[stream_split(list)..], "- a\n\n- b\n\n- c");
+        let code = "Intro\n\n```rust\nlet a;\n\nlet b;";
+        assert_eq!(&code[stream_split(code)..], "```rust\nlet a;\n\nlet b;");
+        assert!(fence_open(&code[stream_split(code)..]));
+        assert_eq!(stream_split("only one block"), 0);
+    }
+
+    #[test]
+    fn streaming_tail_closes_or_hides_unfinished_marks() {
+        assert_eq!(stream_tail("a **bol"), "a **bol**");
+        assert_eq!(stream_tail("a **bold** and **"), "a **bold** and");
+        assert_eq!(stream_tail("use `cod"), "use `cod`");
+        assert_eq!(stream_tail("use `"), "use");
+        assert_eq!(stream_tail("see [the do"), "see the do");
+        assert_eq!(stream_tail("see [the doc](http://exa"), "see the doc");
+        assert_eq!(stream_tail("see [the doc](http://x.y) ok"), "see [the doc](http://x.y) ok");
+        assert_eq!(stream_tail("text\n-"), "text\n");
+        assert_eq!(stream_tail("```rs\nlet a = **;"), "```rs\nlet a = **;");
+        // A stable tail parses to the same blocks as the finished text.
+        let done = "Hello **world** and `code`";
+        assert_eq!(parse_markdown(&stream_tail(&done[..done.len() - 1])), parse_markdown(done));
+        assert_eq!(parse_markdown(&stream_tail("Hello **wor")), parse_markdown("Hello **wor**"));
     }
 
     #[test]

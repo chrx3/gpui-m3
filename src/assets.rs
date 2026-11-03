@@ -90,6 +90,7 @@ const ICONS: &[(&str, &[u8])] = &[
     ("hook", include_bytes!("../assets/icons/hook.svg")),
     ("import", include_bytes!("../assets/icons/import.svg")),
     ("layers", include_bytes!("../assets/icons/layers.svg")),
+    ("maximize", include_bytes!("../assets/icons/maximize.svg")),
     ("monitor", include_bytes!("../assets/icons/monitor.svg")),
     ("moon", include_bytes!("../assets/icons/moon.svg")),
     ("more", include_bytes!("../assets/icons/more.svg")),

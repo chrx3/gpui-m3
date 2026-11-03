@@ -142,6 +142,22 @@ pub fn resize(&mut self, width: Pixels) {
 ```
 
 ![Screenshot of the panel](panel.png)
+
+A diagram (with the `mermaid` feature; otherwise it stays as code):
+
+```mermaid
+flowchart LR
+  A[Message] --> B{Parsed?}
+  B -->|yes| C[Show]
+  B -->|no| D[Plain text]
+  D --> B
+```
+
+```mermaid
+sequenceDiagram
+  User->>Agent: Question
+  Agent-->>User: Streamed answer
+```
 "#;
 
 const OUTPUT: &str = "   Compiling gpui-m3 v0.1.0\n   Compiling atic-code v0.1.0\nwarning: unused variable: `window`\n  --> src/code/view.rs:405:21\n    |\n405 |     fn render(self, window: &mut Window) {\n    |                     ^^^^^^ help: prefix it with an underscore\n\nwarning: `atic-code` generated 1 warning\n    Finished `dev` profile [optimized + debuginfo] target(s) in 41.2s\n     Running `target/debug/atic-code.exe`\nlistening on 127.0.0.1:4321\nready in 312 ms\n";
@@ -233,6 +249,7 @@ impl Render for CodeDemos {
             .max_w(px(720.))
             .child(
                 Markdown::new("md", MARKDOWN[..self.streamed].to_string())
+                    .streaming(self.streaming)
                     .on_link(on_link)
                     .on_path(on_path),
             )
