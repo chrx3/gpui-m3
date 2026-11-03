@@ -3,9 +3,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, AnyView, App, AppContext, ClickEvent, Context, ElementId, FontWeight,
+    AnyElement, AnyView, App, AppContext, ClickEvent, Context, ElementId, FontWeight, Hsla,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Render, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred, div, px,
+    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred, div, px,
 };
 
 use gpui::prelude::FluentBuilder as _;
@@ -13,6 +13,21 @@ use gpui::prelude::FluentBuilder as _;
 use super::{ClickHandler, RoundedExt, all};
 use crate::motion::{Spring, animate_f32, entrance, key};
 use crate::theme::{FONT_FAMILY, Scheme, Theme, alpha};
+
+/// `color` laid over `base`: the opaque result.
+fn over(color: Hsla, base: Hsla) -> Hsla {
+    let (c, b) = (Rgba::from(color), Rgba::from(base));
+    let a = c.a.clamp(0., 1.);
+    let mix = |x: f32, y: f32| x * a + y * (1. - a);
+    Hsla::from(Rgba { r: mix(c.r, b.r), g: mix(c.g, b.g), b: mix(c.b, b.b), a: 1. })
+}
+
+/// An opaque ground for translucent schemes: the container surface laid over the surface, over
+/// a near-black (dark scheme) or near-white (light scheme) fallback.
+fn ground(s: &Scheme) -> Hsla {
+    let fallback = if s.on_surface.l > 0.5 { gpui::hsla(0., 0., 0.12, 1.) } else { gpui::hsla(0., 0., 0.97, 1.) };
+    over(s.surface_container, over(s.surface, fallback))
+}
 
 /// Modal dialog: a scrim over the whole window and a 28 px card that rises in with the
 /// spatial spring. Render it anywhere while it is open: it covers the whole window.
@@ -115,6 +130,10 @@ impl ParentElement for Dialog {
 impl RenderOnce for Dialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        // With translucent surfaces (Liquid Glass) the card would show the window behind it and
+        // the scrim would barely hide it: the card is laid over an opaque ground and the scrim
+        // becomes a frosted veil of that same ground. Opaque schemes keep the plain look.
+        let translucent = s.surface.a < 1.;
         let fade = entrance(key(&self.id, "scrim"), Spring::EFFECTS, 0., window, cx).clamp(0., 1.)
             * self.shown;
         // M3 Expressive entrance: grows from 86 % while rising 18 px and
@@ -136,7 +155,7 @@ impl RenderOnce for Dialog {
             })
             .p(self.padding)
             .rounded(radius)
-            .bg(s.surface_container_high)
+            .bg(if translucent { over(s.surface_container_high, ground(&s)) } else { s.surface_container_high })
             .text_color(s.on_surface_variant)
             .text_size(px(13.5))
             .shadow(super::shadow_pop(&s))
@@ -188,7 +207,7 @@ impl RenderOnce for Dialog {
             .flex()
             .items_center()
             .justify_center()
-            .bg(alpha(gpui::black(), 0.32 * fade))
+            .bg(if translucent { alpha(ground(&s), 0.7 * fade) } else { alpha(gpui::black(), 0.32 * fade) })
             .font_family(FONT_FAMILY)
             .occlude()
             .child(card);
