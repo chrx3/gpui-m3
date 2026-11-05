@@ -168,6 +168,7 @@ newer one, the two cannot be resolved together until GPUI updates.
 - Some icons are based on [Lucide](https://lucide.dev) (ISC) and [Feather](https://feathericons.com) (MIT);
   see [assets/icons/LICENSE-LUCIDE.txt](assets/icons/LICENSE-LUCIDE.txt).
 - Roboto by The Roboto Project Authors, under the [SIL Open Font License 1.1](assets/fonts/OFL.txt).
+- Inter by The Inter Project Authors (Rasmus Andersson), under the [SIL Open Font License 1.1](assets/fonts/Inter-OFL.txt). It is the default family; Roboto stays available through `theme::set_font_family`.
 - "Material Design" is a trademark of Google. This project is not affiliated with or endorsed by Google.
 
 ## License

@@ -11,7 +11,7 @@ use gpui::{
 
 use super::{ClickHandler, Icon};
 use crate::motion::{Spring, animate_f32, animate_from, key, presence};
-use crate::theme::{FONT_FAMILY, Theme, alpha, mix};
+use crate::theme::{font_family, Theme, alpha, mix};
 
 type DropHandler = Rc<dyn Fn(&ExternalPaths, &mut Window, &mut App)>;
 
@@ -115,7 +115,7 @@ impl RenderOnce for DropZone {
                 .border_color(s.primary)
                 .bg(mix(s.primary, s.surface_container, 0.12))
                 .text_color(s.primary)
-                .font_family(FONT_FAMILY)
+                .font_family(font_family())
                 .font_weight(FontWeight(600.))
                 .opacity(fade.min(grow.clamp(0., 1.) * 1.6).clamp(0., 1.))
                 .child(Icon::new(self.icon.clone()).size(px(18.)).color(s.primary))

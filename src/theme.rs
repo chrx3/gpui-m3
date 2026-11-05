@@ -8,8 +8,25 @@ use std::str::FromStr;
 use gpui::{App, Global, Hsla, Pixels, Rgba, px, rgb};
 use material_colors::{color::Argb, hct::Hct, scheme::variant::SchemeTonalSpot};
 
-/// Font family registered by [`crate::init`].
-pub const FONT_FAMILY: &str = "Roboto";
+/// Default font family, registered by [`crate::init`] (Inter, static files).
+pub const FONT_FAMILY: &str = "Inter";
+
+/// Roboto, also registered by [`crate::init`].
+pub const ROBOTO_FONT_FAMILY: &str = "Roboto";
+
+static CURRENT_FONT: std::sync::RwLock<&'static str> = std::sync::RwLock::new(FONT_FAMILY);
+
+/// The font family components draw with: [`FONT_FAMILY`] unless the app chose another
+/// one with [`set_font_family`].
+pub fn font_family() -> &'static str {
+    *CURRENT_FONT.read().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Switches the family every component uses from the next frame on (a bundled one or
+/// any installed family name). Refresh the windows after calling it.
+pub fn set_font_family(family: &'static str) {
+    *CURRENT_FONT.write().unwrap_or_else(|e| e.into_inner()) = family;
+}
 
 /// Monospace family for shortcuts and code (the platform's own; none is bundled).
 #[cfg(target_os = "windows")]

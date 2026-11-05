@@ -14,7 +14,7 @@ use gpui::{
 
 use super::{RoundedExt, all, shadow_pop};
 use crate::motion::{MotionSettings, Spring, elapsed, key};
-use crate::theme::{FONT_FAMILY, Theme};
+use crate::theme::{font_family, Theme};
 
 /// A finished drag: the row at `from` now goes to index `to` (both count rows only, not
 /// headers). Apply it with [`apply_reorder`].
@@ -217,7 +217,7 @@ impl RenderOnce for ReorderList {
             .flex()
             .flex_col()
             .gap(self.gap)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .when(dragging_row.is_some(), |d| d.cursor_grabbing());
         let mut row_ix = 0;
         for entry in self.entries {

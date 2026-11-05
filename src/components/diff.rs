@@ -16,7 +16,7 @@ use similar::{ChangeTag, DiffTag, TextDiff};
 use super::child_id;
 use crate::cache::{Lru, content_key};
 use crate::motion::key;
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, alpha};
+use crate::theme::{font_family, MONO_FONT_FAMILY, Scheme, Theme, alpha};
 
 /// Whether a diff line was added, removed or kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -549,7 +549,7 @@ impl RenderOnce for DiffView {
                 .py(px(5.))
                 .border_b_1()
                 .border_color(s.outline_variant)
-                .font_family(FONT_FAMILY)
+                .font_family(font_family())
                 .child(
                     div()
                         .min_w_0()
@@ -587,7 +587,7 @@ impl RenderOnce for DiffView {
                 .py(px(5.))
                 .border_t_1()
                 .border_color(s.outline_variant)
-                .font_family(FONT_FAMILY)
+                .font_family(font_family())
                 .text_center()
                 .text_color(s.primary)
                 .cursor_pointer()

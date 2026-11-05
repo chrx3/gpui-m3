@@ -13,7 +13,7 @@ use super::{ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, continuous_at, entrance, key};
 use crate::shapes::Tone;
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, MONO_FONT_FAMILY, Theme, alpha};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ChipKind {
@@ -303,7 +303,7 @@ impl RenderOnce for Chip {
             .border_1()
             .border_color(border)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(text_size))
             .font_weight(FontWeight(weight))
             .when_some(self.max_width, |d, w| d.max_w(w))
@@ -558,7 +558,7 @@ impl RenderOnce for SplitButton {
             .flex_none()
             .items_center()
             .gap(px(2.))
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(12.5))
             .child(main)
             .child(trail)
@@ -687,7 +687,7 @@ impl RenderOnce for Badge {
             .font_family(if self.mono {
                 MONO_FONT_FAMILY
             } else {
-                FONT_FAMILY
+                font_family()
             })
             .text_size(px(11.))
             .font_weight(FontWeight(if self.mono { 400. } else { weight }))

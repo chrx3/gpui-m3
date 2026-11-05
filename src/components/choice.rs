@@ -12,7 +12,7 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, keyboard_focus, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, key};
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, Theme, alpha};
 
 /// Radio button (the reference design's model picker): a 2 px outline ring whose border
 /// thickens to 5 px in the primary color when selected.
@@ -331,7 +331,7 @@ impl RenderOnce for ChoiceRow {
             .corners(all(radius))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.5))
             .when(!enabled, |d| d.opacity(0.5))
             .child(layer)

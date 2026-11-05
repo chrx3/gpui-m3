@@ -23,7 +23,7 @@ use crate::motion::{
 use crate::theme::type_scale::{
     HEADLINE_LARGE, HEADLINE_SMALL, LABEL_LARGE, TITLE_LARGE, TITLE_MEDIUM, TypeStyle,
 };
-use crate::theme::{FONT_FAMILY, Theme, alpha, corner};
+use crate::theme::{font_family, Theme, alpha, corner};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
@@ -499,7 +499,7 @@ impl RenderOnce for Button {
             .corners(all(radius))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(font))
             .font_weight(FontWeight(weight))
             .when(self.selected == Some(true), |d| d.children(indicator))
@@ -1106,7 +1106,7 @@ impl RenderOnce for Fab {
             } else {
                 face.px(px(pad))
             };
-            face.font_family(FONT_FAMILY)
+            face.font_family(font_family())
                 .text_size(text)
                 .font_weight(FontWeight(600.))
                 .child(label)

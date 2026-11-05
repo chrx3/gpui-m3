@@ -15,7 +15,7 @@ use crate::interaction::{
 };
 use crate::motion::{self, Expand, Spring, animate_f32, entrance, key};
 use crate::shapes::Tone;
-use crate::theme::{FONT_FAMILY, Theme};
+use crate::theme::{font_family, Theme};
 
 /// Card with a clickable header and a collapsible body (tool cards, change groups). The open
 /// state is yours: pass it with [`ExpandableCard::open`] and update it in `on_toggle`.
@@ -269,7 +269,7 @@ impl RenderOnce for ExpandableCard {
             .flex()
             .flex_col()
             .min_w_0()
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(12.5))
             .text_color(if self.plain { s.on_surface_variant } else { fg })
             .when(!self.plain, |d| d.corners(all(radius)).bg(bg))

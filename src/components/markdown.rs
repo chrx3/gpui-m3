@@ -20,7 +20,7 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagE
 
 use super::{CodeBlock, Icon, Selection, group_for, selectable_block, selection_root};
 use crate::cache::{Lru, content_key};
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, alpha, text};
+use crate::theme::{font_family, MONO_FONT_FAMILY, Scheme, Theme, alpha, text};
 
 /* ─────────── Model ─────────── */
 
@@ -953,7 +953,7 @@ impl Render<'_> {
                         family: if style.code {
                             MONO_FONT_FAMILY.into()
                         } else {
-                            FONT_FAMILY.into()
+                            font_family().into()
                         },
                         features: FontFeatures::default(),
                         fallbacks: None,
@@ -1363,7 +1363,7 @@ impl RenderOnce for Markdown {
             .flex_col()
             .gap(px(size * 0.75))
             .min_w_0()
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(self.size)
             .line_height(relative(1.6))
             .text_color(s.on_surface)

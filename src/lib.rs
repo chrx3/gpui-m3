@@ -29,10 +29,18 @@ pub use theme::{Scheme, Theme, corner};
 
 /// Registers the typeface, the base (light) theme and the motion settings.
 pub fn init(cx: &mut App) {
-    let fonts: Vec<Cow<'static, [u8]>> =
-        vec![Cow::Borrowed(include_bytes!("../assets/fonts/Roboto.ttf"))];
+    let fonts: Vec<Cow<'static, [u8]>> = vec![
+        // Inter as static files: DirectWrite does not match the variable one (with an `opsz`
+        // axis) by family name and falls back to Segoe UI.
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Regular.ttf")),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Medium.ttf")),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-SemiBold.ttf")),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Bold.ttf")),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Italic.ttf")),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Roboto.ttf")),
+    ];
     if let Err(err) = cx.text_system().add_fonts(fonts) {
-        log::warn!("gpui_m3: could not load Roboto: {err}");
+        log::warn!("gpui_m3: could not load Inter and Roboto: {err}");
     }
     if !cx.has_global::<Theme>() {
         cx.set_global(Theme::new(false, None));

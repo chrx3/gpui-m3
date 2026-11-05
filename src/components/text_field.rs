@@ -19,7 +19,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::{Icon, RoundedExt, all, corners};
 use crate::motion::{Spring, animate_color, animate_f32, continuous_at, key};
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, Theme, alpha};
 
 actions!(
     m3_text_field,
@@ -904,7 +904,7 @@ impl Render for TextField {
             .px(px(pad))
             .bg(bg)
             .text_color(s.on_surface)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(text_size))
             .font_weight(FontWeight(400.))
             .line_height(px(20.));
@@ -957,7 +957,7 @@ impl Render for TextField {
                     .flex_col()
                     .gap(px(if filled { 4. } else { 8. }))
                     .w_full()
-                    .font_family(FONT_FAMILY)
+                    .font_family(font_family())
                     .child(
                         div()
                             .text_size(px(if filled { 11.5 } else { 12. }))

@@ -13,7 +13,7 @@ use super::{Selection, all, child_id, group_for, selectable_block, selection_roo
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, key};
 use crate::syntax::{SyntaxPalette, highlight_cached, language};
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, MONO_FONT_FAMILY, Theme, alpha};
 
 /// How long "Copied" stays after copying a code block.
 pub const COPIED_FOR: Duration = Duration::from_millis(1400);
@@ -138,7 +138,7 @@ impl RenderOnce for CodeOutput {
                         .py(px(4.))
                         .border_t_1()
                         .border_color(s.outline_variant)
-                        .font_family(FONT_FAMILY)
+                        .font_family(font_family())
                         .text_size(px(11.5))
                         .text_color(s.primary)
                         .cursor_pointer()
@@ -322,7 +322,7 @@ impl RenderOnce for CopyPill {
             .px(px(10.))
             .py(px(2.))
             .rounded(px(10.))
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(11.))
             .text_color(fg)
             .child(layer)

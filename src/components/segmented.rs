@@ -9,7 +9,7 @@ use gpui::{
 use super::{ChangeHandler, Icon, RoundedExt, corners};
 use crate::interaction::{interactive, use_interaction};
 use crate::motion::{Spring, animate, animate_color, key};
-use crate::theme::{FONT_FAMILY, Theme};
+use crate::theme::{font_family, Theme};
 
 /// A group option: text, icon or both.
 #[derive(Clone)]
@@ -103,7 +103,7 @@ impl RenderOnce for SegmentedButtons {
             .min_w_0()
             .max_w_full()
             .gap(px(2.))
-            .font_family(FONT_FAMILY);
+            .font_family(font_family());
         let slots = self.sliding.then(|| {
             window
                 .use_keyed_state(key(&self.id, "slots"), cx, |_, _| Rc::new(Slots::default()))

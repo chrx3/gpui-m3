@@ -9,7 +9,7 @@ use gpui::{
 
 use super::{ClickHandler, Icon, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::theme::{FONT_FAMILY, Theme};
+use crate::theme::{font_family, Theme};
 
 /// A row of a settings list: an optional icon, a title, a description under it and a control
 /// (a [`super::Switch`], a [`super::KeyCombo`], a button…) aligned to the right.
@@ -109,7 +109,7 @@ impl RenderOnce for SettingRow {
             .items_center()
             .gap(px(14.))
             .w_full()
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.5))
             .children(layer);
         if clickable {

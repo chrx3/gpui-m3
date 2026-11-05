@@ -12,7 +12,7 @@ use gpui::{
 use super::{ClickHandler, Icon, IconButton, Shape, paint_polyline};
 use crate::motion::{Spring, continuous_at, entrance, key};
 use crate::shapes::{ShapeName, Tone};
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, Theme, alpha};
 
 /// Look of a [`DividerLabel`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -218,7 +218,7 @@ impl RenderOnce for DividerLabel {
             .w_full()
             .gap(px(if pill { 8. } else { 10. }))
             .my(px(if pill { 10. } else { 4. }))
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .child(divider_line(Side::Left, lines, wave, line_color, dashed))
             .child(label)
             .child(divider_line(Side::Right, lines, wave, line_color, dashed))
@@ -448,7 +448,7 @@ impl RenderOnce for Banner {
             .rounded(px(radius))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(12.5))
             .children(mark)
             .child(text.when(has_actions, |d| d.min_w(px(140.))))

@@ -12,7 +12,7 @@ use gpui::{
 
 use super::{ClickHandler, Tooltip, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::theme::{FONT_FAMILY, Theme};
+use crate::theme::{font_family, Theme};
 
 /// The words shown for the modifiers and named keys.
 ///
@@ -207,7 +207,7 @@ impl RenderOnce for Kbd {
             .rounded(px(if self.small { 7. } else { 9. }))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(if self.small { 11. } else { 12. }))
             .font_weight(FontWeight(600.))
             .whitespace_nowrap()
@@ -302,7 +302,7 @@ impl RenderOnce for KeyCombo {
                 .rounded(px((height + 4.) / 2.))
                 .bg(s.primary_container)
                 .text_color(s.on_primary_container)
-                .font_family(FONT_FAMILY)
+                .font_family(font_family())
                 .text_size(px(12.5))
                 .font_weight(FontWeight(600.))
                 .whitespace_nowrap()

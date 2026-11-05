@@ -12,7 +12,7 @@ use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, animate_on_activate, key};
 use crate::shapes::Tone;
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, Theme, alpha};
 
 /// Navigation row (the sidebar in the reference design). The selected indicator starts at the
 /// center and stretches with the spring.
@@ -180,7 +180,7 @@ impl RenderOnce for NavItem {
             .px(px(12.))
             .rounded(radius)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(font))
             .font_weight(FontWeight(if self.selected {
                 700.
@@ -358,7 +358,7 @@ impl RenderOnce for RailItem {
             .w(px(72.))
             .pt(px(4.))
             .pb(px(6.))
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(12.))
             .text_color(label_color)
             .font_weight(FontWeight(if self.selected { 700. } else { 500. }))
@@ -421,7 +421,7 @@ impl IconTabs {
 impl RenderOnce for IconTabs {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let mut row = div().flex().w_full().gap(px(4.)).font_family(FONT_FAMILY);
+        let mut row = div().flex().w_full().gap(px(4.)).font_family(font_family());
         for (i, tab) in self.tabs.into_iter().enumerate() {
             let id = ElementId::NamedInteger(format!("{}-tab", self.id).into(), i as u64);
             let state = use_interaction(&id, window, cx);

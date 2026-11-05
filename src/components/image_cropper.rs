@@ -12,7 +12,7 @@ use gpui::{
 use super::Slider;
 use super::photo::bilinear;
 use crate::shapes::{Morph, ShapeName};
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, Theme, alpha};
 
 mod keys {
     gpui::actions!(m3_image_cropper, [Confirm, Cancel]);
@@ -366,7 +366,7 @@ impl Render for ImageCropper {
             .flex_col()
             .items_center()
             .gap(px(14.))
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .child(
                 div()
                     .id(("m3-crop-view", cx.entity_id().as_u64()))

@@ -8,7 +8,7 @@ use gpui::{
 
 use super::{Icon, MenuItem, TextField, TextFieldEvent, pop_in, shadow_pop};
 use crate::motion::{Spring, entrance, key};
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, Theme, alpha};
 
 actions!(m3_command_palette, [SelectPrevious, SelectNext]);
 
@@ -273,7 +273,7 @@ impl Render for CommandPalette {
                     .pt(viewport.height * 0.12)
                     .px(px(16.))
                     .bg(alpha(gpui::black(), 0.18 * fade))
-                    .font_family(FONT_FAMILY)
+                    .font_family(font_family())
                     .text_size(px(13.5))
                     .occlude()
                     .on_mouse_down(

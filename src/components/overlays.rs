@@ -12,7 +12,7 @@ use gpui::prelude::FluentBuilder as _;
 
 use super::{ClickHandler, RoundedExt, all};
 use crate::motion::{Spring, animate_f32, entrance, key};
-use crate::theme::{FONT_FAMILY, Scheme, Theme, alpha};
+use crate::theme::{font_family, Scheme, Theme, alpha};
 
 /// `color` laid over `base`: the opaque result.
 fn over(color: Hsla, base: Hsla) -> Hsla {
@@ -208,7 +208,7 @@ impl RenderOnce for Dialog {
             .items_center()
             .justify_center()
             .bg(if translucent { alpha(ground(&s), 0.7 * fade) } else { alpha(gpui::black(), 0.32 * fade) })
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .occlude()
             .child(card);
         if let Some(f) = self.on_dismiss {
@@ -274,7 +274,7 @@ impl RenderOnce for Toast {
             .rounded(px(14. - 6. * rest))
             .bg(inverse(&s).0)
             .text_color(inverse(&s).1)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.5))
             .shadow(super::shadow_pop(&s))
             .child(div().flex_1().child(self.text));
@@ -355,7 +355,7 @@ impl Render for Tooltip {
             .rounded(px(4.))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(12.))
             .child(self.text.clone())
     }

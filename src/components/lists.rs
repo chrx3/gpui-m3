@@ -13,7 +13,7 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, Tooltip, all, child_id};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, key};
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, MONO_FONT_FAMILY, Theme, alpha};
 
 /// Indentation per tree level.
 const TREE_INDENT: f32 = 14.;
@@ -157,7 +157,7 @@ impl RenderOnce for TreeRow {
             .rounded(px(height / 2.))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.))
             .whitespace_nowrap()
             .when(self.root, |d| d.font_weight(FontWeight(700.)));
@@ -320,7 +320,7 @@ impl RenderOnce for ListItem {
             .rounded(px(radius))
             .bg(bg)
             .text_color(s.on_surface)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.))
             .child(layer);
         if let Some(leading) = self.leading {
@@ -639,7 +639,7 @@ impl RenderOnce for TabStrip {
             .px(px(8.))
             .border_b_1()
             .border_color(s.outline_variant)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .children(self.leading)
             .child(list)
             .children(self.trailing)

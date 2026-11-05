@@ -15,7 +15,7 @@ use crate::motion::{
     Spring, animate, animate_color, animate_f32, continuous_at, cubic_bezier, key,
 };
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
-use crate::theme::{FONT_FAMILY, Theme};
+use crate::theme::{font_family, Theme};
 
 /// A shape from the M3 shape library. `morph` makes it breathe between two shapes and `spin` rotates it.
 ///
@@ -370,7 +370,7 @@ impl RenderOnce for Avatar {
             .child(
                 div()
                     .text_color(fg)
-                    .font_family(FONT_FAMILY)
+                    .font_family(font_family())
                     .text_size(px((size * text_scale).max(11.)))
                     .font_weight(FontWeight(800.))
                     .child(initial),

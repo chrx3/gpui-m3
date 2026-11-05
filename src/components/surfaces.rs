@@ -13,7 +13,7 @@ use super::{ClickHandler, Icon, Radio, RoundedExt, all, child_id, corners};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, entrance, key, replay};
 use crate::shapes::Tone;
-use crate::theme::{FONT_FAMILY, MONO_FONT_FAMILY, Scheme, Theme, alpha, mix};
+use crate::theme::{font_family, MONO_FONT_FAMILY, Scheme, Theme, alpha, mix};
 
 /// Shadow for menus and popovers .
 pub fn shadow_pop(s: &Scheme) -> Vec<BoxShadow> {
@@ -195,7 +195,7 @@ impl RenderOnce for Popover {
             .rounded(self.radius)
             .bg(s.surface_container)
             .shadow(shadow_pop(&s))
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.))
             .text_color(s.on_surface);
         let surface = match self.max_height {
@@ -383,7 +383,7 @@ impl RenderOnce for Menu {
             .flex_col()
             .w(px(self.width))
             .max_w_full()
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.))
             .text_color(s.on_surface);
         if self.grouped {
@@ -1053,7 +1053,7 @@ impl RenderOnce for Card {
             .rounded(radius)
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .when(progress < 1., |d| {
                 d.top(px((1. - progress) * 24.))
                     .opacity(progress.clamp(0., 1.))
@@ -1127,7 +1127,7 @@ impl RenderOnce for ListGroup {
             .flex()
             .flex_col()
             .gap(px(2.))
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.5))
             .text_color(s.on_surface);
         if let Some(title) = self.title {
@@ -1267,7 +1267,7 @@ impl RenderOnce for Bubble {
             .corners(corners(r))
             .bg(bg)
             .text_color(fg)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.5))
             .children(self.children)
     }

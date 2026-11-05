@@ -19,7 +19,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::motion::continuous_at;
-use crate::theme::{FONT_FAMILY, Theme, alpha};
+use crate::theme::{font_family, Theme, alpha};
 
 /// Kept private so they do not clash with the [`super::TextField`] actions.
 mod keys {
@@ -1024,7 +1024,7 @@ impl Render for TextArea {
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .w_full()
             .text_color(s.on_surface)
-            .font_family(FONT_FAMILY)
+            .font_family(font_family())
             .text_size(px(13.5))
             .font_weight(FontWeight(400.))
             .line_height(relative(1.5))
