@@ -1,6 +1,7 @@
 //! Text the reader can select and copy, like in a document: drag to select (across the
 //! paragraphs of a [`Markdown`](super::Markdown), and across messages inside a
-//! [`SelectionScope`]; past the edge of a scrolling list it scrolls), double-click for a word,
+//! [`SelectionScope`]; past the edge of a scrolling list it scrolls once the group knows how, see
+//! [`TextSelection::on_edge_scroll`]), double-click for a word,
 //! triple-click for the paragraph, Shift+click to extend, and Cmd/Ctrl+C to copy. Cmd/Ctrl+A
 //! selects everything and Escape clears it. A right click opens a menu with Copy, Copy all and
 //! Select all ([`set_text_menu`] lets the app use its own, such as the native one on macOS).
@@ -24,10 +25,10 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, Div, Element,
     ElementId, Entity, FocusHandle, Global, GlobalElementId, HitboxBehavior, Hsla,
-    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, Modifiers,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    PlatformInput, Point, RenderOnce, ScrollDelta, ScrollWheelEvent, SharedString, Styled,
-    StyledText, TextLayout, TouchPhase, Window, anchored, canvas, deferred, div, fill, point, px,
+    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce,
+    ScrollHandle, SharedString, Styled, StyledText, TextLayout, Window, anchored, canvas,
+    deferred, div, fill, point, px,
 };
 
 use super::{Menu, MenuItem};
@@ -37,6 +38,8 @@ use crate::theme::{Theme, alpha};
 type Key = (u64, u32);
 /// A position: (block, byte offset in its text).
 type Spot = (Key, usize);
+/// Scrolls the host's list by a distance, as a mouse wheel would report it.
+type EdgeScroll = Rc<dyn Fn(Pixels, &mut Window, &mut App)>;
 
 /// How often the list scrolls while a drag sits past its edge.
 const EDGE_TICK: Duration = Duration::from_millis(16);
@@ -73,6 +76,8 @@ pub struct TextSelection {
     /// The area the group shows in (its scrolling list's), to scroll on a drag past it.
     viewport: Option<Bounds<Pixels>>,
     edge_scrolling: bool,
+    /// How the host scrolls its list while a drag sits past the edge.
+    edge_scroll: Option<EdgeScroll>,
     /// When the root was last painted: one that scrolled out of view stops getting the
     /// mouse, so the edge scroll must not go on for it.
     painted: Option<Instant>,
@@ -95,6 +100,7 @@ impl TextSelection {
             pointer: Point::default(),
             viewport: None,
             edge_scrolling: false,
+            edge_scroll: None,
             painted: None,
             shared,
             menu: None,
@@ -104,6 +110,24 @@ impl TextSelection {
     /// The state of the group `id`, kept while it keeps being painted.
     pub fn of(id: impl Into<ElementId>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         window.use_keyed_state(id, cx, |_, cx| Self::new(false, cx))
+    }
+
+    /// Scrolls the host's list while a drag sits past its top or bottom edge. `scroll` gets the
+    /// distance for one tick the way a mouse wheel reports it: positive moves the content down
+    /// (toward the start), negative up. Without it the drag does not scroll.
+    pub fn on_edge_scroll(&mut self, scroll: impl Fn(Pixels, &mut Window, &mut App) + 'static) {
+        self.edge_scroll = Some(Rc::new(scroll));
+    }
+
+    /// [`TextSelection::on_edge_scroll`] for a container that tracks a [`ScrollHandle`]
+    /// (`.track_scroll(&handle)`).
+    pub fn edge_scroll_handle(&mut self, handle: ScrollHandle) {
+        self.on_edge_scroll(move |delta, window, _| {
+            let offset = handle.offset();
+            let top = (offset.y + delta).clamp(-handle.max_offset().height, px(0.));
+            handle.set_offset(point(offset.x, top));
+            window.refresh();
+        });
     }
 
     /// A selection for a whole chat: keep it, wrap the chat in [`selection_root`] and each
@@ -570,7 +594,7 @@ fn follow(state: &Entity<TextSelection>, window: &mut Window) {
                 cx.notify();
             }
         });
-        if edge_step(&s, cx).is_some() && !s.read(cx).edge_scrolling {
+        if s.read(cx).edge_scroll.is_some() && edge_step(&s, cx).is_some() && !s.read(cx).edge_scrolling {
             edge_scroll(&s, window, cx);
         }
     });
@@ -588,8 +612,8 @@ fn follow(state: &Entity<TextSelection>, window: &mut Window) {
 }
 
 /// How far to scroll this tick while the drag is past the edge of the viewport (positive:
-/// toward the start), and the point inside the viewport to scroll at.
-fn edge_step(state: &Entity<TextSelection>, cx: &App) -> Option<(Pixels, Point<Pixels>)> {
+/// toward the start).
+fn edge_step(state: &Entity<TextSelection>, cx: &App) -> Option<Pixels> {
     let s = state.read(cx);
     let view = s.viewport?;
     if !s.dragging {
@@ -605,19 +629,17 @@ fn edge_step(state: &Entity<TextSelection>, cx: &App) -> Option<(Pixels, Point<P
         }
     }
     let pos = s.pointer;
-    let x = pos.x.clamp(view.left() + px(1.), view.right() - px(1.));
     let speed = |past: Pixels| (past / px(4.)).clamp(2., 40.);
     if pos.y < view.top() && (s.shared || top < view.top()) {
-        Some((px(speed(view.top() - pos.y)), point(x, view.top() + px(1.))))
+        Some(px(speed(view.top() - pos.y)))
     } else if pos.y > view.bottom() && (s.shared || bottom > view.bottom()) {
-        Some((px(-speed(pos.y - view.bottom())), point(x, view.bottom() - px(1.))))
+        Some(px(-speed(pos.y - view.bottom())))
     } else {
         None
     }
 }
 
-/// Scrolls the list under the group while the drag stays past its edge, with the same
-/// wheel events the list already takes.
+/// Scrolls the host's list while the drag stays past its edge.
 fn edge_scroll(state: &Entity<TextSelection>, window: &mut Window, cx: &mut App) {
     state.update(cx, |s, _| s.edge_scrolling = true);
     let handle = window.window_handle();
@@ -631,18 +653,11 @@ fn edge_scroll(state: &Entity<TextSelection>, window: &mut Window, cx: &mut App)
                     state.update(cx, |s, _| s.dragging = false);
                     return false;
                 }
-                let Some((dy, at)) = edge_step(&state, cx) else {
+                let (Some(dy), Some(scroll)) = (edge_step(&state, cx), state.read(cx).edge_scroll.clone())
+                else {
                     return false;
                 };
-                window.dispatch_event(
-                    PlatformInput::ScrollWheel(ScrollWheelEvent {
-                        position: at,
-                        delta: ScrollDelta::Pixels(point(px(0.), dy)),
-                        modifiers: Modifiers::default(),
-                        touch_phase: TouchPhase::Moved,
-                    }),
-                    cx,
-                );
+                scroll(dy, window, cx);
                 state.update(cx, |s, cx| {
                     let head = s.spot_at(s.pointer);
                     if head.is_some() && head != s.head {
