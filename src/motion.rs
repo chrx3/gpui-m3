@@ -9,11 +9,11 @@
 
 use std::{
     cell::RefCell,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
-use gpui::{App, ElementId, EntityId, Global, Hsla, Pixels, Rgba, Window, px};
+use gpui::{App, ElementId, EntityId, Global, Hsla, Pixels, Rgba, Window, WindowId, px};
 
 /// Unit-mass spring: stiffness and damping ratio.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -227,6 +227,38 @@ const BACKGROUND_FPS: f32 = 12.;
 thread_local! {
     /// Views that already have a redraw scheduled by [`continuous_at`] (avoids piling up timers).
     static PENDING: RefCell<HashSet<EntityId>> = RefCell::new(HashSet::new());
+    /// Per window, the ambient clock of [`ambient_clock`].
+    static AMBIENT: RefCell<HashMap<WindowId, Ambient>> = RefCell::new(HashMap::new());
+}
+
+struct Ambient {
+    real: f32,
+    shown: f32,
+    active: bool,
+}
+
+/// Clock for slow ambient motion that stops while the window is in the background and
+/// resumes from where it was, so the shapes neither jump to their first pose when focus
+/// changes nor leap ahead when it returns. 0 with reduced motion.
+pub fn ambient_clock(window: &Window, cx: &App) -> f32 {
+    if MotionSettings::get(cx).reduced {
+        return 0.;
+    }
+    let now = clock(cx);
+    let active = window.is_window_active();
+    AMBIENT.with(|map| {
+        let mut map = map.borrow_mut();
+        let state = map
+            .entry(window.window_handle().window_id())
+            .or_insert(Ambient { real: now, shown: now, active });
+        // A long gap (nothing was drawing it) is not time the shapes should catch up on.
+        if active && state.active {
+            state.shown += (now - state.real).clamp(0., 0.5);
+        }
+        state.real = now;
+        state.active = active;
+        state.shown
+    })
 }
 
 /// Like [`continuous`], but at `fps` frames per second. For slow ambient motion

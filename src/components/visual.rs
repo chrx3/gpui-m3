@@ -12,7 +12,7 @@ use super::photo::{self, PhotoSource};
 
 use crate::interaction::rounded_rect;
 use crate::motion::{
-    Spring, animate, animate_color, animate_f32, continuous_at, cubic_bezier, key,
+    Spring, ambient_clock, animate, animate_color, animate_f32, continuous_at, cubic_bezier, key,
 };
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
 use crate::theme::{font_family, Theme};
@@ -27,6 +27,7 @@ pub struct Shape {
     shape: ShapeName,
     morph: Option<(ShapeName, f32)>,
     spin: Option<f32>,
+    drift: Option<(f32, f32)>,
     hover: Option<(ElementId, ShapeName)>,
     active: Option<bool>,
     photo: Option<PhotoSource>,
@@ -43,6 +44,7 @@ impl Shape {
             shape,
             morph: None,
             spin: None,
+            drift: None,
             hover: None,
             active: None,
             photo: None,
@@ -110,6 +112,14 @@ impl Shape {
         self
     }
 
+    /// Wanders up to `amplitude` px around its place in a slow loop of about `period`
+    /// seconds ([`Shape::rotate`] sets where in the loop it starts, so shapes do not move
+    /// in step). Only the drawing moves, and the child stays put: meant for backdrops.
+    pub fn drift(mut self, amplitude: f32, period: f32) -> Self {
+        self.drift = Some((amplitude, period));
+        self
+    }
+
     pub fn child(mut self, child: impl IntoElement) -> Self {
         self.child = Some(child.into_any_element());
         self
@@ -130,13 +140,24 @@ impl RenderOnce for Shape {
         let color = self.color.unwrap_or(Theme::of(cx).primary_container);
         // Ambient shapes hold still while the window is in the background: no reason to
         // redraw it at 30 fps nobody is looking at (CPU and battery).
-        let animated = (self.morph.is_some() || self.spin.is_some()) && window.is_window_active();
-        // Ambient motion: it is slow, so 30 fps is enough.
+        let animated = self.morph.is_some() || self.spin.is_some() || self.drift.is_some();
+        // Ambient motion: it is slow, so 30 fps is enough. In the background it holds its pose
+        // (instead of snapping back to the first one) and asks for no frames.
         let t = if animated {
-            continuous_at(30., window, cx)
+            if window.is_window_active() {
+                continuous_at(30., window, cx);
+            }
+            ambient_clock(window, cx)
         } else {
             0.
         };
+        let drift = self.drift.map_or((0., 0.), |(amplitude, period)| {
+            let phase = self.turn;
+            (
+                amplitude * (TAU * t / period + phase).sin(),
+                amplitude * (TAU * t / (period * 1.31) + phase * 1.7).cos(),
+            )
+        });
         let ease = cubic_bezier(0.42, 0., 0.58, 1.);
         let mut morph = match self.morph {
             Some((other, period)) => Morph {
@@ -214,6 +235,8 @@ impl RenderOnce for Shape {
                 canvas(
                     |_, _, _| {},
                     move |bounds, _, window, _| {
+                        // The drift moves only the paint, so it costs no layout.
+                        let bounds = Bounds::new(bounds.origin + point(px(drift.0), px(drift.1)), bounds.size);
                         let bounds = if grow != 1. {
                             let size =
                                 gpui::size(bounds.size.width * grow, bounds.size.height * grow);
