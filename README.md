@@ -22,6 +22,9 @@ cd gpui-m3
 cargo run --example gallery
 ```
 
+For a whole app built from the library, `cargo run --example showcase_music` opens a Material 3
+Expressive music player (`SHOWCASE_DEMO=1` runs a scripted tour of it).
+
 The gallery shows every component with light/dark mode, nine seed colors and a **Slow ×5** switch to
 inspect the motion, and a **What's new** section with the notes of every version. The first build
 compiles GPUI and takes a few minutes. `M3_SECTION=<n>` opens a section directly,

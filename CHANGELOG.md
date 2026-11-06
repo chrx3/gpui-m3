@@ -6,6 +6,9 @@ Más componentes, color y elevación / More components, color and elevation
 
 ### Español
 
+- **Nuevo:** Ejemplo showcase_music: un reproductor de música Material 3 Expressive hecho con la librería (cargo run --example showcase_music; con SHOWCASE_DEMO=1 corre un recorrido guiado)
+- **Nuevo:** Carousel::scroll_to y ReorderList::moved y held mueven un carrusel o una lista por código con la misma animación, y theme_reveal_at inicia el cambio de tema circular desde cualquier punto
+- **Corregido:** El carrusel ya no recibe clics en la parte recortada por un contenedor con scroll
 - **Nuevo:** Shape::drift: la forma deambula en un lazo lento alrededor de su sitio, pensada para fondos, sin recalcular el layout
 - **Mejorado:** Las formas animadas ya no saltan a su pose inicial al perder el foco la ventana: se congelan y siguen desde donde estaban (motion::ambient_clock), y no piden cuadros mientras tanto
 - **Nuevo:** Slider con tamaños Expressive (XS a XL, con ícono opcional), versión vertical, modo centrado, marcas de graduación y burbuja con el valor al arrastrar, más RangeSlider con dos manijas; ahora también se manejan con el teclado
@@ -29,6 +32,9 @@ Más componentes, color y elevación / More components, color and elevation
 
 ### English
 
+- **New:** The showcase_music example: a Material 3 Expressive music player built from the library (cargo run --example showcase_music; SHOWCASE_DEMO=1 runs a scripted tour)
+- **New:** Carousel::scroll_to and ReorderList::moved and held move a carousel or a list from code with the same animation, and theme_reveal_at starts the circular theme change from any point
+- **Fixed:** The carousel no longer takes presses on the part clipped by a scrolling parent
 - **New:** Shape::drift: the shape wanders in a slow loop around its place, meant for backdrops, without recalculating the layout
 - **Improved:** Animated shapes no longer jump back to their first pose when the window loses focus: they freeze and resume where they were (motion::ambient_clock), and request no frames meanwhile
 - **New:** Slider with Expressive sizes (XS to XL, with an optional icon), vertical orientation, a centered mode, tick marks and a value bubble while dragging, plus a two-handle RangeSlider; they now also work with the keyboard

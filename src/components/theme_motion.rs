@@ -118,11 +118,23 @@ const REVEAL_FADE: f32 = 0.2;
 /// by the circle instead of being revealed through it. Render a [`ThemeReveal`] once at the root
 /// of every window that should show it. With reduced motion the theme changes at once.
 pub fn theme_reveal(scheme: Scheme, dark: bool, window: &mut Window, cx: &mut App) {
+    let origin = window.mouse_position();
+    theme_reveal_at(scheme, dark, origin, window, cx);
+}
+
+/// [`theme_reveal`] from a given window position instead of the pointer (a toggle that was
+/// pressed with the keyboard, a scripted change).
+pub fn theme_reveal_at(
+    scheme: Scheme,
+    dark: bool,
+    origin: Point<Pixels>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     if MotionSettings::get(cx).reduced {
         Theme::set_scheme(scheme, dark, cx);
         return;
     }
-    let origin = window.mouse_position();
     let size = window.viewport_size();
     let (x, y) = (f32::from(origin.x), f32::from(origin.y));
     let (w, h) = (f32::from(size.width), f32::from(size.height));

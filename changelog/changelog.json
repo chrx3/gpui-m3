@@ -10,6 +10,21 @@
       "items": [
         {
           "kind": "new",
+          "es": "Ejemplo showcase_music: un reproductor de música Material 3 Expressive hecho con la librería (cargo run --example showcase_music; con SHOWCASE_DEMO=1 corre un recorrido guiado)",
+          "en": "The showcase_music example: a Material 3 Expressive music player built from the library (cargo run --example showcase_music; SHOWCASE_DEMO=1 runs a scripted tour)"
+        },
+        {
+          "kind": "new",
+          "es": "Carousel::scroll_to y ReorderList::moved y held mueven un carrusel o una lista por código con la misma animación, y theme_reveal_at inicia el cambio de tema circular desde cualquier punto",
+          "en": "Carousel::scroll_to and ReorderList::moved and held move a carousel or a list from code with the same animation, and theme_reveal_at starts the circular theme change from any point"
+        },
+        {
+          "kind": "fixed",
+          "es": "El carrusel ya no recibe clics en la parte recortada por un contenedor con scroll",
+          "en": "The carousel no longer takes presses on the part clipped by a scrolling parent"
+        },
+        {
+          "kind": "new",
           "es": "Shape::drift: la forma deambula en un lazo lento alrededor de su sitio, pensada para fondos, sin recalcular el layout",
           "en": "Shape::drift: the shape wanders in a slow loop around its place, meant for backdrops, without recalculating the layout",
           "section": 4

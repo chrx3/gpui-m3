@@ -60,6 +60,8 @@ struct ReorderState {
     /// Layout bounds of each row in the last frame (without the slide offset), by key.
     bounds: HashMap<SharedString, Bounds<Pixels>>,
     slides: HashMap<SharedString, Slide>,
+    /// Generation of the last [`ReorderList::moved`] request that was applied.
+    applied: u64,
 }
 
 enum Entry {
@@ -86,6 +88,8 @@ pub struct ReorderList {
     entries: Vec<Entry>,
     gap: Pixels,
     grab: Option<Pixels>,
+    moved: Option<(ReorderEvent, u64)>,
+    held: Option<(usize, Option<(usize, bool)>)>,
     on_reorder: Option<ReorderHandler>,
 }
 
@@ -96,6 +100,8 @@ impl ReorderList {
             entries: Vec::new(),
             gap: px(2.),
             grab: None,
+            moved: None,
+            held: None,
             on_reorder: None,
         }
     }
@@ -143,6 +149,22 @@ impl ReorderList {
         self
     }
 
+    /// Slides the rows into place after you moved one yourself (a "move up" button, a script)
+    /// instead of by dragging: pass the event you applied to your data, with a `generation`
+    /// that changes for each move. Render the new order together with it.
+    pub fn moved(mut self, event: ReorderEvent, generation: u64) -> Self {
+        self.moved = Some((event, generation));
+        self
+    }
+
+    /// Draws row `from` as lifted, with the insertion line before or after row `over` (`after`
+    /// true), as if it were being dragged. For a scripted or remote drag: you keep calling it
+    /// while it lasts, then apply the move with [`ReorderList::moved`].
+    pub fn held(mut self, from: usize, target: Option<(usize, bool)>) -> Self {
+        self.held = Some((from, target));
+        self
+    }
+
     pub fn on_reorder(mut self, f: impl Fn(ReorderEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_reorder = Some(Rc::new(f));
         self
@@ -181,13 +203,34 @@ impl RenderOnce for ReorderList {
                 })
                 .collect(),
         );
-        let (dragging_row, target) = {
-            let st = state.read(cx);
-            match &st.drag {
-                Some(d) if d.moved => (Some(d.from), d.target),
-                _ => (None, None),
+        let (dragging_row, target) = match self.held {
+            Some((from, target)) => (Some(from), target),
+            None => {
+                let st = state.read(cx);
+                match &st.drag {
+                    Some(d) if d.moved => (Some(d.from), d.target),
+                    _ => (None, None),
+                }
             }
         };
+
+        // A move made by the host: `rows` already has the new order, the slides start from the old.
+        if let Some((event, generation)) = self.moved
+            && state.read(cx).applied != generation
+        {
+            let mut before = (*rows).clone();
+            apply_reorder(
+                &mut before,
+                ReorderEvent {
+                    from: event.to,
+                    to: event.from,
+                },
+            );
+            state.update(cx, |st, _| {
+                st.applied = generation;
+                start_slides(st, &before, event.from, event.to);
+            });
+        }
 
         // Slide offsets after a drop.
         let mut moving = false;

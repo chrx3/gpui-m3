@@ -261,6 +261,8 @@ struct Scroll {
     snap: bool,
     /// Length of the strip the last layout used.
     used: f32,
+    /// Generation of the last [`Carousel::scroll_to`] request that was applied.
+    requested: u64,
     bounds: Rc<Cell<Bounds<Pixels>>>,
 }
 
@@ -452,6 +454,7 @@ pub struct Carousel {
     snap: Option<bool>,
     backdrop: Option<Hsla>,
     selected: Option<usize>,
+    scroll_to: Option<(usize, u64)>,
     on_select: Option<ChangeHandler<usize>>,
     items: Vec<CarouselItem>,
 }
@@ -468,6 +471,7 @@ impl Carousel {
             snap: None,
             backdrop: None,
             selected: None,
+            scroll_to: None,
             on_select: None,
             items: Vec::new(),
         }
@@ -535,6 +539,15 @@ impl Carousel {
     /// The item to ring as selected.
     pub fn selected(mut self, index: Option<usize>) -> Self {
         self.selected = index;
+        self
+    }
+
+    /// Scrolls so that item `index` is at the focus position (as far as the layout allows),
+    /// with the spatial spring, each time `generation` changes (the first request needs a
+    /// generation other than 0). Like [`IconButton::launch`](super::IconButton::launch), the
+    /// host owns the counter.
+    pub fn scroll_to(mut self, index: usize, generation: u64) -> Self {
+        self.scroll_to = Some((index, generation));
         self
     }
 
@@ -615,6 +628,14 @@ impl RenderOnce for Carousel {
             sc.step = step_px(layout, container, item);
             sc.max = max_offset(layout, container, item, count);
             sc.used = container;
+            if let Some((index, generation)) = self.scroll_to
+                && generation != sc.requested
+            {
+                sc.requested = generation;
+                sc.last_wheel = None;
+                let target = (index as f32).clamp(0., sc.max.max(0.));
+                sc.settle_to(target, 0., Spring::SPATIAL, now);
+            }
             sc.advance(now, motion);
             (sc.pos, sc.busy())
         });
@@ -751,13 +772,15 @@ impl RenderOnce for Carousel {
                     }
                 },
                 move |bounds, _, window, _| {
+                    // Only the part that is not clipped by a scrolling parent takes presses.
+                    let visible = bounds.intersect(&window.content_mask().bounds);
                     let along =
                         move |p: gpui::Point<Pixels>| f32::from(if vertical { p.y } else { p.x });
                     let st = scroll.clone();
                     window.on_mouse_event(move |e: &MouseDownEvent, phase, window, cx| {
                         if !phase.bubble()
                             || e.button != MouseButton::Left
-                            || !bounds.contains(&e.position)
+                            || !visible.contains(&e.position)
                         {
                             return;
                         }
