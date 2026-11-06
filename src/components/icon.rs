@@ -74,10 +74,7 @@ impl RenderOnce for Icon {
         } else {
             format!("{}{}.svg", crate::assets::ICON_PREFIX, self.name).into()
         };
-        let mut el = svg()
-            .path(path)
-            .size(self.size)
-            .flex_none();
+        let mut el = svg().path(path).size(self.size).flex_none();
         if let Some(color) = self.color {
             el = el.text_color(crate::theme::alpha(color, opacity));
         } else if opacity < 1. {

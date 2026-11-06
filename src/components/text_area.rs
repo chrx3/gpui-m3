@@ -23,7 +23,7 @@ use super::text_field::{
     supporting_content, supporting_row,
 };
 use crate::motion::continuous_at;
-use crate::theme::{font_family, Theme, alpha};
+use crate::theme::{Theme, alpha, font_family};
 
 /// Kept private so they do not clash with the [`super::TextField`] actions.
 mod keys {
@@ -247,7 +247,11 @@ impl TextArea {
 
     /// `new_text` cut so that replacing `range` respects the hard limit.
     fn within_limit<'a>(&self, range: &Range<usize>, new_text: &'a str) -> &'a str {
-        let max = if self.hard_limit { self.max_length } else { None };
+        let max = if self.hard_limit {
+            self.max_length
+        } else {
+            None
+        };
         if max.is_none() {
             return new_text;
         }

@@ -250,7 +250,11 @@ pub fn ambient_clock(window: &Window, cx: &App) -> f32 {
         let mut map = map.borrow_mut();
         let state = map
             .entry(window.window_handle().window_id())
-            .or_insert(Ambient { real: now, shown: now, active });
+            .or_insert(Ambient {
+                real: now,
+                shown: now,
+                active,
+            });
         // A long gap (nothing was drawing it) is not time the shapes should catch up on.
         if active && state.active {
             state.shown += (now - state.real).clamp(0., 0.5);
@@ -270,7 +274,11 @@ pub fn continuous_at(fps: f32, window: &mut Window, cx: &mut App) -> f32 {
     }
     // In a background window it keeps moving (it may still be on screen), but slower:
     // every tick redraws the whole view, not just the 16 px spinner.
-    let fps = if window.is_window_active() { fps } else { fps.min(BACKGROUND_FPS) };
+    let fps = if window.is_window_active() {
+        fps
+    } else {
+        fps.min(BACKGROUND_FPS)
+    };
     if fps >= 60. {
         request_frame(window);
         return clock(cx);

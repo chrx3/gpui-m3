@@ -20,9 +20,9 @@ use gpui::{
 };
 use mermaid_rs_renderer as mmdr;
 
+use super::{IconButton, IconButtonVariant};
 use crate::cache::Lru;
 use crate::theme::Scheme;
-use super::{IconButton, IconButtonVariant};
 
 /// Diagrams bigger than this (in logical pixels, per side) are not drawn.
 const MAX_SIDE: f32 = 12_000.;
@@ -83,14 +83,23 @@ fn over(color: Hsla, base: Hsla) -> Hsla {
     let (c, b) = (Rgba::from(color), Rgba::from(base));
     let a = c.a.clamp(0., 1.);
     let mix = |x: f32, y: f32| x * a + y * (1. - a);
-    Hsla::from(Rgba { r: mix(c.r, b.r), g: mix(c.g, b.g), b: mix(c.b, b.b), a: 1. })
+    Hsla::from(Rgba {
+        r: mix(c.r, b.r),
+        g: mix(c.g, b.g),
+        b: mix(c.b, b.b),
+        a: 1.,
+    })
 }
 
 /// The opaque ground the diagram is painted on: the theme's container surface, laid over a
 /// near-black or near-white one when the surfaces themselves are translucent.
 fn ground(s: &Scheme) -> Hsla {
     let dark = s.on_surface.l > 0.5;
-    let fallback = if dark { hsla(0., 0., 0.12, 1.) } else { hsla(0., 0., 0.97, 1.) };
+    let fallback = if dark {
+        hsla(0., 0., 0.12, 1.)
+    } else {
+        hsla(0., 0., 0.97, 1.)
+    };
     over(s.surface_container, over(s.surface, fallback))
 }
 
@@ -233,7 +242,11 @@ pub(super) fn diagram(
                         .await;
                     let state = match raster.and_then(|r| {
                         let frame = image::RgbaImage::from_raw(r.pixels.0, r.pixels.1, r.bgra)?;
-                        Some((RenderImage::new(vec![image::Frame::new(frame)]), r.png, r.size))
+                        Some((
+                            RenderImage::new(vec![image::Frame::new(frame)]),
+                            r.png,
+                            r.size,
+                        ))
                     }) {
                         Some((image, png, size)) => State::Ready(MermaidDiagram {
                             image: Arc::new(image),
@@ -251,7 +264,12 @@ pub(super) fn diagram(
     }
 }
 
-fn view(id: ElementId, diagram: MermaidDiagram, s: &Scheme, on_open: Option<DiagramHandler>) -> AnyElement {
+fn view(
+    id: ElementId,
+    diagram: MermaidDiagram,
+    s: &Scheme,
+    on_open: Option<DiagramHandler>,
+) -> AnyElement {
     let (w, _) = diagram.size;
     let group = gpui::SharedString::from(format!("mermaid-{id:?}"));
     let base = ground(s);
@@ -330,7 +348,11 @@ mod tests {
             let r = rasterize(code, diagram_theme(&s), 2.).expect(code);
             assert_eq!(r.bgra.len(), (r.pixels.0 * r.pixels.1 * 4) as usize);
             // Not blank: something was drawn.
-            assert!(r.bgra.chunks_exact(4).any(|p| p[3] > 0 && p[..3] != r.bgra[..3]));
+            assert!(
+                r.bgra
+                    .chunks_exact(4)
+                    .any(|p| p[3] > 0 && p[..3] != r.bgra[..3])
+            );
         }
     }
 

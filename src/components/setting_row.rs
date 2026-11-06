@@ -9,7 +9,7 @@ use gpui::{
 
 use super::{ClickHandler, Icon, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::theme::{font_family, Theme};
+use crate::theme::{Theme, font_family};
 
 /// A row of a settings list: an optional icon, a title, a description under it and a control
 /// (a [`super::Switch`], a [`super::KeyCombo`], a button…) aligned to the right.

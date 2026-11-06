@@ -52,17 +52,18 @@ pub struct SearchDemos {
 
 impl SearchDemos {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let make = |placeholder: &'static str, text: &str, expanded: bool, cx: &mut Context<Self>| {
-            let field = cx.new(|cx| search_field(cx).placeholder(placeholder));
-            let search = cx.new(|cx| Search::new(field, cx).expanded(expanded));
-            if !text.is_empty() {
-                search.update(cx, |search, cx| search.set_text(text.to_string(), cx));
-            }
-            // The bar, the view and the clear button are drawn from the state of the search.
-            cx.subscribe(&search, |_, _, _: &SearchEvent, cx| cx.notify())
-                .detach();
-            search
-        };
+        let make =
+            |placeholder: &'static str, text: &str, expanded: bool, cx: &mut Context<Self>| {
+                let field = cx.new(|cx| search_field(cx).placeholder(placeholder));
+                let search = cx.new(|cx| Search::new(field, cx).expanded(expanded));
+                if !text.is_empty() {
+                    search.update(cx, |search, cx| search.set_text(text.to_string(), cx));
+                }
+                // The bar, the view and the clear button are drawn from the state of the search.
+                cx.subscribe(&search, |_, _, _: &SearchEvent, cx| cx.notify())
+                    .detach();
+                search
+            };
         Self {
             size: 3,
             scroll: 0.,
@@ -91,7 +92,11 @@ impl SearchDemos {
             .trailing(action((id, 1), "search"))
             .trailing(action((id, 2), "more"));
         let (size, subtitle) = self.scroll_bar_size();
-        let bar = if subtitle { bar.subtitle("12 unread") } else { bar };
+        let bar = if subtitle {
+            bar.subtitle("12 unread")
+        } else {
+            bar
+        };
         let bar = bar.size(size);
         if self.size == 1 { bar.centered() } else { bar }
     }
@@ -130,7 +135,13 @@ impl SearchDemos {
     }
 
     /// A bar in a 56 px slot with its view opening over what is below it.
-    fn search_block(&self, search: &Entity<Search>, id: &'static str, height: f32, cx: &App) -> Div {
+    fn search_block(
+        &self,
+        search: &Entity<Search>,
+        id: &'static str,
+        height: f32,
+        cx: &App,
+    ) -> Div {
         let results = self.results(search, id, cx);
         div().relative().w(px(480.)).h(px(height)).child(
             div()
@@ -239,7 +250,11 @@ impl Render for SearchDemos {
         let expanded = f32::from(bar.expanded_height());
         let progress = collapse_progress(self.scroll, expanded);
         let row_offset = (self.scroll - collapse_range(expanded)).max(0.);
-        let mut rows = column().gap(px(2.)).p(px(8.)).relative().top(px(-row_offset));
+        let mut rows = column()
+            .gap(px(2.))
+            .p(px(8.))
+            .relative()
+            .top(px(-row_offset));
         for (i, (title, kind)) in ITEMS.iter().take(PAGE_ROWS).enumerate() {
             rows = rows.child(
                 ListItem::new(("page-row", i), *title)
@@ -254,7 +269,7 @@ impl Render for SearchDemos {
             .flex_none()
             .w(px(380.))
             .h(px(FRAME_HEIGHT))
-                .overflow_hidden()
+            .overflow_hidden()
             .border_1()
             .border_color(s.outline_variant)
             .bg(s.surface)

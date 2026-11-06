@@ -9,7 +9,7 @@ use gpui::{
 use super::{ChangeHandler, Icon, RoundedExt, corners};
 use crate::interaction::{interactive, keyboard_focus, use_interaction};
 use crate::motion::{Spring, animate, animate_color, animate_f32, key};
-use crate::theme::{font_family, Theme};
+use crate::theme::{Theme, font_family};
 
 /// A group option: text, icon or both.
 #[derive(Clone)]
@@ -181,9 +181,19 @@ impl RenderOnce for SegmentedButtons {
                 }
                 slots.target.set(Some((left, right)));
                 let (lead, trail) = (Spring::SPATIAL_FAST, Spring::SPATIAL);
-                let (left_spring, right_spring) = if slots.forward.get() { (trail, lead) } else { (lead, trail) };
+                let (left_spring, right_spring) = if slots.forward.get() {
+                    (trail, lead)
+                } else {
+                    (lead, trail)
+                };
                 let [l] = animate(key(&self.id, "pill-left"), left_spring, [left], window, cx);
-                let [r] = animate(key(&self.id, "pill-right"), right_spring, [right], window, cx);
+                let [r] = animate(
+                    key(&self.id, "pill-right"),
+                    right_spring,
+                    [right],
+                    window,
+                    cx,
+                );
                 // Stretched, it thins a little: a liquid keeps its volume.
                 let stretch = ((r - l) - (right - left)).abs();
                 let inset = (stretch * 0.08).min(3.);
@@ -208,8 +218,10 @@ impl RenderOnce for SegmentedButtons {
                     return;
                 };
                 let origin = first.origin.x - px(TRACK_PAD);
-                let spans: Rc<[(f32, f32)]> =
-                    options.iter().map(|b| (f32::from(b.origin.x - origin), f32::from(b.size.width))).collect();
+                let spans: Rc<[(f32, f32)]> = options
+                    .iter()
+                    .map(|b| (f32::from(b.origin.x - origin), f32::from(b.size.width)))
+                    .collect();
                 slots.spans.set(Some(spans));
             });
         }
@@ -235,7 +247,10 @@ impl RenderOnce for SegmentedButtons {
             let (bg, fg) = match (on, slots.is_some()) {
                 // Sliding: the pill under the track paints the selected one.
                 (true, true) if pill.is_some() => (s.primary.opacity(0.), s.on_primary),
-                (false, true) => (s.surface_container_highest.opacity(0.), s.on_surface_variant),
+                (false, true) => (
+                    s.surface_container_highest.opacity(0.),
+                    s.on_surface_variant,
+                ),
                 (true, _) => (s.primary, s.on_primary),
                 (false, false) => (s.surface_container_highest, s.on_surface_variant),
             };

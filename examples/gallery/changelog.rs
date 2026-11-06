@@ -111,7 +111,11 @@ fn pretty_date(date: &str, es: bool) -> String {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     let mut parts = date.split('-').map(|p| p.parse::<usize>().ok());
-    match (parts.next().flatten(), parts.next().flatten(), parts.next().flatten()) {
+    match (
+        parts.next().flatten(),
+        parts.next().flatten(),
+        parts.next().flatten(),
+    ) {
         (Some(year), Some(month @ 1..=12), Some(day)) => {
             if es {
                 format!("{day} {} {year}", ES[month - 1])
@@ -190,7 +194,11 @@ impl Changelog {
                 div()
                     .text_size(px(15.))
                     .text_color(s.on_surface_variant)
-                    .child(if es { title.es.clone() } else { title.en.clone() }),
+                    .child(if es {
+                        title.es.clone()
+                    } else {
+                        title.en.clone()
+                    }),
             );
         }
         for (i, entry) in release.items.iter().enumerate() {
@@ -221,7 +229,11 @@ impl Changelog {
             line = line.child(
                 Button::new(
                     ("changelog-open", id),
-                    if es { "Ver en el gallery" } else { "See in the gallery" },
+                    if es {
+                        "Ver en el gallery"
+                    } else {
+                        "See in the gallery"
+                    },
                 )
                 .tonal()
                 .size(ButtonSize::Small)
@@ -243,9 +255,11 @@ impl Changelog {
             .and_then(|image| Some((repo_path(image), *self.ratios.get(image)?)))
         {
             // The box takes its height from the width the card leaves it; the picture fills it.
-            let mut frame = div().w_full().rounded(px(16.)).overflow_hidden().child(
-                img(image).size_full().object_fit(ObjectFit::Contain),
-            );
+            let mut frame = div()
+                .w_full()
+                .rounded(px(16.))
+                .overflow_hidden()
+                .child(img(image).size_full().object_fit(ObjectFit::Contain));
             frame.style().aspect_ratio = Some(ratio);
             item = item.child(div().pl(px(98.)).max_w(px(738.)).min_w_0().child(frame));
         }
@@ -319,7 +333,11 @@ mod tests {
             );
         }
         for release in &log.versions {
-            assert!(!release.items.is_empty(), "{} has no items", release.version);
+            assert!(
+                !release.items.is_empty(),
+                "{} has no items",
+                release.version
+            );
             for entry in &release.items {
                 assert!(!entry.es.is_empty() && !entry.en.is_empty());
             }
@@ -346,7 +364,10 @@ mod tests {
                     assert!(repo_path(image).exists(), "missing image {image}");
                 }
                 if let Some(section) = entry.section {
-                    assert!(section < super::super::SECTIONS.len(), "no section {section}");
+                    assert!(
+                        section < super::super::SECTIONS.len(),
+                        "no section {section}"
+                    );
                 }
             }
         }

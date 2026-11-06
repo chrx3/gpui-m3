@@ -14,7 +14,7 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, rounded_rect, state_layer, use_interaction};
 use crate::motion::{Spring, animate, animate_f32, key};
-use crate::theme::{font_family, Theme, alpha};
+use crate::theme::{Theme, alpha, font_family};
 
 /// Selectable card with a preview, a title and a hint (the style picker). Selected cards get
 /// a 2 px primary border. Side by side in a row, wrap each in `div().flex_1().min_w_0()`: the

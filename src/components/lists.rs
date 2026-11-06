@@ -13,7 +13,7 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, Tooltip, all, child_id};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, key};
-use crate::theme::{font_family, MONO_FONT_FAMILY, Theme, alpha};
+use crate::theme::{MONO_FONT_FAMILY, Theme, alpha, font_family};
 
 /// Indentation per tree level.
 const TREE_INDENT: f32 = 14.;

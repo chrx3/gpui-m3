@@ -45,14 +45,20 @@ impl PickerDemos {
             date: day(12),
             range: day(9).zip(day(17)).map(|(a, b)| DateRange::new(a, b)),
             limited: None,
-            time_12: Time { hour: 14, minute: 30 },
+            time_12: Time {
+                hour: 14,
+                minute: 30,
+            },
             time_24: Time { hour: 9, minute: 5 },
             modal_date: open == "date",
             modal_range: open == "range",
             modal_time: open == "time",
             draft_date: day(12),
             draft_range: day(9).zip(day(17)).map(|(a, b)| DateRange::new(a, b)),
-            draft_time: Time { hour: 14, minute: 30 },
+            draft_time: Time {
+                hour: 14,
+                minute: 30,
+            },
             chosen_date: None,
             chosen_range: None,
             chosen_time: None,
@@ -87,16 +93,20 @@ impl PickerDemos {
 }
 
 fn note(text: impl Into<SharedString>, s: &gpui_m3::Scheme) -> impl IntoElement {
-    div().text_size(px(12.5)).text_color(s.on_surface_variant).child(text.into())
+    div()
+        .text_size(px(12.5))
+        .text_color(s.on_surface_variant)
+        .child(text.into())
 }
 
 impl Render for PickerDemos {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
         let shows = |part: &str| self.part.is_empty() || self.part == part;
-        let progress = |name: &'static str, open: bool, window: &mut Window, cx: &mut Context<Self>| {
-            presence(key(&ElementId::Name(name.into()), "p"), open, window, cx)
-        };
+        let progress =
+            |name: &'static str, open: bool, window: &mut Window, cx: &mut Context<Self>| {
+                presence(key(&ElementId::Name(name.into()), "p"), open, window, cx)
+            };
         let date_modal = progress("pk-date", self.modal_date, window, cx);
         let range_modal = progress("pk-range", self.modal_range, window, cx);
         let time_modal = progress("pk-time", self.modal_time, window, cx);
@@ -155,7 +165,10 @@ impl Render for PickerDemos {
                     .value(self.date)
                     .on_change(Self::set(cx, |this, date| this.date = Some(date))),
             )
-            .child(note("Docked without a header: the surface of a text field's menu.", &s));
+            .child(note(
+                "Docked without a header: the surface of a text field's menu.",
+                &s,
+            ));
 
         let time_12 = column()
             .child(
@@ -175,7 +188,10 @@ impl Render for PickerDemos {
                     .start_with_input(self.time_input)
                     .on_change(Self::set(cx, |this, time| this.time_24 = time)),
             )
-            .child(note(format!("24 h, Spanish, minutes snap to 5: {}", self.time_24), &s));
+            .child(note(
+                format!("24 h, Spanish, minutes snap to 5: {}", self.time_24),
+                &s,
+            ));
 
         let modal = column()
             .child(
@@ -210,7 +226,8 @@ impl Render for PickerDemos {
                     "Confirmed: date {}, range {}, time {}",
                     date_text(self.chosen_date),
                     range_text(self.chosen_range),
-                    self.chosen_time.map_or("none".to_string(), |t| t.to_string()),
+                    self.chosen_time
+                        .map_or("none".to_string(), |t| t.to_string()),
                 ),
                 &s,
             ));

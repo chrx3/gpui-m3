@@ -56,7 +56,10 @@ impl Switch {
         if icons {
             self.thumb_icons("check", "x")
         } else {
-            Self { icons: None, ..self }
+            Self {
+                icons: None,
+                ..self
+            }
         }
     }
 

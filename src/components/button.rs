@@ -23,7 +23,7 @@ use crate::motion::{
 use crate::theme::type_scale::{
     HEADLINE_LARGE, HEADLINE_SMALL, LABEL_LARGE, TITLE_LARGE, TITLE_MEDIUM, TypeStyle,
 };
-use crate::theme::{font_family, Theme, alpha, corner};
+use crate::theme::{Theme, alpha, corner, font_family};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
@@ -114,8 +114,26 @@ impl M3ButtonSize {
             M3ButtonSize::Xs => (32., 12., 20., 4., corner::M, corner::S, 1., LABEL_LARGE),
             M3ButtonSize::S => (40., 16., 20., 8., corner::M, corner::S, 1., LABEL_LARGE),
             M3ButtonSize::M => (56., 24., 24., 8., corner::L, corner::M, 1., TITLE_MEDIUM),
-            M3ButtonSize::L => (96., 48., 32., 12., corner::XL, corner::L, 2., HEADLINE_SMALL),
-            M3ButtonSize::Xl => (136., 64., 40., 16., corner::XL, corner::L, 3., HEADLINE_LARGE),
+            M3ButtonSize::L => (
+                96.,
+                48.,
+                32.,
+                12.,
+                corner::XL,
+                corner::L,
+                2.,
+                HEADLINE_SMALL,
+            ),
+            M3ButtonSize::Xl => (
+                136.,
+                64.,
+                40.,
+                16.,
+                corner::XL,
+                corner::L,
+                3.,
+                HEADLINE_LARGE,
+            ),
         };
         M3Metrics {
             height,
@@ -381,7 +399,13 @@ impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let m3 = self.m3_size.map(M3ButtonSize::metrics);
         let (height, pad, font, selected_radius, pressed_radius) = match &m3 {
-            Some(m) => (m.height, m.padding, f32::from(m.text.size), m.square, m.pressed),
+            Some(m) => (
+                m.height,
+                m.padding,
+                f32::from(m.text.size),
+                m.square,
+                m.pressed,
+            ),
             None => self.size.metrics(),
         };
         let enabled = !self.disabled;
@@ -746,19 +770,26 @@ impl RenderOnce for IconButton {
             (st.hovered && enabled, st.pressed && enabled)
         };
         // Container width and height, icon size, square and pressed radii, outline width.
-        let (width, height, icon_size, square_radius, pressed_radius, outline) =
-            match self.m3_size {
-                Some(m3) => {
-                    let m = m3.metrics();
-                    let (icon, padding) = m3.icon_button(self.width);
-                    (icon + 2. * padding, m.height, icon, m.square, m.pressed, m.outline)
-                }
-                None => {
-                    let size = f32::from(self.size);
-                    let icon = (size * 0.56).round().min(22.);
-                    (size, size, icon, (size * 0.33).round(), 8., 1.)
-                }
-            };
+        let (width, height, icon_size, square_radius, pressed_radius, outline) = match self.m3_size
+        {
+            Some(m3) => {
+                let m = m3.metrics();
+                let (icon, padding) = m3.icon_button(self.width);
+                (
+                    icon + 2. * padding,
+                    m.height,
+                    icon,
+                    m.square,
+                    m.pressed,
+                    m.outline,
+                )
+            }
+            None => {
+                let size = f32::from(self.size);
+                let icon = (size * 0.56).round().min(22.);
+                (size, size, icon, (size * 0.33).round(), 8., 1.)
+            }
+        };
         // A square toggle goes the other way: round when selected.
         let squared = (self.selected == Some(true)) != self.square || (self.hover_morph && hovered);
         let radius_target = if pressed {
@@ -851,11 +882,7 @@ impl RenderOnce for IconButton {
                     .relative()
                     .top(px(launch.map_or(0., |frame| frame.icon_y)))
                     .opacity(launch.map_or(1., |frame| frame.icon_opacity))
-                    .child(
-                        Icon::new(self.icon)
-                            .size(px(icon_size * scale))
-                            .color(fg),
-                    ),
+                    .child(Icon::new(self.icon).size(px(icon_size * scale)).color(fg)),
             );
         if let Some(border) = border {
             face = if outline == 1. {
@@ -1014,7 +1041,13 @@ impl Fab {
     }
 
     /// The look of a FAB menu's button: colors, circle or rounded square, and icon turn.
-    pub(super) fn menu_look(mut self, container: Hsla, content: Hsla, circle: bool, turn: f32) -> Self {
+    pub(super) fn menu_look(
+        mut self,
+        container: Hsla,
+        content: Hsla,
+        circle: bool,
+        turn: f32,
+    ) -> Self {
         self.menu_look = Some((container, content, circle, turn));
         self
     }
@@ -1054,9 +1087,10 @@ impl RenderOnce for Fab {
         };
         let target = match (pressed, hovered, extended) {
             (true, _, _) => rest_radius * 0.75,
-            (false, true, _) => self
-                .hover_radius
-                .unwrap_or(if extended { rest_radius } else { size / 2. }),
+            (false, true, _) => {
+                self.hover_radius
+                    .unwrap_or(if extended { rest_radius } else { size / 2. })
+            }
             _ => rest_radius,
         };
         let radius = px(animate_f32(

@@ -13,7 +13,7 @@ use super::{Selection, all, child_id, group_for, selectable_block, selection_roo
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, key};
 use crate::syntax::{SyntaxPalette, highlight_cached, language};
-use crate::theme::{font_family, MONO_FONT_FAMILY, Theme, alpha};
+use crate::theme::{MONO_FONT_FAMILY, Theme, alpha, font_family};
 
 /// How long "Copied" stays after copying a code block.
 pub const COPIED_FOR: Duration = Duration::from_millis(1400);
@@ -103,8 +103,20 @@ impl RenderOnce for CodeOutput {
         let (group, own) = group_for(child_id(&self.id, "select"), window, cx);
         let text = StyledText::new(shown.clone());
         let layout = text.layout().clone();
-        let shown = selectable_block(&group, layout, shown, SharedString::default(), Some(self.text.clone()), text.into_any_element(), alpha(s.primary, 0.3));
-        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
+        let shown = selectable_block(
+            &group,
+            layout,
+            shown,
+            SharedString::default(),
+            Some(self.text.clone()),
+            text.into_any_element(),
+            alpha(s.primary, 0.3),
+        );
+        let root = if own {
+            selection_root(&group.state, div(), cx)
+        } else {
+            div()
+        };
 
         root.flex()
             .flex_col()
@@ -185,7 +197,12 @@ impl CodeBlock {
 
     /// Selects as part of the Markdown it is in, with `joint` before its text in a copy and
     /// `whole` for "Copy all"; otherwise it joins the scope it is in, or is a group of its own.
-    pub fn selection(mut self, group: Selection, joint: SharedString, whole: Option<SharedString>) -> Self {
+    pub fn selection(
+        mut self,
+        group: Selection,
+        joint: SharedString,
+        whole: Option<SharedString>,
+    ) -> Self {
         self.selection = Some((group, joint, whole));
         self
     }
@@ -233,8 +250,20 @@ impl RenderOnce for CodeBlock {
             text = text.with_highlights(palette.highlights(&tokens));
         }
         let layout = text.layout().clone();
-        let text = selectable_block(&group, layout, source, joint, whole, text.into_any_element(), alpha(s.primary, 0.3));
-        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
+        let text = selectable_block(
+            &group,
+            layout,
+            source,
+            joint,
+            whole,
+            text.into_any_element(),
+            alpha(s.primary, 0.3),
+        );
+        let root = if own {
+            selection_root(&group.state, div(), cx)
+        } else {
+            div()
+        };
 
         root.flex()
             .flex_col()

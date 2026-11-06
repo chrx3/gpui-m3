@@ -15,7 +15,7 @@ use crate::motion::{
     Spring, ambient_clock, animate, animate_color, animate_f32, continuous_at, cubic_bezier, key,
 };
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
-use crate::theme::{font_family, Theme};
+use crate::theme::{Theme, font_family};
 
 /// A shape from the M3 shape library. `morph` makes it breathe between two shapes and `spin` rotates it.
 ///
@@ -236,7 +236,10 @@ impl RenderOnce for Shape {
                     |_, _, _| {},
                     move |bounds, _, window, _| {
                         // The drift moves only the paint, so it costs no layout.
-                        let bounds = Bounds::new(bounds.origin + point(px(drift.0), px(drift.1)), bounds.size);
+                        let bounds = Bounds::new(
+                            bounds.origin + point(px(drift.0), px(drift.1)),
+                            bounds.size,
+                        );
                         let bounds = if grow != 1. {
                             let size =
                                 gpui::size(bounds.size.width * grow, bounds.size.height * grow);

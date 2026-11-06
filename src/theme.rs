@@ -280,7 +280,12 @@ impl Scheme {
 
     /// A dynamic scheme from a seed color in one of the nine Material variants. `contrast`
     /// goes from -1 (least) through 0 (the standard design) to 1 (most, for readability).
-    pub fn from_seed_variant(seed: Hsla, dark: bool, variant: SchemeVariant, contrast: f32) -> Self {
+    pub fn from_seed_variant(
+        seed: Hsla,
+        dark: bool,
+        variant: SchemeVariant,
+        contrast: f32,
+    ) -> Self {
         let rgba = Rgba::from(seed);
         let argb = Argb::new(
             255,
@@ -611,7 +616,12 @@ pub mod type_scale {
     }
 
     const fn style(size: f32, line: f32, weight: f32, emphasized: f32) -> TypeStyle {
-        TypeStyle { size: px(size), line_height: px(line), weight: FontWeight(weight), emphasized: FontWeight(emphasized) }
+        TypeStyle {
+            size: px(size),
+            line_height: px(line),
+            weight: FontWeight(weight),
+            emphasized: FontWeight(emphasized),
+        }
     }
 
     pub const DISPLAY_LARGE: TypeStyle = style(57., 64., 400., 500.);
@@ -633,11 +643,15 @@ pub mod type_scale {
     /// `.type_style(BODY_MEDIUM)` or `.type_emphasized(TITLE_MEDIUM)`.
     pub trait TypeScaleExt: Styled + Sized {
         fn type_style(self, style: TypeStyle) -> Self {
-            self.text_size(style.size).line_height(style.line_height).font_weight(style.weight)
+            self.text_size(style.size)
+                .line_height(style.line_height)
+                .font_weight(style.weight)
         }
 
         fn type_emphasized(self, style: TypeStyle) -> Self {
-            self.text_size(style.size).line_height(style.line_height).font_weight(style.emphasized)
+            self.text_size(style.size)
+                .line_height(style.line_height)
+                .font_weight(style.emphasized)
         }
     }
 
@@ -667,7 +681,11 @@ mod tests {
                     s.surface_container_highest.l,
                 ];
                 for pair in steps.windows(2) {
-                    let ordered = if dark { pair[0] <= pair[1] } else { pair[0] >= pair[1] };
+                    let ordered = if dark {
+                        pair[0] <= pair[1]
+                    } else {
+                        pair[0] >= pair[1]
+                    };
                     assert!(ordered, "{variant:?} dark={dark}: {steps:?}");
                 }
             }
@@ -680,7 +698,10 @@ mod tests {
         let tonal = primary(SchemeVariant::TonalSpot);
         assert!(!close(tonal, primary(SchemeVariant::Vibrant)));
         assert!(!close(tonal, primary(SchemeVariant::Fidelity)));
-        assert!(primary(SchemeVariant::Monochrome).s < 0.01, "monochrome is gray");
+        assert!(
+            primary(SchemeVariant::Monochrome).s < 0.01,
+            "monochrome is gray"
+        );
         assert!(close(tonal, Scheme::from_seed(hex(SEED), false).primary));
     }
 
@@ -696,7 +717,10 @@ mod tests {
 
     #[test]
     fn derived_roles_follow_the_polarity_and_keep_the_given_ones() {
-        for (base, dark) in [(Scheme::baseline_light(), false), (Scheme::baseline_dark(), true)] {
+        for (base, dark) in [
+            (Scheme::baseline_light(), false),
+            (Scheme::baseline_dark(), true),
+        ] {
             let s = base.derive_roles();
             assert_eq!(s.primary, base.primary);
             assert_eq!(s.scrim, hsla(0., 0., 0., 1.));

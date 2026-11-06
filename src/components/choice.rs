@@ -12,7 +12,7 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, keyboard_focus, overlay, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, key};
-use crate::theme::{font_family, Scheme, Theme, alpha};
+use crate::theme::{Scheme, Theme, alpha, font_family};
 
 /// Radio button (the reference design's model picker): a 2 px outline ring whose border
 /// thickens to 5 px in the primary color when selected.
@@ -83,17 +83,13 @@ impl RenderOnce for Radio {
         let color = animate_color(key(&self.id, "color"), Spring::EFFECTS, color, window, cx);
         let size = f32::from(self.size);
         // The border-less wrapper is what the focus ring is measured from.
-        let ring = div()
-            .id(self.id.clone())
-            .flex_none()
-            .size(self.size)
-            .child(
-                div()
-                    .size_full()
-                    .rounded(px(size / 2.))
-                    .border(px(border.clamp(1., size / 2.)))
-                    .border_color(color),
-            );
+        let ring = div().id(self.id.clone()).flex_none().size(self.size).child(
+            div()
+                .size_full()
+                .rounded(px(size / 2.))
+                .border(px(border.clamp(1., size / 2.)))
+                .border_color(color),
+        );
         let Some(f) = self.on_change.filter(|_| !self.disabled) else {
             return ring;
         };
@@ -140,7 +136,11 @@ impl CheckState {
 
 impl From<bool> for CheckState {
     fn from(checked: bool) -> Self {
-        if checked { Self::Checked } else { Self::Unchecked }
+        if checked {
+            Self::Checked
+        } else {
+            Self::Unchecked
+        }
     }
 }
 
@@ -240,48 +240,52 @@ impl RenderOnce for Checkbox {
         let mark = animate_f32(
             key(&self.id, "mark"),
             Spring::SPATIAL_FAST,
-            if self.state == CheckState::Checked { 1. } else { 0. },
+            if self.state == CheckState::Checked {
+                1.
+            } else {
+                0.
+            },
             window,
             cx,
         );
         let dash = animate_f32(
             key(&self.id, "dash"),
             Spring::SPATIAL_FAST,
-            if self.state == CheckState::Indeterminate { 1. } else { 0. },
+            if self.state == CheckState::Indeterminate {
+                1.
+            } else {
+                0.
+            },
             window,
             cx,
         );
         let state = use_interaction(&self.id, window, cx);
         // The border-less wrapper is what the focus ring is measured from.
-        let el = div()
-            .id(self.id.clone())
-            .flex_none()
-            .size(px(18.))
-            .child(
-                div()
-                    .size_full()
-                    .rounded(px(3.))
-                    .bg(bg)
-                    .border_2()
-                    .border_color(border)
-                    .child(
-                        overlay().flex().items_center().justify_center().child(
-                            Icon::new("check")
-                                .size(px(14.))
-                                .color(alpha(fg, mark.clamp(0., 1.)))
-                                .scale(0.4 + 0.6 * mark.max(0.)),
-                        ),
-                    )
-                    .child(
-                        overlay().flex().items_center().justify_center().child(
-                            div()
-                                .w(px(10. * (0.4 + 0.6 * dash.max(0.))))
-                                .h(px(2.))
-                                .rounded(px(1.))
-                                .bg(alpha(fg, dash.clamp(0., 1.))),
-                        ),
+        let el = div().id(self.id.clone()).flex_none().size(px(18.)).child(
+            div()
+                .size_full()
+                .rounded(px(3.))
+                .bg(bg)
+                .border_2()
+                .border_color(border)
+                .child(
+                    overlay().flex().items_center().justify_center().child(
+                        Icon::new("check")
+                            .size(px(14.))
+                            .color(alpha(fg, mark.clamp(0., 1.)))
+                            .scale(0.4 + 0.6 * mark.max(0.)),
                     ),
-            );
+                )
+                .child(
+                    overlay().flex().items_center().justify_center().child(
+                        div()
+                            .w(px(10. * (0.4 + 0.6 * dash.max(0.))))
+                            .h(px(2.))
+                            .rounded(px(1.))
+                            .bg(alpha(fg, dash.clamp(0., 1.))),
+                    ),
+                ),
+        );
         let enabled = !self.disabled && self.on_change.is_some();
         let mut el = interactive(el, &state, enabled, false);
         if let (Some(f), true) = (self.on_change, enabled) {
@@ -435,18 +439,16 @@ impl RenderOnce for ChoiceRow {
             .size(px(14.))
             .rounded(mark_radius);
         let mark = match (self.mark, self.selected) {
-            (ChoiceMark::Checkbox, _) if dash => {
-                mark.bg(on_accent)
-                    .child(div().w(px(8.)).h(px(2.)).rounded(px(1.)).bg(accent))
-            }
-            (_, false) => mark
-                .border(px(1.5))
-                .border_color(if self.error { s.error } else { s.on_surface_variant }),
-            // Filled with the content color and a 2.5 px inner ring of the row color.
-            (ChoiceMark::Radio, true) => mark
+            (ChoiceMark::Checkbox, _) if dash => mark
                 .bg(on_accent)
-                .border(px(2.5))
-                .border_color(accent),
+                .child(div().w(px(8.)).h(px(2.)).rounded(px(1.)).bg(accent)),
+            (_, false) => mark.border(px(1.5)).border_color(if self.error {
+                s.error
+            } else {
+                s.on_surface_variant
+            }),
+            // Filled with the content color and a 2.5 px inner ring of the row color.
+            (ChoiceMark::Radio, true) => mark.bg(on_accent).border(px(2.5)).border_color(accent),
             (ChoiceMark::Checkbox, true) => mark
                 .bg(on_accent)
                 .child(Icon::new("check").size(px(12.)).color(accent)),

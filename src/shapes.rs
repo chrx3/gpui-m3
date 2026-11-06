@@ -174,7 +174,9 @@ impl ShapeName {
         const CENTER: (f32, f32) = (0.5, 0.5);
         let corners = match self {
             ShapeName::Square => rectangle(1., 1., [0.3; 4]),
-            ShapeName::Slanted => custom(&[(0.926, 0.970, 0.189), (-0.021, 0.967, 0.187)], 2, false),
+            ShapeName::Slanted => {
+                custom(&[(0.926, 0.970, 0.189), (-0.021, 0.967, 0.187)], 2, false)
+            }
             ShapeName::Arch => regular(4, &[1., 1., 0.2, 0.2], -135f32.to_radians()),
             ShapeName::Fan => custom(
                 &[
@@ -199,13 +201,21 @@ impl ShapeName {
             // A 1.6 × 1 rectangle with soft bottom corners and a fully round top.
             ShapeName::SemiCircle => rectangle(1.6, 1., [0.2, 0.2, 1., 1.]),
             ShapeName::Pill => custom(
-                &[(0.961, 0.039, 0.426), (1.001, 0.428, 0.), (1.000, 0.609, 1.)],
+                &[
+                    (0.961, 0.039, 0.426),
+                    (1.001, 0.428, 0.),
+                    (1.000, 0.609, 1.),
+                ],
                 2,
                 true,
             ),
             ShapeName::Diamond => custom(&[(0.500, 1.096, 0.151), (0.040, 0.500, 0.159)], 2, false),
             ShapeName::ClamShell => custom(
-                &[(0.171, 0.841, 0.159), (-0.020, 0.500, 0.140), (0.170, 0.159, 0.159)],
+                &[
+                    (0.171, 0.841, 0.159),
+                    (-0.020, 0.500, 0.140),
+                    (0.170, 0.159, 0.159),
+                ],
                 2,
                 false,
             ),
@@ -234,7 +244,11 @@ impl ShapeName {
                 true,
             ),
             ShapeName::Flower => custom(
-                &[(0.370, 0.187, 0.), (0.416, 0.049, 0.381), (0.479, 0.001, 0.095)],
+                &[
+                    (0.370, 0.187, 0.),
+                    (0.416, 0.049, 0.381),
+                    (0.479, 0.001, 0.095),
+                ],
                 8,
                 true,
             ),
@@ -259,7 +273,11 @@ impl ShapeName {
             .map(|(x, y, r)| (x, (y - 0.5) * 0.742 + 0.5, r))
             .collect::<Vec<_>>(),
             ShapeName::PuffyDiamond => custom(
-                &[(0.870, 0.130, 0.146), (0.818, 0.357, 0.), (1.000, 0.332, 0.853)],
+                &[
+                    (0.870, 0.130, 0.146),
+                    (0.818, 0.357, 0.),
+                    (1.000, 0.332, 0.853),
+                ],
                 4,
                 true,
             ),
@@ -391,7 +409,11 @@ fn custom(points: &[Corner], reps: usize, mirroring: bool) -> Vec<Corner> {
         for rep in 0..reps {
             let even = rep % 2 == 0;
             for index in 0..points.len() {
-                let i = if even { index } else { points.len() - 1 - index };
+                let i = if even {
+                    index
+                } else {
+                    points.len() - 1 - index
+                };
                 // Odd sections skip the first point: it sits on the mirror axis.
                 if i == 0 && !even {
                     continue;
@@ -436,7 +458,11 @@ fn star(points: usize, inner: f32, rounding: f32, rotate: f32) -> Vec<Corner> {
         .map(|i| {
             let a = rotate + i as f32 * step;
             let radius = if i % 2 == 0 { 0.5 } else { 0.5 * inner };
-            (0.5 + a.cos() * radius, 0.5 + a.sin() * radius, rounding / 2.)
+            (
+                0.5 + a.cos() * radius,
+                0.5 + a.sin() * radius,
+                rounding / 2.,
+            )
         })
         .collect()
 }
@@ -704,7 +730,11 @@ mod tests {
             if let Some((outline, origin)) = shape.outline() {
                 for i in 0..POINTS {
                     let t = i as f32 / POINTS as f32 * TAU;
-                    assert!(ray_distance(&outline, origin, t) > 0.05, "{}", shape.label());
+                    assert!(
+                        ray_distance(&outline, origin, t) > 0.05,
+                        "{}",
+                        shape.label()
+                    );
                 }
             }
         }

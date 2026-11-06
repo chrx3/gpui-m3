@@ -163,7 +163,6 @@ fn stop_target(value: Option<usize>, nav: KeyNav, jump: usize, stops: usize) -> 
     }
 }
 
-
 /// Size of a [`Slider`]: `Standard` is the compact look the slider always had; the others are
 /// the Expressive sizes (track 16, 24, 40, 56 and 96 dp, handle 4 dp wide with a 6 dp gap).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -290,7 +289,11 @@ fn thumb_center(fraction: f32, usable: f32, lead: f32) -> f32 {
 
 fn nearest_thumb(value: f32, low: f32, high: f32) -> Thumb {
     if low >= high {
-        return if value > high { Thumb::High } else { Thumb::Low };
+        return if value > high {
+            Thumb::High
+        } else {
+            Thumb::Low
+        };
     }
     if (value - low).abs() <= (high - value).abs() {
         Thumb::Low
@@ -361,8 +364,17 @@ fn segments(length: f32, slots: &[(f32, f32)], cut: Option<f32>) -> Vec<Seg> {
     let (mut pos, mut start) = (0., End::Outer);
     for (a, b) in slots {
         if a > pos + 0.01 {
-            let end = if a >= length - 0.01 { End::Outer } else { End::Gap };
-            free.push(Seg { from: pos, to: a.min(length), start, end });
+            let end = if a >= length - 0.01 {
+                End::Outer
+            } else {
+                End::Gap
+            };
+            free.push(Seg {
+                from: pos,
+                to: a.min(length),
+                start,
+                end,
+            });
         }
         if b > pos {
             pos = b;
@@ -370,14 +382,27 @@ fn segments(length: f32, slots: &[(f32, f32)], cut: Option<f32>) -> Vec<Seg> {
         }
     }
     if pos < length - 0.01 {
-        free.push(Seg { from: pos, to: length, start, end: End::Outer });
+        free.push(Seg {
+            from: pos,
+            to: length,
+            start,
+            end: End::Outer,
+        });
     }
     let mut out = Vec::with_capacity(free.len() + 1);
     for seg in free {
         match cut {
             Some(c) if c > seg.from + 0.01 && c < seg.to - 0.01 => {
-                out.push(Seg { to: c, end: End::Flat, ..seg });
-                out.push(Seg { from: c, start: End::Flat, ..seg });
+                out.push(Seg {
+                    to: c,
+                    end: End::Flat,
+                    ..seg
+                });
+                out.push(Seg {
+                    from: c,
+                    start: End::Flat,
+                    ..seg
+                });
             }
             _ => out.push(seg),
         }
@@ -405,7 +430,11 @@ fn seg_radii(start: f32, end: f32, vertical: bool) -> [f32; 4] {
 fn default_label(value: f32) -> String {
     let text = format!("{value:.2}");
     let text = text.trim_end_matches('0').trim_end_matches('.');
-    if text == "-0" { "0".into() } else { text.into() }
+    if text == "-0" {
+        "0".into()
+    } else {
+        text.into()
+    }
 }
 
 /* ─────────── Shared slider ─────────── */
@@ -574,12 +603,7 @@ pub struct RangeSlider {
 }
 
 impl RangeSlider {
-    pub fn new(
-        id: impl Into<ElementId>,
-        low: f32,
-        high: f32,
-        range: RangeInclusive<f32>,
-    ) -> Self {
+    pub fn new(id: impl Into<ElementId>, low: f32, high: f32, range: RangeInclusive<f32>) -> Self {
         Self {
             core: Core::new(id.into(), [low, high], true, range),
         }
@@ -608,20 +632,19 @@ impl RenderOnce for RangeSlider {
 }
 
 /// Rectangle `from..to` along the slider and `cross..cross + cross_len` across it.
-fn along_rect(
-    from: f32,
-    to: f32,
-    cross: f32,
-    cross_len: f32,
-    length: f32,
-    vertical: bool,
-) -> Div {
+fn along_rect(from: f32, to: f32, cross: f32, cross_len: f32, length: f32, vertical: bool) -> Div {
     let base = div().absolute();
     let long = (to - from).max(0.);
     if vertical {
-        base.left(px(cross)).top(px(length - to.max(from))).w(px(cross_len)).h(px(long))
+        base.left(px(cross))
+            .top(px(length - to.max(from)))
+            .w(px(cross_len))
+            .h(px(long))
     } else {
-        base.left(px(from)).top(px(cross)).w(px(long)).h(px(cross_len))
+        base.left(px(from))
+            .top(px(cross))
+            .w(px(long))
+            .h(px(cross_len))
     }
 }
 
@@ -708,9 +731,19 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
         (s.primary, s.secondary_container, s.primary)
     };
     let (tick_active, tick_inactive, icon_active, icon_inactive) = if core.disabled {
-        (s.surface, alpha(s.on_surface, 0.38), s.surface, alpha(s.on_surface, 0.38))
+        (
+            s.surface,
+            alpha(s.on_surface, 0.38),
+            s.surface,
+            alpha(s.on_surface, 0.38),
+        )
     } else {
-        (s.on_primary, s.on_secondary_container, s.on_primary, s.on_secondary_container)
+        (
+            s.on_primary,
+            s.on_secondary_container,
+            s.on_primary,
+            s.on_secondary_container,
+        )
     };
 
     let length = f32::from(core.length);
@@ -734,7 +767,11 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
 
     let cross_len = m.handle_h;
     let track_cross = (cross_len - m.track) / 2.;
-    let (width, height) = if vertical { (cross_len, length) } else { (length, cross_len) };
+    let (width, height) = if vertical {
+        (cross_len, length)
+    } else {
+        (length, cross_len)
+    };
     let mut el = div().relative().flex_none().w(px(width)).h(px(height));
 
     let commit = core.commit.clone().filter(|_| !core.disabled);
@@ -742,10 +779,9 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
         let values = core.values;
         let step = core.step;
         let min_gap = core.min_gap;
-        let apply: ApplyThumb =
-            Rc::new(move |thumb, v, w, cx| {
-                commit(set_thumb(values, thumb, v, min, max, min_gap, two), w, cx)
-            });
+        let apply: ApplyThumb = Rc::new(move |thumb, v, w, cx| {
+            commit(set_thumb(values, thumb, v, min, max, min_gap, two), w, cx)
+        });
         let to_value = move |pointer: gpui::Point<Pixels>, bounds: Bounds<Pixels>| {
             let (pos, from, len) = if vertical {
                 (pointer.y, bounds.origin.y, bounds.size.height)
@@ -754,7 +790,12 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
             };
             let along =
                 along_from_pointer(f32::from(pos), f32::from(from), f32::from(len), vertical);
-            snap(value_at(fraction_at(along, usable, lead), min, max), min, max, step)
+            snap(
+                value_at(fraction_at(along, usable, lead), min, max),
+                min,
+                max,
+                step,
+            )
         };
         let drag_state = drag.clone();
         el = el.cursor_pointer().child(
@@ -807,7 +848,11 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
 
     let cut = core.centered.then_some(origin).filter(|_| !two);
     for seg in segments(length, &slots, cut) {
-        let color = if is_active((seg.from + seg.to) / 2.) { active } else { inactive };
+        let color = if is_active((seg.from + seg.to) / 2.) {
+            active
+        } else {
+            inactive
+        };
         let radii = seg_radii(
             end_radius(seg.start, m.track),
             end_radius(seg.end, m.track),
@@ -829,7 +874,11 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
             if covered {
                 continue;
             }
-            let color = if is_active(c) { tick_active } else { tick_inactive };
+            let color = if is_active(c) {
+                tick_active
+            } else {
+                tick_inactive
+            };
             el = el.child(
                 along_rect(
                     c - TICK_SIZE / 2.,
@@ -858,7 +907,11 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
         let color = animate_color(
             key(&id, "icon-color"),
             Spring::EFFECTS,
-            if is_active((from + to) / 2.) { icon_active } else { icon_inactive },
+            if is_active((from + to) / 2.) {
+                icon_active
+            } else {
+                icon_inactive
+            },
             window,
             cx,
         );
@@ -873,7 +926,11 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
         }
     }
 
-    for (i, thumb) in [Thumb::Low, Thumb::High].into_iter().take(centers.len()).enumerate() {
+    for (i, thumb) in [Thumb::Low, Thumb::High]
+        .into_iter()
+        .take(centers.len())
+        .enumerate()
+    {
         let thumb_id = child_id(&id, if i == 0 { "thumb-low" } else { "thumb-high" });
         let c = centers[i];
         let w = handle_w[i].max(1.);
@@ -903,7 +960,11 @@ fn render_core(core: Core, window: &mut Window, cx: &mut App) -> Div {
                         min,
                         max,
                     );
-                    commit(set_thumb(values, thumb, v, min, max, min_gap, two), window, cx);
+                    commit(
+                        set_thumb(values, thumb, v, min, max, min_gap, two),
+                        window,
+                        cx,
+                    );
                 })
                 .children(ring);
         }
@@ -959,7 +1020,10 @@ mod tests {
         let top = along_from_pointer(0., 0., 212., true);
         assert!(close(fraction_at(bottom, usable, lead), 0.));
         assert!(close(fraction_at(top, usable, lead), 1.));
-        assert!(close(fraction_at(along_from_pointer(106., 0., 212., true), usable, lead), 0.5));
+        assert!(close(
+            fraction_at(along_from_pointer(106., 0., 212., true), usable, lead),
+            0.5
+        ));
         // Outside the track it clamps.
         assert!(close(fraction_at(-30., usable, lead), 0.));
         assert!(close(fraction_at(900., usable, lead), 1.));
@@ -969,7 +1033,10 @@ mod tests {
     fn thumb_center_is_the_inverse_of_fraction_at() {
         let (usable, lead) = (200., 6.);
         for f in [0., 0.3, 1.] {
-            assert!(close(fraction_at(thumb_center(f, usable, lead), usable, lead), f));
+            assert!(close(
+                fraction_at(thumb_center(f, usable, lead), usable, lead),
+                f
+            ));
         }
     }
 
@@ -998,13 +1065,31 @@ mod tests {
     #[test]
     fn thumbs_keep_the_gap_and_never_cross() {
         let v = [20., 60.];
-        assert_eq!(set_thumb(v, Thumb::Low, 70., 0., 100., 5., true), [55., 60.]);
-        assert_eq!(set_thumb(v, Thumb::Low, -10., 0., 100., 5., true), [0., 60.]);
-        assert_eq!(set_thumb(v, Thumb::High, 10., 0., 100., 5., true), [20., 25.]);
-        assert_eq!(set_thumb(v, Thumb::High, 140., 0., 100., 5., true), [20., 100.]);
-        assert_eq!(set_thumb(v, Thumb::High, 40., 0., 100., 0., true), [20., 40.]);
+        assert_eq!(
+            set_thumb(v, Thumb::Low, 70., 0., 100., 5., true),
+            [55., 60.]
+        );
+        assert_eq!(
+            set_thumb(v, Thumb::Low, -10., 0., 100., 5., true),
+            [0., 60.]
+        );
+        assert_eq!(
+            set_thumb(v, Thumb::High, 10., 0., 100., 5., true),
+            [20., 25.]
+        );
+        assert_eq!(
+            set_thumb(v, Thumb::High, 140., 0., 100., 5., true),
+            [20., 100.]
+        );
+        assert_eq!(
+            set_thumb(v, Thumb::High, 40., 0., 100., 0., true),
+            [20., 40.]
+        );
         // A single slider only clamps to the range.
-        assert_eq!(set_thumb([30., 30.], Thumb::Low, 140., 0., 100., 5., false)[0], 100.);
+        assert_eq!(
+            set_thumb([30., 30.], Thumb::Low, 140., 0., 100., 5., false)[0],
+            100.
+        );
     }
 
     #[test]
@@ -1016,7 +1101,10 @@ mod tests {
         assert!(close(go(KeyNav::Back, true), 40.));
         assert!(close(go(KeyNav::Start, false), 0.));
         assert!(close(go(KeyNav::End, false), 100.));
-        assert!(close(key_target(99., KeyNav::Forward, 5., true, Some(1.), 0., 100.), 100.));
+        assert!(close(
+            key_target(99., KeyNav::Forward, 5., true, Some(1.), 0., 100.),
+            100.
+        ));
         assert_eq!(key_nav("left"), Some(KeyNav::Back));
         assert_eq!(key_nav("up"), Some(KeyNav::Forward));
         assert_eq!(key_nav("a"), None);
@@ -1038,13 +1126,31 @@ mod tests {
         assert_eq!(
             pieces,
             vec![
-                Seg { from: 0., to: 40., start: End::Outer, end: End::Gap },
-                Seg { from: 52., to: 100., start: End::Gap, end: End::Outer },
+                Seg {
+                    from: 0.,
+                    to: 40.,
+                    start: End::Outer,
+                    end: End::Gap
+                },
+                Seg {
+                    from: 52.,
+                    to: 100.,
+                    start: End::Gap,
+                    end: End::Outer
+                },
             ]
         );
         // A handle at the start leaves only the far piece.
         let pieces = segments(100., &[(0., 12.)], None);
-        assert_eq!(pieces, vec![Seg { from: 12., to: 100., start: End::Gap, end: End::Outer }]);
+        assert_eq!(
+            pieces,
+            vec![Seg {
+                from: 12.,
+                to: 100.,
+                start: End::Gap,
+                end: End::Outer
+            }]
+        );
         // Two handles make three pieces, whatever their order.
         assert_eq!(segments(100., &[(60., 72.), (20., 32.)], None).len(), 3);
     }
@@ -1054,7 +1160,15 @@ mod tests {
         let pieces = segments(100., &[(70., 82.)], Some(50.));
         assert_eq!(pieces.len(), 3);
         assert_eq!(pieces[0].end, End::Flat);
-        assert_eq!(pieces[1], Seg { from: 50., to: 70., start: End::Flat, end: End::Gap });
+        assert_eq!(
+            pieces[1],
+            Seg {
+                from: 50.,
+                to: 70.,
+                start: End::Flat,
+                end: End::Gap
+            }
+        );
         // A handle sitting on the origin needs no cut.
         assert_eq!(segments(100., &[(44., 56.)], Some(50.)).len(), 2);
     }
@@ -1073,8 +1187,14 @@ mod tests {
     fn metrics_keep_the_old_look_by_default() {
         let m = SliderSize::default().metrics();
         assert_eq!((m.track, m.handle_h, m.handle_w, m.gap), (16., 28., 4., 4.));
-        let tracks = [SliderSize::Xs, SliderSize::S, SliderSize::M, SliderSize::L, SliderSize::Xl]
-            .map(|s| s.metrics().track);
+        let tracks = [
+            SliderSize::Xs,
+            SliderSize::S,
+            SliderSize::M,
+            SliderSize::L,
+            SliderSize::Xl,
+        ]
+        .map(|s| s.metrics().track);
         assert_eq!(tracks, [16., 24., 40., 56., 96.]);
         assert!(SliderSize::M.metrics().icon.is_none() && SliderSize::L.metrics().icon.is_some());
     }

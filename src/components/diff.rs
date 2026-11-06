@@ -16,7 +16,7 @@ use similar::{ChangeTag, DiffTag, TextDiff};
 use super::child_id;
 use crate::cache::{Lru, content_key};
 use crate::motion::key;
-use crate::theme::{font_family, MONO_FONT_FAMILY, Scheme, Theme, alpha};
+use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family};
 
 /// Whether a diff line was added, removed or kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

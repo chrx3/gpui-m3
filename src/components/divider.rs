@@ -44,11 +44,17 @@ pub struct Divider {
 
 impl Divider {
     pub fn horizontal() -> Self {
-        Self { vertical: false, inset: DividerInset::None }
+        Self {
+            vertical: false,
+            inset: DividerInset::None,
+        }
     }
 
     pub fn vertical() -> Self {
-        Self { vertical: true, inset: DividerInset::None }
+        Self {
+            vertical: true,
+            inset: DividerInset::None,
+        }
     }
 
     pub fn inset(mut self, inset: DividerInset) -> Self {

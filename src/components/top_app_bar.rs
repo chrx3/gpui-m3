@@ -10,7 +10,7 @@ use gpui::{
 };
 
 use crate::motion::key;
-use crate::theme::{font_family, mix, type_scale, Theme};
+use crate::theme::{Theme, font_family, mix, type_scale};
 
 /// Height of a collapsed bar and of the small one.
 const COLLAPSED_HEIGHT: f32 = 64.;
@@ -58,7 +58,9 @@ pub fn collapse_range(expanded_height: f32) -> f32 {
 #[allow(clippy::manual_clamp)]
 pub fn collapse_progress(scroll_offset: f32, expanded_height: f32) -> f32 {
     // `max` and `min` (not `clamp`) so that a NaN offset gives 0.
-    (scroll_offset / collapse_range(expanded_height)).max(0.).min(1.)
+    (scroll_offset / collapse_range(expanded_height))
+        .max(0.)
+        .min(1.)
 }
 
 fn lerp(from: f32, to: f32, t: f32) -> f32 {
@@ -67,7 +69,11 @@ fn lerp(from: f32, to: f32, t: f32) -> f32 {
 
 /// Height of the bar at `progress`.
 fn bar_height(size: TopAppBarSize, has_subtitle: bool, progress: f32) -> f32 {
-    lerp(f32::from(size.expanded_height(has_subtitle)), COLLAPSED_HEIGHT, progress)
+    lerp(
+        f32::from(size.expanded_height(has_subtitle)),
+        COLLAPSED_HEIGHT,
+        progress,
+    )
 }
 
 /// Where and how large the title and subtitle are at one collapse progress. The block is
@@ -112,7 +118,11 @@ fn title_layout(
         (bottom_collapsed, left_collapsed, right_collapsed)
     };
     TitleLayout {
-        font_size: lerp(f32::from(expanded.size), f32::from(collapsed.size), progress),
+        font_size: lerp(
+            f32::from(expanded.size),
+            f32::from(collapsed.size),
+            progress,
+        ),
         line_height: lerp(f32::from(expanded.line_height), line_collapsed, progress),
         bottom: lerp(bottom_expanded, bottom_collapsed, progress),
         left: lerp(left_expanded, left_collapsed, progress),

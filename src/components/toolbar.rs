@@ -114,7 +114,11 @@ impl RenderOnce for ToolbarItem {
         let radius = px(animate_f32(
             key(&self.id, "radius"),
             Spring::SPATIAL_FAST,
-            if pressed { PRESSED_RADIUS } else { ITEM_SIZE / 2. },
+            if pressed {
+                PRESSED_RADIUS
+            } else {
+                ITEM_SIZE / 2.
+            },
             window,
             cx,
         ));
@@ -219,7 +223,11 @@ impl RenderOnce for Toolbar {
             item.vibrant = vibrant;
             item
         });
-        let bar = div().flex().flex_none().items_center().bg(container_color(&s, vibrant));
+        let bar = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .bg(container_color(&s, vibrant));
         if self.docked {
             return bar
                 .w_full()

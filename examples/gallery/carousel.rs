@@ -179,7 +179,11 @@ impl CarouselDemos {
                         "One item per page, taller; arrows or drag.",
                         full,
                     ))
-                    .child(demo("Vertical", "The same layout from top to bottom.", vertical)),
+                    .child(demo(
+                        "Vertical",
+                        "The same layout from top to bottom.",
+                        vertical,
+                    )),
             )
     }
 
@@ -232,15 +236,13 @@ impl CarouselDemos {
                 .bg(s.surface_container_low)
                 .border_1()
                 .border_color(s.outline_variant)
-                .child(
-                    column().p(px(20.)).gap(px(10.)).children((0..5).map(|n| {
-                        div()
-                            .h(px(10.))
-                            .w(px(200. - n as f32 * 24.))
-                            .rounded(px(5.))
-                            .bg(alpha(s.on_surface, 0.08))
-                    })),
-                )
+                .child(column().p(px(20.)).gap(px(10.)).children((0..5).map(|n| {
+                    div()
+                        .h(px(10.))
+                        .w(px(200. - n as f32 * 24.))
+                        .rounded(px(5.))
+                        .bg(alpha(s.on_surface, 0.08))
+                })))
                 .child(div().absolute().right(px(16.)).bottom(px(16.)).child(menu));
             frames = frames.child(column().gap(px(8.)).child(name).child(frame));
         }

@@ -12,7 +12,7 @@ use gpui::{
 use super::{ClickHandler, Icon, IconButton, Shape, paint_polyline};
 use crate::motion::{Spring, continuous_at, entrance, key};
 use crate::shapes::{ShapeName, Tone};
-use crate::theme::{font_family, Theme, alpha};
+use crate::theme::{Theme, alpha, font_family};
 
 /// Look of a [`DividerLabel`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

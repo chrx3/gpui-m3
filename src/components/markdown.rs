@@ -20,7 +20,7 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagE
 
 use super::{CodeBlock, Icon, Selection, group_for, selectable_block, selection_root};
 use crate::cache::{Lru, content_key};
-use crate::theme::{font_family, MONO_FONT_FAMILY, Scheme, Theme, alpha, text};
+use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family, text};
 
 /* ─────────── Model ─────────── */
 
@@ -982,7 +982,15 @@ impl Render<'_> {
         let layout = styled.layout().clone();
         let joint: SharedString = self.joint.take().unwrap_or_else(|| "\n\n".into()).into();
         let select = |inner: AnyElement, this: &Self| {
-            selectable_block(&this.group, layout, rich.text.clone().into(), joint, Some(this.whole.clone()), inner, alpha(s.primary, 0.3))
+            selectable_block(
+                &this.group,
+                layout,
+                rich.text.clone().into(),
+                joint,
+                Some(this.whole.clone()),
+                inner,
+                alpha(s.primary, 0.3),
+            )
         };
 
         let mut targets: Vec<(Range<usize>, Target)> = Vec::new();
@@ -1078,8 +1086,14 @@ impl Render<'_> {
                 #[cfg(feature = "mermaid")]
                 if self.diagrams
                     && language.trim().eq_ignore_ascii_case("mermaid")
-                    && let Some(diagram) =
-                        super::mermaid::diagram(self.next_id("diagram"), code, &s, self.on_diagram.clone(), window, cx)
+                    && let Some(diagram) = super::mermaid::diagram(
+                        self.next_id("diagram"),
+                        code,
+                        &s,
+                        self.on_diagram.clone(),
+                        window,
+                        cx,
+                    )
                 {
                     self.joint = None;
                     return diagram;
@@ -1327,7 +1341,8 @@ impl RenderOnce for Markdown {
         let (blocks, tail) = if self.streaming {
             let at = stream_split(&self.text);
             tail_fence_open = fence_open(&self.text[at..]);
-            let tail = (at < self.text.len()).then(|| parse_markdown(&stream_tail(&self.text[at..])));
+            let tail =
+                (at < self.text.len()).then(|| parse_markdown(&stream_tail(&self.text[at..])));
             (parse_markdown_cached(&self.text[..at]), tail)
         } else {
             (parse_markdown_cached(&self.text), None)
@@ -1358,7 +1373,11 @@ impl RenderOnce for Markdown {
                 children.push(r.block(block, first && i == 0, 0, window, cx));
             }
         }
-        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
+        let root = if own {
+            selection_root(&group.state, div(), cx)
+        } else {
+            div()
+        };
         root.flex()
             .flex_col()
             .gap(px(size * 0.75))
@@ -1411,13 +1430,22 @@ mod tests {
         assert_eq!(stream_tail("use `"), "use");
         assert_eq!(stream_tail("see [the do"), "see the do");
         assert_eq!(stream_tail("see [the doc](http://exa"), "see the doc");
-        assert_eq!(stream_tail("see [the doc](http://x.y) ok"), "see [the doc](http://x.y) ok");
+        assert_eq!(
+            stream_tail("see [the doc](http://x.y) ok"),
+            "see [the doc](http://x.y) ok"
+        );
         assert_eq!(stream_tail("text\n-"), "text\n");
         assert_eq!(stream_tail("```rs\nlet a = **;"), "```rs\nlet a = **;");
         // A stable tail parses to the same blocks as the finished text.
         let done = "Hello **world** and `code`";
-        assert_eq!(parse_markdown(&stream_tail(&done[..done.len() - 1])), parse_markdown(done));
-        assert_eq!(parse_markdown(&stream_tail("Hello **wor")), parse_markdown("Hello **wor**"));
+        assert_eq!(
+            parse_markdown(&stream_tail(&done[..done.len() - 1])),
+            parse_markdown(done)
+        );
+        assert_eq!(
+            parse_markdown(&stream_tail("Hello **wor")),
+            parse_markdown("Hello **wor**")
+        );
     }
 
     #[test]

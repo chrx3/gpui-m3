@@ -214,15 +214,29 @@ fn connected_corners(
     if selected && !pressed {
         return [full; 4];
     }
-    let outer = if pressed { pressed_radius.min(full) } else { full };
+    let outer = if pressed {
+        pressed_radius.min(full)
+    } else {
+        full
+    };
     let start = if index == 0 { outer } else { INNER_CORNER };
-    let end = if index + 1 == count { outer } else { INNER_CORNER };
+    let end = if index + 1 == count {
+        outer
+    } else {
+        INNER_CORNER
+    };
     [start, end, end, start]
 }
 
 /// Corner radius of a button of a standard group: a pill, square when selected and tighter
 /// while pressed.
-fn standard_radius(selected: bool, pressed: bool, height: f32, square: f32, pressed_radius: f32) -> f32 {
+fn standard_radius(
+    selected: bool,
+    pressed: bool,
+    height: f32,
+    square: f32,
+    pressed_radius: f32,
+) -> f32 {
     if pressed {
         pressed_radius
     } else if selected {
@@ -373,10 +387,8 @@ impl RenderOnce for ButtonGroup {
         if let Some(slots) = slots {
             row = row.on_children_prepainted(move |bounds, _, _| {
                 if at_rest {
-                    *slots.natural.borrow_mut() = bounds
-                        .iter()
-                        .map(|b| f32::from(b.size.width))
-                        .collect();
+                    *slots.natural.borrow_mut() =
+                        bounds.iter().map(|b| f32::from(b.size.width)).collect();
                 }
             });
         }
@@ -409,7 +421,8 @@ impl RenderOnce for ButtonGroup {
             let (bg, fg, border) = item_colors(&s, self.variant, selected, enabled);
             let bg = animate_color(key(&id, "bg"), Spring::EFFECTS, bg, window, cx);
             let fg = animate_color(key(&id, "fg"), Spring::EFFECTS, fg, window, cx);
-            let border = border.map(|c| animate_color(key(&id, "border"), Spring::EFFECTS, c, window, cx));
+            let border =
+                border.map(|c| animate_color(key(&id, "border"), Spring::EFFECTS, c, window, cx));
             let layer = state_layer(&id, &states[i], corners(radii), fg, window, cx);
 
             let icon_only = item.label.is_none();
@@ -562,11 +575,25 @@ mod tests {
         let colors = |variant, selected| item_colors(&s, variant, selected, true).0;
         assert_eq!(colors(ButtonVariant::Filled, Some(true)), s.primary);
         assert_eq!(colors(ButtonVariant::Filled, None), s.primary);
-        assert_eq!(colors(ButtonVariant::Filled, Some(false)), s.surface_container_high);
+        assert_eq!(
+            colors(ButtonVariant::Filled, Some(false)),
+            s.surface_container_high
+        );
         assert_eq!(colors(ButtonVariant::Tonal, Some(true)), s.secondary);
-        assert_eq!(colors(ButtonVariant::Tonal, Some(false)), s.secondary_container);
-        assert!(item_colors(&s, ButtonVariant::Outlined, Some(false), true).2.is_some());
-        assert!(item_colors(&s, ButtonVariant::Filled, Some(false), true).2.is_none());
+        assert_eq!(
+            colors(ButtonVariant::Tonal, Some(false)),
+            s.secondary_container
+        );
+        assert!(
+            item_colors(&s, ButtonVariant::Outlined, Some(false), true)
+                .2
+                .is_some()
+        );
+        assert!(
+            item_colors(&s, ButtonVariant::Filled, Some(false), true)
+                .2
+                .is_none()
+        );
         // Disabled buttons ignore the selection.
         assert_eq!(
             item_colors(&s, ButtonVariant::Filled, Some(true), false).1,

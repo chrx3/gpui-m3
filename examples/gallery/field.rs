@@ -4,8 +4,8 @@
 //! `M3_FOCUS=filled|outlined` focuses that "Focused" field on start (both for screenshots).
 
 use gpui::{
-    AnyElement, AppContext as _, Context, Entity, Hsla, IntoElement, ParentElement, Render, SharedString, Styled,
-    Window, div, px,
+    AnyElement, AppContext as _, Context, Entity, Hsla, IntoElement, ParentElement, Render,
+    SharedString, Styled, Window, div, px,
 };
 use gpui_m3::{Button, Icon, TextArea, TextField, TextFieldEvent, TextFieldStyle, Theme};
 
@@ -217,7 +217,11 @@ impl Render for FieldDemos {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
         if let Some(which) = self.focus_pending.take() {
-            let cells = if which == "outlined" { &self.outlined } else { &self.filled };
+            let cells = if which == "outlined" {
+                &self.outlined
+            } else {
+                &self.filled
+            };
             cells[1].1.read(cx).focus(window);
         }
         let show = |part: usize| self.part.is_none_or(|p| p == part);

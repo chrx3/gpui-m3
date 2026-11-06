@@ -154,7 +154,9 @@ impl ButtonGroupDemos {
                     .tonal()
                     .on_click(on_click),
             )
-            .child(ButtonGroup::new("std-outlined", labels(&["Save", "Share", "Archive"])).outlined())
+            .child(
+                ButtonGroup::new("std-outlined", labels(&["Save", "Share", "Archive"])).outlined(),
+            )
             .child(ButtonGroup::new("std-text", labels(&["Save", "Share", "Archive"])).text());
         let content = column()
             .child(
@@ -169,17 +171,22 @@ impl ButtonGroupDemos {
                 "Press and hold a button: it widens and its neighbours give way.",
                 variants,
             ))
-            .child(demo("Icons and labels", "Icon with label, and icons only.", content))
+            .child(demo(
+                "Icons and labels",
+                "Icon with label, and icons only.",
+                content,
+            ))
     }
 
     fn connected(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut variants = column();
         let kinds = ["Filled", "Tonal", "Outlined", "Text"];
         for (k, kind) in kinds.into_iter().enumerate() {
-            let group = ButtonGroup::new(("con-single", k), labels(&["Day", "Week", "Month", "Year"]))
-                .connected()
-                .selected(self.single[k])
-                .on_change(self.set_single(cx, k));
+            let group =
+                ButtonGroup::new(("con-single", k), labels(&["Day", "Week", "Month", "Year"]))
+                    .connected()
+                    .selected(self.single[k])
+                    .on_change(self.set_single(cx, k));
             let group = match k {
                 0 => group.filled(),
                 1 => group.tonal(),
@@ -195,11 +202,14 @@ impl ButtonGroupDemos {
         }
         let multi = column()
             .child(
-                ButtonGroup::new("con-multi-tonal", labels(&["Bold", "Italic", "Underline", "Strike"]))
-                    .connected()
-                    .tonal()
-                    .selected_many(self.multi[0])
-                    .on_change_many(self.set_multi(cx, 0)),
+                ButtonGroup::new(
+                    "con-multi-tonal",
+                    labels(&["Bold", "Italic", "Underline", "Strike"]),
+                )
+                .connected()
+                .tonal()
+                .selected_many(self.multi[0])
+                .on_change_many(self.set_multi(cx, 0)),
             )
             .child(
                 ButtonGroup::new("con-multi-filled", icons())
@@ -249,7 +259,11 @@ impl ButtonGroupDemos {
                 "Each button toggles on its own.",
                 multi,
             ))
-            .child(demo("Icons, labels and disabled", "Icon with label, icons only and a disabled button.", icons))
+            .child(demo(
+                "Icons, labels and disabled",
+                "Icon with label, icons only and a disabled button.",
+                icons,
+            ))
     }
 
     fn sizes(&self) -> impl IntoElement {
@@ -270,8 +284,18 @@ impl ButtonGroupDemos {
         let mut connected = column();
         for (i, (name, size)) in SIZES.into_iter().enumerate() {
             let label = || div().w(px(28.)).child(name);
-            standard = standard.child(row().gap(px(16.)).child(label()).child(group("std-size", i, size, false)));
-            connected = connected.child(row().gap(px(16.)).child(label()).child(group("con-size", i, size, true)));
+            standard = standard.child(
+                row()
+                    .gap(px(16.))
+                    .child(label())
+                    .child(group("std-size", i, size, false)),
+            );
+            connected = connected.child(
+                row()
+                    .gap(px(16.))
+                    .child(label())
+                    .child(group("con-size", i, size, true)),
+            );
         }
         page()
             .child(demo(
@@ -279,7 +303,11 @@ impl ButtonGroupDemos {
                 "Extra small to extra large; the gap grows from 8 to 12 px.",
                 standard,
             ))
-            .child(demo("Connected group sizes", "The gap stays 2 px.", connected))
+            .child(demo(
+                "Connected group sizes",
+                "The gap stays 2 px.",
+                connected,
+            ))
     }
 
     fn toolbars(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -335,8 +363,18 @@ impl ButtonGroupDemos {
         };
         let docked = column()
             .max_w(px(480.))
-            .child(div().rounded(px(16.)).overflow_hidden().child(docked("dk-std", false)))
-            .child(div().rounded(px(16.)).overflow_hidden().child(docked("dk-vib", true)))
+            .child(
+                div()
+                    .rounded(px(16.))
+                    .overflow_hidden()
+                    .child(docked("dk-std", false)),
+            )
+            .child(
+                div()
+                    .rounded(px(16.))
+                    .overflow_hidden()
+                    .child(docked("dk-vib", true)),
+            )
             .child(
                 div().rounded(px(16.)).overflow_hidden().child(
                     Toolbar::docked()
@@ -352,7 +390,11 @@ impl ButtonGroupDemos {
                 horizontal,
             ))
             .child(demo("Vertical", "The same toolbars stacked.", vertical))
-            .child(demo("Docked toolbar", "Full width, 64 px; icons toggle, the FAB sits at the end.", docked))
+            .child(demo(
+                "Docked toolbar",
+                "Full width, 64 px; icons toggle, the FAB sits at the end.",
+                docked,
+            ))
     }
 }
 
@@ -383,13 +425,16 @@ impl Render for ButtonGroupDemos {
             2 => self.sizes().into_any_element(),
             _ => self.toolbars(cx).into_any_element(),
         };
-        page().child(pages).child(content).when(self.page == 0, |d| {
-            d.child(
-                div()
-                    .text_size(px(12.5))
-                    .text_color(s.on_surface_variant)
-                    .child(clicked),
-            )
-        })
+        page()
+            .child(pages)
+            .child(content)
+            .when(self.page == 0, |d| {
+                d.child(
+                    div()
+                        .text_size(px(12.5))
+                        .text_color(s.on_surface_variant)
+                        .child(clicked),
+                )
+            })
     }
 }

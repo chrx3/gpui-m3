@@ -13,7 +13,7 @@ use super::{ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, continuous_at, entrance, key};
 use crate::shapes::Tone;
-use crate::theme::{font_family, MONO_FONT_FAMILY, Theme, alpha};
+use crate::theme::{MONO_FONT_FAMILY, Theme, alpha, font_family};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ChipKind {

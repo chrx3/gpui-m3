@@ -8,10 +8,10 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, Div, ElementId, Entity, FocusHandle, HitboxBehavior, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    PathBuilder, Pixels, RenderOnce, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    Window, canvas, div, point, px,
+    AnyElement, App, ClickEvent, Div, ElementId, Entity, FocusHandle, HitboxBehavior,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, PathBuilder, Pixels, RenderOnce, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window, canvas, div, point, px,
 };
 
 use super::overlays::{ground, over};
@@ -49,14 +49,28 @@ impl Time {
 
     /// The hour on a 12 h clock (1 to 12) and whether it is before or after noon.
     pub fn to_12h(self) -> (u8, Meridiem) {
-        let meridiem = if self.hour < 12 { Meridiem::Am } else { Meridiem::Pm };
-        (if matches!(self.hour % 12, 0) { 12 } else { self.hour % 12 }, meridiem)
+        let meridiem = if self.hour < 12 {
+            Meridiem::Am
+        } else {
+            Meridiem::Pm
+        };
+        (
+            if matches!(self.hour % 12, 0) {
+                12
+            } else {
+                self.hour % 12
+            },
+            meridiem,
+        )
     }
 
     /// The time of a 12 h clock reading; an hour outside 1 to 12 is taken modulo 12.
     pub fn from_12h(hour: u8, meridiem: Meridiem, minute: u8) -> Self {
         let pm = if meridiem == Meridiem::Pm { 12 } else { 0 };
-        Self { hour: hour % 12 + pm, minute: minute.min(59) }
+        Self {
+            hour: hour % 12 + pm,
+            minute: minute.min(59),
+        }
     }
 }
 
@@ -116,10 +130,16 @@ fn hour_angle(hour: u8, twenty_four: bool) -> (f32, bool) {
 /// day, a minute around the hour (without carrying into the hour).
 fn nudge(time: Time, part: Part, delta: i32, minute_step: u8) -> Time {
     match part {
-        Part::Hour => Time { hour: (i32::from(time.hour) + delta).rem_euclid(24) as u8, ..time },
+        Part::Hour => Time {
+            hour: (i32::from(time.hour) + delta).rem_euclid(24) as u8,
+            ..time
+        },
         Part::Minute => {
             let step = i32::from(minute_step.max(1));
-            Time { minute: (i32::from(time.minute) + delta * step).rem_euclid(60) as u8, ..time }
+            Time {
+                minute: (i32::from(time.minute) + delta * step).rem_euclid(60) as u8,
+                ..time
+            }
         }
     }
 }
@@ -158,8 +178,14 @@ fn field_value(time: Time, part: Part, twenty_four: bool) -> u8 {
 fn with_field(time: Time, part: Part, value: u8, twenty_four: bool) -> Time {
     match (part, twenty_four) {
         (Part::Hour, false) => Time::from_12h(value, time.to_12h().1, time.minute),
-        (Part::Hour, true) => Time { hour: value.min(23), ..time },
-        (Part::Minute, _) => Time { minute: value.min(59), ..time },
+        (Part::Hour, true) => Time {
+            hour: value.min(23),
+            ..time
+        },
+        (Part::Minute, _) => Time {
+            minute: value.min(59),
+            ..time
+        },
     }
 }
 
@@ -406,7 +432,10 @@ fn token(
         .when(typing, |d| d.border_2().border_color(s.primary))
         .child(layer)
         .child(text);
-    (focusable(interactive(el, &interaction, true, true), &focus, &handle), handle)
+    (
+        focusable(interactive(el, &interaction, true, true), &focus, &handle),
+        handle,
+    )
 }
 
 impl RenderOnce for TimePicker {
@@ -483,7 +512,9 @@ impl RenderOnce for TimePicker {
                     let number = match key {
                         "up" => nudge_field(time, part_of, 1, twenty_four),
                         "down" => nudge_field(time, part_of, -1, twenty_four),
-                        "backspace" => with_field(time, part_of, erase_digit(current, min), twenty_four),
+                        "backspace" => {
+                            with_field(time, part_of, erase_digit(current, min), twenty_four)
+                        }
                         digit if digit.len() == 1 && digit.as_bytes()[0].is_ascii_digit() => {
                             let typed = type_digit(current, digit.as_bytes()[0] - b'0', min, max);
                             with_field(time, part_of, typed, twenty_four)
@@ -522,9 +553,19 @@ impl RenderOnce for TimePicker {
         let minute_token = attach(minute_token, Part::Minute, minute_field);
 
         let with_label = |token: Stateful<Div>, label: SharedString| {
-            div().flex().flex_col().gap(px(4.)).child(token).when(input, |d| {
-                d.child(div().type_style(BODY_SMALL).text_color(s.on_surface_variant).child(label))
-            })
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .child(token)
+                .when(input, |d| {
+                    d.child(
+                        div()
+                            .type_style(BODY_SMALL)
+                            .text_color(s.on_surface_variant)
+                            .child(label),
+                    )
+                })
         };
         let token_height = px(if input { 72. } else { 80. });
         let colon = div()
@@ -540,34 +581,39 @@ impl RenderOnce for TimePicker {
             .child(":");
 
         let meridiem_toggle = (!twenty_four).then(|| {
-            let segment = |which: Meridiem, label: SharedString, window: &mut Window, cx: &mut App| {
-                let segment_id = key(&id, if which == Meridiem::Am { "am" } else { "pm" });
-                let interaction = use_interaction(&segment_id, window, cx);
-                let (bg, fg) = if meridiem == which {
-                    (s.tertiary_container, s.on_tertiary_container)
-                } else {
-                    (alpha(s.tertiary_container, 0.), s.on_surface_variant)
+            let segment =
+                |which: Meridiem, label: SharedString, window: &mut Window, cx: &mut App| {
+                    let segment_id = key(&id, if which == Meridiem::Am { "am" } else { "pm" });
+                    let interaction = use_interaction(&segment_id, window, cx);
+                    let (bg, fg) = if meridiem == which {
+                        (s.tertiary_container, s.on_tertiary_container)
+                    } else {
+                        (alpha(s.tertiary_container, 0.), s.on_surface_variant)
+                    };
+                    let bg = animate_color(key(&segment_id, "bg"), Spring::EFFECTS, bg, window, cx);
+                    let layer = state_layer(&segment_id, &interaction, all(px(0.)), fg, window, cx);
+                    let (state, emit) = (state.clone(), emit.clone());
+                    let el = div()
+                        .id(segment_id)
+                        .relative()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .flex_1()
+                        .bg(bg)
+                        .text_color(fg)
+                        .type_emphasized(LABEL_LARGE)
+                        .child(layer)
+                        .child(label);
+                    interactive(el, &interaction, true, false).on_click(move |_, window, cx| {
+                        let time = state.read(cx).time;
+                        emit(
+                            Time::from_12h(time.to_12h().0, which, time.minute),
+                            window,
+                            cx,
+                        );
+                    })
                 };
-                let bg = animate_color(key(&segment_id, "bg"), Spring::EFFECTS, bg, window, cx);
-                let layer = state_layer(&segment_id, &interaction, all(px(0.)), fg, window, cx);
-                let (state, emit) = (state.clone(), emit.clone());
-                let el = div()
-                    .id(segment_id)
-                    .relative()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .flex_1()
-                    .bg(bg)
-                    .text_color(fg)
-                    .type_emphasized(LABEL_LARGE)
-                    .child(layer)
-                    .child(label);
-                interactive(el, &interaction, true, false).on_click(move |_, window, cx| {
-                    let time = state.read(cx).time;
-                    emit(Time::from_12h(time.to_12h().0, which, time.minute), window, cx);
-                })
-            };
             div()
                 .flex()
                 .flex_col()
@@ -595,39 +641,45 @@ impl RenderOnce for TimePicker {
 
         // ----- surface
         let title = self.title.clone().unwrap_or_else(|| {
-            if input { self.names.enter_time.clone() } else { self.names.select_time.clone() }
+            if input {
+                self.names.enter_time.clone()
+            } else {
+                self.names.select_time.clone()
+            }
         });
         let on_key = {
             let (state, emit) = (state.clone(), emit.clone());
             let (confirm, cancel) = (confirm.clone(), cancel.clone());
-            move |event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App| {
-                match event.keystroke.key.as_str() {
-                    "escape" => {
-                        if let Some(cancel) = &cancel {
-                            cx.stop_propagation();
-                            cancel(&ClickEvent::default(), window, cx);
-                        }
-                    }
-                    "enter" => {
-                        if let Some(confirm) = &confirm {
-                            cx.stop_propagation();
-                            confirm(&ClickEvent::default(), window, cx);
-                        }
-                    }
-                    key @ ("up" | "down" | "left" | "right") => {
-                        let (time, part, input) = {
-                            let st = state.read(cx);
-                            (st.time, st.part, st.input)
-                        };
-                        if input {
-                            return;
-                        }
+            move |event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App| match event
+                .keystroke
+                .key
+                .as_str()
+            {
+                "escape" => {
+                    if let Some(cancel) = &cancel {
                         cx.stop_propagation();
-                        let delta = if matches!(key, "up" | "right") { 1 } else { -1 };
-                        emit(nudge(time, part, delta, minute_step), window, cx);
+                        cancel(&ClickEvent::default(), window, cx);
                     }
-                    _ => {}
                 }
+                "enter" => {
+                    if let Some(confirm) = &confirm {
+                        cx.stop_propagation();
+                        confirm(&ClickEvent::default(), window, cx);
+                    }
+                }
+                key @ ("up" | "down" | "left" | "right") => {
+                    let (time, part, input) = {
+                        let st = state.read(cx);
+                        (st.time, st.part, st.input)
+                    };
+                    if input {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    let delta = if matches!(key, "up" | "right") { 1 } else { -1 };
+                    emit(nudge(time, part, delta, minute_step), window, cx);
+                }
+                _ => {}
             }
         };
         let mut surface = div()
@@ -662,8 +714,14 @@ impl RenderOnce for TimePicker {
             let state = state.clone();
             let toggle_id = key(&id, "toggle");
             let interaction = use_interaction(&toggle_id, window, cx);
-            let layer =
-                state_layer(&toggle_id, &interaction, all(px(20.)), s.on_surface_variant, window, cx);
+            let layer = state_layer(
+                &toggle_id,
+                &interaction,
+                all(px(20.)),
+                s.on_surface_variant,
+                window,
+                cx,
+            );
             let el = div()
                 .id(toggle_id)
                 .relative()
@@ -697,7 +755,8 @@ impl RenderOnce for TimePicker {
             .mt(px(if input { 24. } else { 16. }))
             .child(div().children(toggle));
         if self.modal {
-            let cancel_button = Button::new(child_id(&id, "cancel"), self.names.cancel.clone()).text();
+            let cancel_button =
+                Button::new(child_id(&id, "cancel"), self.names.cancel.clone()).text();
             let ok_button = Button::new(child_id(&id, "ok"), self.names.ok.clone()).text();
             actions = actions.child(
                 div()
@@ -783,7 +842,11 @@ impl TimePicker {
         };
         let [angle, radius] = animate(
             key(id, "hand"),
-            if dragging { Spring::EFFECTS_FAST } else { Spring::EFFECTS },
+            if dragging {
+                Spring::EFFECTS_FAST
+            } else {
+                Spring::EFFECTS
+            },
             [target_angle, if inner { INNER_RING } else { OUTER_RING }],
             window,
             cx,
@@ -804,11 +867,25 @@ impl TimePicker {
                 Part::Hour if slot == 0 => "12".to_string(),
                 Part::Hour => slot.to_string(),
             };
-            numbers.push(DialNumber { label, x, y, size: 16. });
+            numbers.push(DialNumber {
+                label,
+                x,
+                y,
+                size: 16.,
+            });
             if part == Part::Hour && twenty_four {
                 let (x, y) = at(slot_angle, INNER_RING);
-                let label = if slot == 0 { "00".to_string() } else { (12 + slot).to_string() };
-                numbers.push(DialNumber { label, x, y, size: 14. });
+                let label = if slot == 0 {
+                    "00".to_string()
+                } else {
+                    (12 + slot).to_string()
+                };
+                numbers.push(DialNumber {
+                    label,
+                    x,
+                    y,
+                    size: 14.,
+                });
             }
         }
 
@@ -831,7 +908,8 @@ impl TimePicker {
                     let (to_x, to_y) = (from_x + selector_x - half, from_y + selector_y - half);
                     let length = (to_x - from_x).hypot(to_y - from_y).max(0.001);
                     // Half the 2 px width of the hand, across it.
-                    let (across_x, across_y) = (-(to_y - from_y) / length, (to_x - from_x) / length);
+                    let (across_x, across_y) =
+                        (-(to_y - from_y) / length, (to_x - from_x) / length);
                     let mut hand = PathBuilder::fill();
                     hand.add_polygon(
                         &[
@@ -848,26 +926,33 @@ impl TimePicker {
 
                     let pick = {
                         let (state, emit) = (pointer_state.clone(), pointer_emit);
-                        Rc::new(move |position: gpui::Point<Pixels>, window: &mut Window, cx: &mut App| {
-                            let dx = f32::from(position.x - center.x);
-                            let dy = f32::from(position.y - center.y);
-                            let (time, part) = {
-                                let st = state.read(cx);
-                                (st.time, st.part)
-                            };
-                            let next = match part {
-                                Part::Hour => with_field(
-                                    time,
-                                    Part::Hour,
-                                    hour_at(dx, dy, twenty_four),
-                                    twenty_four,
-                                ),
-                                Part::Minute => Time { minute: minute_at(dx, dy, minute_step), ..time },
-                            };
-                            if next != time {
-                                emit(next, window, cx);
-                            }
-                        })
+                        Rc::new(
+                            move |position: gpui::Point<Pixels>,
+                                  window: &mut Window,
+                                  cx: &mut App| {
+                                let dx = f32::from(position.x - center.x);
+                                let dy = f32::from(position.y - center.y);
+                                let (time, part) = {
+                                    let st = state.read(cx);
+                                    (st.time, st.part)
+                                };
+                                let next = match part {
+                                    Part::Hour => with_field(
+                                        time,
+                                        Part::Hour,
+                                        hour_at(dx, dy, twenty_four),
+                                        twenty_four,
+                                    ),
+                                    Part::Minute => Time {
+                                        minute: minute_at(dx, dy, minute_step),
+                                        ..time
+                                    },
+                                };
+                                if next != time {
+                                    emit(next, window, cx);
+                                }
+                            },
+                        )
                     };
                     let reach = f32::from(bounds.size.width) / 2.;
                     window.on_mouse_event({
@@ -892,7 +977,10 @@ impl TimePicker {
                     window.on_mouse_event({
                         let state = pointer_state.clone();
                         move |e: &MouseMoveEvent, phase, window, cx| {
-                            if phase.bubble() && e.pressed_button.is_some() && state.read(cx).dragging {
+                            if phase.bubble()
+                                && e.pressed_button.is_some()
+                                && state.read(cx).dragging
+                            {
                                 pick(e.position, window, cx);
                             }
                         }
@@ -942,7 +1030,9 @@ impl TimePicker {
                     .size(px(SELECTOR))
                     .rounded(px(SELECTOR / 2.))
                     .bg(s.primary)
-                    .when(minute_dot, |d| d.child(div().size(px(8.)).rounded(px(4.)).bg(s.on_primary))),
+                    .when(minute_dot, |d| {
+                        d.child(div().size(px(8.)).rounded(px(4.)).bg(s.on_primary))
+                    }),
             );
         for number in numbers {
             let under_selector =
@@ -958,7 +1048,11 @@ impl TimePicker {
                     .size(px(40.))
                     .type_style(BODY_LARGE)
                     .text_size(px(number.size))
-                    .text_color(if under_selector { s.on_primary } else { s.on_surface })
+                    .text_color(if under_selector {
+                        s.on_primary
+                    } else {
+                        s.on_surface
+                    })
                     .child(number.label),
             );
         }
@@ -1050,7 +1144,14 @@ mod tests {
 
     #[test]
     fn minutes_follow_the_angle() {
-        for (degrees, minute) in [(0., 0), (90., 15), (180., 30), (270., 45), (6., 1), (354., 59)] {
+        for (degrees, minute) in [
+            (0., 0),
+            (90., 15),
+            (180., 30),
+            (270., 45),
+            (6., 1),
+            (354., 59),
+        ] {
             let (dx, dy) = at(degrees, OUTER_RING);
             assert_eq!(minute_at(dx, dy, 1), minute, "{degrees} degrees");
         }
@@ -1079,11 +1180,19 @@ mod tests {
     fn the_selector_rests_where_the_pointer_found_the_hour() {
         for twenty_four in [false, true] {
             for hour in 0..24u8 {
-                let shown = if twenty_four { hour } else { Time::new(hour, 0).unwrap().to_12h().0 };
+                let shown = if twenty_four {
+                    hour
+                } else {
+                    Time::new(hour, 0).unwrap().to_12h().0
+                };
                 let (angle, inner) = hour_angle(shown, twenty_four);
                 let radius = if inner { INNER_RING } else { OUTER_RING };
                 let (dx, dy) = at(angle, radius);
-                assert_eq!(hour_at(dx, dy, twenty_four), shown, "hour {hour}, 24h {twenty_four}");
+                assert_eq!(
+                    hour_at(dx, dy, twenty_four),
+                    shown,
+                    "hour {hour}, 24h {twenty_four}"
+                );
             }
         }
     }
@@ -1094,9 +1203,24 @@ mod tests {
         assert_eq!(Time::new(12, 0).unwrap().to_12h(), (12, Meridiem::Pm));
         assert_eq!(Time::new(13, 30).unwrap().to_12h(), (1, Meridiem::Pm));
         assert_eq!(Time::new(23, 59).unwrap().to_12h(), (11, Meridiem::Pm));
-        assert_eq!(Time::from_12h(12, Meridiem::Am, 5), Time { hour: 0, minute: 5 });
-        assert_eq!(Time::from_12h(12, Meridiem::Pm, 0), Time { hour: 12, minute: 0 });
-        assert_eq!(Time::from_12h(1, Meridiem::Pm, 30), Time { hour: 13, minute: 30 });
+        assert_eq!(
+            Time::from_12h(12, Meridiem::Am, 5),
+            Time { hour: 0, minute: 5 }
+        );
+        assert_eq!(
+            Time::from_12h(12, Meridiem::Pm, 0),
+            Time {
+                hour: 12,
+                minute: 0
+            }
+        );
+        assert_eq!(
+            Time::from_12h(1, Meridiem::Pm, 30),
+            Time {
+                hour: 13,
+                minute: 30
+            }
+        );
         for hour in 0..24 {
             let time = Time::new(hour, 7).unwrap();
             let (h, m) = time.to_12h();
@@ -1110,18 +1234,107 @@ mod tests {
 
     #[test]
     fn arrows_wrap_inside_the_part() {
-        let time = Time { hour: 23, minute: 59 };
-        assert_eq!(nudge(time, Part::Hour, 1, 1), Time { hour: 0, minute: 59 });
-        assert_eq!(nudge(time, Part::Minute, 1, 1), Time { hour: 23, minute: 0 });
-        assert_eq!(nudge(Time { hour: 0, minute: 0 }, Part::Hour, -1, 1), Time { hour: 23, minute: 0 });
-        assert_eq!(nudge(Time { hour: 9, minute: 58 }, Part::Minute, 1, 5), Time { hour: 9, minute: 3 });
+        let time = Time {
+            hour: 23,
+            minute: 59,
+        };
+        assert_eq!(
+            nudge(time, Part::Hour, 1, 1),
+            Time {
+                hour: 0,
+                minute: 59
+            }
+        );
+        assert_eq!(
+            nudge(time, Part::Minute, 1, 1),
+            Time {
+                hour: 23,
+                minute: 0
+            }
+        );
+        assert_eq!(
+            nudge(Time { hour: 0, minute: 0 }, Part::Hour, -1, 1),
+            Time {
+                hour: 23,
+                minute: 0
+            }
+        );
+        assert_eq!(
+            nudge(
+                Time {
+                    hour: 9,
+                    minute: 58
+                },
+                Part::Minute,
+                1,
+                5
+            ),
+            Time { hour: 9, minute: 3 }
+        );
         // The 12 h hour field goes round 1 to 12 and keeps its side of noon.
-        let afternoon = Time { hour: 12, minute: 10 };
-        assert_eq!(nudge_field(afternoon, Part::Hour, 1, false), Time { hour: 13, minute: 10 });
-        assert_eq!(nudge_field(Time { hour: 23, minute: 10 }, Part::Hour, 1, false), Time { hour: 12, minute: 10 });
-        assert_eq!(nudge_field(Time { hour: 0, minute: 10 }, Part::Hour, -1, false), Time { hour: 11, minute: 10 });
-        assert_eq!(nudge_field(Time { hour: 23, minute: 10 }, Part::Hour, 1, true), Time { hour: 0, minute: 10 });
-        assert_eq!(nudge_field(Time { hour: 5, minute: 0 }, Part::Minute, -1, true), Time { hour: 5, minute: 59 });
+        let afternoon = Time {
+            hour: 12,
+            minute: 10,
+        };
+        assert_eq!(
+            nudge_field(afternoon, Part::Hour, 1, false),
+            Time {
+                hour: 13,
+                minute: 10
+            }
+        );
+        assert_eq!(
+            nudge_field(
+                Time {
+                    hour: 23,
+                    minute: 10
+                },
+                Part::Hour,
+                1,
+                false
+            ),
+            Time {
+                hour: 12,
+                minute: 10
+            }
+        );
+        assert_eq!(
+            nudge_field(
+                Time {
+                    hour: 0,
+                    minute: 10
+                },
+                Part::Hour,
+                -1,
+                false
+            ),
+            Time {
+                hour: 11,
+                minute: 10
+            }
+        );
+        assert_eq!(
+            nudge_field(
+                Time {
+                    hour: 23,
+                    minute: 10
+                },
+                Part::Hour,
+                1,
+                true
+            ),
+            Time {
+                hour: 0,
+                minute: 10
+            }
+        );
+        assert_eq!(
+            nudge_field(Time { hour: 5, minute: 0 }, Part::Minute, -1, true),
+            Time {
+                hour: 5,
+                minute: 59
+            }
+        );
     }
 
     #[test]
@@ -1148,14 +1361,41 @@ mod tests {
 
     #[test]
     fn fields_read_and_write_their_part() {
-        let time = Time { hour: 15, minute: 42 };
+        let time = Time {
+            hour: 15,
+            minute: 42,
+        };
         assert_eq!(field_value(time, Part::Hour, true), 15);
         assert_eq!(field_value(time, Part::Hour, false), 3);
         assert_eq!(field_value(time, Part::Minute, false), 42);
-        assert_eq!(with_field(time, Part::Hour, 4, false), Time { hour: 16, minute: 42 });
-        assert_eq!(with_field(time, Part::Hour, 12, false), Time { hour: 12, minute: 42 });
-        assert_eq!(with_field(time, Part::Hour, 7, true), Time { hour: 7, minute: 42 });
-        assert_eq!(with_field(time, Part::Minute, 5, true), Time { hour: 15, minute: 5 });
+        assert_eq!(
+            with_field(time, Part::Hour, 4, false),
+            Time {
+                hour: 16,
+                minute: 42
+            }
+        );
+        assert_eq!(
+            with_field(time, Part::Hour, 12, false),
+            Time {
+                hour: 12,
+                minute: 42
+            }
+        );
+        assert_eq!(
+            with_field(time, Part::Hour, 7, true),
+            Time {
+                hour: 7,
+                minute: 42
+            }
+        );
+        assert_eq!(
+            with_field(time, Part::Minute, 5, true),
+            Time {
+                hour: 15,
+                minute: 5
+            }
+        );
         assert_eq!(field_range(Part::Hour, false), (1, 12));
         assert_eq!(field_range(Part::Hour, true), (0, 23));
     }

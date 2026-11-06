@@ -218,10 +218,9 @@ impl RenderOnce for FabMenu {
             // Escape reaches the menu through the focus.
             window.focus(&handle);
         }
-        let since = timing
-            .read(cx)
-            .changed
-            .map_or(f32::MAX, |t| now.duration_since(t).as_secs_f32() / motion.time_scale.max(0.01));
+        let since = timing.read(cx).changed.map_or(f32::MAX, |t| {
+            now.duration_since(t).as_secs_f32() / motion.time_scale.max(0.01)
+        });
 
         let turn = animate_f32(
             key(&self.id, "turn"),
@@ -278,7 +277,12 @@ impl RenderOnce for FabMenu {
             );
             let draw = shown || progress > 0.004;
             any_drawn |= draw;
-            let slot = div().flex_none().h(px(SIZE)).flex().flex_col().justify_center();
+            let slot = div()
+                .flex_none()
+                .h(px(SIZE))
+                .flex()
+                .flex_col()
+                .justify_center();
             if !draw {
                 slots.push(slot);
                 continue;
@@ -346,9 +350,12 @@ impl RenderOnce for FabMenu {
                 .children(slots)
                 .child({
                     let column_bounds = column_bounds.clone();
-                    canvas(move |bounds, _, _| column_bounds.set(bounds), |_, _, _, _| {})
-                        .absolute()
-                        .size_full()
+                    canvas(
+                        move |bounds, _, _| column_bounds.set(bounds),
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full()
                 });
             deferred(column).with_priority(1)
         });
@@ -446,7 +453,10 @@ mod tests {
             }
         }
         let s = Scheme::baseline_light();
-        assert_eq!(palette(&s, FabMenuColor::Secondary).container, s.secondary_container);
+        assert_eq!(
+            palette(&s, FabMenuColor::Secondary).container,
+            s.secondary_container
+        );
         assert_eq!(palette(&s, FabMenuColor::Tertiary).solid, s.tertiary);
     }
 }

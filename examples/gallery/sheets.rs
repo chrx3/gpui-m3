@@ -5,8 +5,8 @@
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Hsla, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
-    prelude::FluentBuilder as _,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::FluentBuilder as _, px,
 };
 use gpui_m3::{
     BottomSheet, Button, Divider, DividerInset, Icon, ListItem, RichTooltip, Scheme, SheetSide,
@@ -77,7 +77,12 @@ fn rows(prefix: &'static str, color: Hsla) -> AnyElement {
 }
 
 fn stage() -> gpui::Div {
-    div().flex().overflow_hidden().rounded(px(12.)).w(px(480.)).h(px(360.))
+    div()
+        .flex()
+        .overflow_hidden()
+        .rounded(px(12.))
+        .w(px(480.))
+        .h(px(360.))
 }
 
 fn page_content(s: &Scheme) -> gpui::Div {
@@ -94,7 +99,9 @@ impl Render for SheetDemos {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
         let frame = |d: gpui::Div| {
-            d.bg(s.surface_container_lowest).border_1().border_color(s.outline_variant)
+            d.bg(s.surface_container_lowest)
+                .border_1()
+                .border_color(s.outline_variant)
         };
 
         // Dividers: one list per inset, and vertical ones between texts.
@@ -121,7 +128,13 @@ impl Render for SheetDemos {
                 );
             for item in ["Inbox", "Drafts", "Sent"] {
                 card = card
-                    .child(div().px(px(16.)).py(px(10.)).text_size(px(13.5)).child(item))
+                    .child(
+                        div()
+                            .px(px(16.))
+                            .py(px(10.))
+                            .text_size(px(13.5))
+                            .child(item),
+                    )
                     .child(Divider::horizontal().inset(inset));
             }
             dividers = dividers.child(card);
@@ -136,9 +149,10 @@ impl Render for SheetDemos {
             .child("Month");
 
         // Modal sheets: drawn while they are open and while they leave.
-        let progress = |name: &'static str, open: bool, window: &mut Window, cx: &mut Context<Self>| {
-            presence(key(&ElementId::Name(name.into()), "p"), open, window, cx)
-        };
+        let progress =
+            |name: &'static str, open: bool, window: &mut Window, cx: &mut Context<Self>| {
+                presence(key(&ElementId::Name(name.into()), "p"), open, window, cx)
+            };
         let bottom = progress("sheet-bottom", self.bottom, window, cx);
         let right = progress("sheet-right", self.side_right, window, cx);
         let left = progress("sheet-left", self.side_left, window, cx);
@@ -146,23 +160,27 @@ impl Render for SheetDemos {
         // Standard sheets, inline.
         let standard_bottom = frame(stage().flex_col().justify_end().items_center())
             .child(page_content(&s))
-            .child(BottomSheet::standard("std-bottom").padding(px(8.)).child(rows("std-bottom-row", s.on_surface_variant)));
-        let standard_side = frame(stage())
-            .child(page_content(&s))
             .child(
-                SideSheet::standard("std-side")
-                    .width(px(240.))
-                    .title("Details")
-                    .on_close(|_, _, _| {})
-                    .child(
-                        div()
-                            .text_size(px(13.5))
-                            .text_color(s.on_surface_variant)
-                            .child("A standard side sheet sits next to the page and does not block it."),
-                    )
-                    .action(Button::new("std-side-cancel", "Cancel").text())
-                    .action(Button::new("std-side-save", "Save").filled()),
+                BottomSheet::standard("std-bottom")
+                    .padding(px(8.))
+                    .child(rows("std-bottom-row", s.on_surface_variant)),
             );
+        let standard_side = frame(stage()).child(page_content(&s)).child(
+            SideSheet::standard("std-side")
+                .width(px(240.))
+                .title("Details")
+                .on_close(|_, _, _| {})
+                .child(
+                    div()
+                        .text_size(px(13.5))
+                        .text_color(s.on_surface_variant)
+                        .child(
+                            "A standard side sheet sits next to the page and does not block it.",
+                        ),
+                )
+                .action(Button::new("std-side-cancel", "Cancel").text())
+                .action(Button::new("std-side-save", "Save").filled()),
+        );
         let standard_side_left = frame(stage())
             .child(
                 SideSheet::standard("std-side-left")
@@ -196,37 +214,61 @@ impl Render for SheetDemos {
                 .child(Button::new(ElementId::Name(format!("{id}-b").into()), label).tonal())
         };
         let live = row()
-            .child(hover_target("rt-plain", "Text only").tooltip(
-                RichTooltip::new("rt-live-1", "Rich tooltips explain a control in a sentence or two.")
+            .child(
+                hover_target("rt-plain", "Text only").tooltip(
+                    RichTooltip::new(
+                        "rt-live-1",
+                        "Rich tooltips explain a control in a sentence or two.",
+                    )
                     .build(),
-            ))
-            .child(hover_target("rt-title", "With subhead").tooltip(
-                RichTooltip::new("rt-live-2", "Keeps your notes in step on every device you use.")
+                ),
+            )
+            .child(
+                hover_target("rt-title", "With subhead").tooltip(
+                    RichTooltip::new(
+                        "rt-live-2",
+                        "Keeps your notes in step on every device you use.",
+                    )
                     .title("Sync")
                     .build(),
-            ))
-            .child(hover_target("rt-actions", "With actions").hoverable_tooltip(
-                RichTooltip::new(
-                    "rt-live-3",
-                    "Backups run every night while the app is open and the device is charging.",
-                )
-                .title("Backups")
-                .action("Learn more", clicked("Learn more", cx))
-                .action("Got it", clicked("Got it", cx))
-                .build(),
-            ))
-            .child(div().text_size(px(12.5)).text_color(s.on_surface_variant).child(
-                if self.tooltip_action.is_empty() {
-                    SharedString::from("Hover a button for half a second")
-                } else {
-                    format!("Clicked: {}", self.tooltip_action).into()
-                },
-            ));
+                ),
+            )
+            .child(
+                hover_target("rt-actions", "With actions").hoverable_tooltip(
+                    RichTooltip::new(
+                        "rt-live-3",
+                        "Backups run every night while the app is open and the device is charging.",
+                    )
+                    .title("Backups")
+                    .action("Learn more", clicked("Learn more", cx))
+                    .action("Got it", clicked("Got it", cx))
+                    .build(),
+                ),
+            )
+            .child(
+                div()
+                    .text_size(px(12.5))
+                    .text_color(s.on_surface_variant)
+                    .child(if self.tooltip_action.is_empty() {
+                        SharedString::from("Hover a button for half a second")
+                    } else {
+                        format!("Clicked: {}", self.tooltip_action).into()
+                    }),
+            );
         let static_row = row()
             .items_start()
             .gap(px(24.))
-            .child(RichTooltip::new("rt-static-1", "Rich tooltips explain a control in a sentence or two."))
-            .child(RichTooltip::new("rt-static-2", "Keeps your notes in step on every device you use.").title("Sync"))
+            .child(RichTooltip::new(
+                "rt-static-1",
+                "Rich tooltips explain a control in a sentence or two.",
+            ))
+            .child(
+                RichTooltip::new(
+                    "rt-static-2",
+                    "Keeps your notes in step on every device you use.",
+                )
+                .title("Sync"),
+            )
             .child(
                 RichTooltip::new(
                     "rt-static-3",

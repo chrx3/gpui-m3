@@ -12,7 +12,7 @@ use gpui::{
 use super::Slider;
 use super::photo::bilinear;
 use crate::shapes::{Morph, ShapeName};
-use crate::theme::{font_family, Theme, alpha};
+use crate::theme::{Theme, alpha, font_family};
 
 mod keys {
     gpui::actions!(m3_image_cropper, [Confirm, Cancel]);

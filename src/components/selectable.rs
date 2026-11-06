@@ -23,12 +23,12 @@ use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, Div, Element,
-    ElementId, Entity, FocusHandle, Global, GlobalElementId, HitboxBehavior, Hsla,
+    AnyElement, App, AppContext as _, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase,
+    Div, Element, ElementId, Entity, FocusHandle, Global, GlobalElementId, HitboxBehavior, Hsla,
     InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce,
-    ScrollHandle, SharedString, Styled, StyledText, TextLayout, Window, anchored, canvas,
-    deferred, div, fill, point, px,
+    ScrollHandle, SharedString, Styled, StyledText, TextLayout, Window, anchored, canvas, deferred,
+    div, fill, point, px,
 };
 
 use super::{Menu, MenuItem};
@@ -150,7 +150,11 @@ impl TextSelection {
             return None;
         }
         let start = if key == sk { floor_char(text, so) } else { 0 };
-        let end = if key == ek { floor_char(text, eo) } else { text.len() };
+        let end = if key == ek {
+            floor_char(text, eo)
+        } else {
+            text.len()
+        };
         (start < end).then_some(start..end)
     }
 
@@ -166,7 +170,11 @@ impl TextSelection {
         for (&key, block) in self.blocks.range(sk..=ek) {
             if let Some(range) = self.block_range(key) {
                 if !out.is_empty() {
-                    out.push_str(if last_owner == Some(key.0) { &block.joint } else { "\n\n" });
+                    out.push_str(if last_owner == Some(key.0) {
+                        &block.joint
+                    } else {
+                        "\n\n"
+                    });
                 }
                 out.push_str(&block.text[range]);
                 last_owner = Some(key.0);
@@ -440,7 +448,16 @@ fn open_menu(
             }
         })
     });
-    native(TextMenuRequest { at, selected, all, select_all }, window, cx);
+    native(
+        TextMenuRequest {
+            at,
+            selected,
+            all,
+            select_all,
+        },
+        window,
+        cx,
+    );
 }
 
 fn drawn_menu(state: &Entity<TextSelection>, at: Point<Pixels>, key: Key, cx: &App) -> AnyElement {
@@ -460,30 +477,43 @@ fn drawn_menu(state: &Entity<TextSelection>, at: Point<Pixels>, key: Key, cx: &A
     let mut menu = Menu::new("text-menu").width(200.).stagger(false);
     if !selected.is_empty() {
         let done = close(state);
-        menu = menu.item(MenuItem::new("text-copy", copy).icon("copy").on_click(move |_, _, cx| {
-            cx.write_to_clipboard(ClipboardItem::new_string(selected.clone()));
-            done(cx);
-        }));
+        menu = menu.item(MenuItem::new("text-copy", copy).icon("copy").on_click(
+            move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(selected.clone()));
+                done(cx);
+            },
+        ));
     }
     let done = close(state);
-    menu = menu.item(MenuItem::new("text-copy-all", copy_all).icon("copy").on_click(move |_, _, cx| {
-        cx.write_to_clipboard(ClipboardItem::new_string(all.clone()));
-        done(cx);
-    }));
+    menu = menu.item(
+        MenuItem::new("text-copy-all", copy_all)
+            .icon("copy")
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(all.clone()));
+                done(cx);
+            }),
+    );
     let target = state.clone();
-    menu = menu.item(MenuItem::new("text-select-all", select_all).on_click(move |_, _, cx| {
-        target.update(cx, |s, cx| {
-            s.select_all();
-            s.menu = None;
-            cx.notify();
-        })
-    }));
+    menu = menu.item(
+        MenuItem::new("text-select-all", select_all).on_click(move |_, _, cx| {
+            target.update(cx, |s, cx| {
+                s.select_all();
+                s.menu = None;
+                cx.notify();
+            })
+        }),
+    );
     let done = close(state);
     deferred(
         anchored()
             .position(at)
             .snap_to_window_with_margin(px(8.))
-            .child(div().occlude().on_mouse_down_out(move |_, _, cx| done(cx)).child(menu)),
+            .child(
+                div()
+                    .occlude()
+                    .on_mouse_down_out(move |_, _, cx| done(cx))
+                    .child(menu),
+            ),
     )
     .with_priority(1)
     .into_any_element()
@@ -511,7 +541,11 @@ pub fn selection_root(state: &Entity<TextSelection>, root: Div, cx: &App) -> Div
                         s.frame += 1;
                         // A chat's root is its list: scroll at its edges. A message on its
                         // own scrolls the list it is in, at the clip around it.
-                        s.viewport = Some(if s.shared { bounds.intersect(&mask) } else { mask });
+                        s.viewport = Some(if s.shared {
+                            bounds.intersect(&mask)
+                        } else {
+                            mask
+                        });
                         s.painted = Some(Instant::now());
                         if !s.shared {
                             s.restart(0);
@@ -525,7 +559,9 @@ pub fn selection_root(state: &Entity<TextSelection>, root: Div, cx: &App) -> Div
             .left_0()
             .size_full(),
         )
-        .when_some(menu, |root, (at, key)| root.child(drawn_menu(state, at, key, cx)))
+        .when_some(menu, |root, (at, key)| {
+            root.child(drawn_menu(state, at, key, cx))
+        })
 }
 
 fn on_key(state: &Entity<TextSelection>, event: &KeyDownEvent, cx: &mut App) {
@@ -568,7 +604,10 @@ fn follow(state: &Entity<TextSelection>, window: &mut Window) {
         if phase != DispatchPhase::Capture {
             return;
         }
-        let inside = s.read(cx).shown().any(|(_, b)| b.visible.contains(&event.position));
+        let inside = s
+            .read(cx)
+            .shown()
+            .any(|(_, b)| b.visible.contains(&event.position));
         if !inside {
             s.update(cx, |sel, cx| {
                 if sel.clear() {
@@ -594,13 +633,19 @@ fn follow(state: &Entity<TextSelection>, window: &mut Window) {
                 cx.notify();
             }
         });
-        if s.read(cx).edge_scroll.is_some() && edge_step(&s, cx).is_some() && !s.read(cx).edge_scrolling {
+        if s.read(cx).edge_scroll.is_some()
+            && edge_step(&s, cx).is_some()
+            && !s.read(cx).edge_scrolling
+        {
             edge_scroll(&s, window, cx);
         }
     });
     let s = state.clone();
     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-        if phase != DispatchPhase::Capture || event.button != MouseButton::Left || !s.read(cx).dragging {
+        if phase != DispatchPhase::Capture
+            || event.button != MouseButton::Left
+            || !s.read(cx).dragging
+        {
             return;
         }
         s.update(cx, |sel, _| sel.dragging = false);
@@ -624,8 +669,16 @@ fn edge_step(state: &Entity<TextSelection>, cx: &App) -> Option<Pixels> {
     let (mut top, mut bottom) = (view.top(), view.bottom());
     if !s.shared {
         for (_, b) in s.shown() {
-            top = if b.bounds.top() < top { b.bounds.top() } else { top };
-            bottom = if b.bounds.bottom() > bottom { b.bounds.bottom() } else { bottom };
+            top = if b.bounds.top() < top {
+                b.bounds.top()
+            } else {
+                top
+            };
+            bottom = if b.bounds.bottom() > bottom {
+                b.bounds.bottom()
+            } else {
+                bottom
+            };
         }
     }
     let pos = s.pointer;
@@ -649,11 +702,16 @@ fn edge_scroll(state: &Entity<TextSelection>, window: &mut Window, cx: &mut App)
             cx.background_executor().timer(EDGE_TICK).await;
             let more = handle.update(cx, |_, window, cx| {
                 // Not painted lately: it left the view and no longer hears the release.
-                if state.read(cx).painted.is_none_or(|t| t.elapsed() > EDGE_TICK * 8) {
+                if state
+                    .read(cx)
+                    .painted
+                    .is_none_or(|t| t.elapsed() > EDGE_TICK * 8)
+                {
                     state.update(cx, |s, _| s.dragging = false);
                     return false;
                 }
-                let (Some(dy), Some(scroll)) = (edge_step(&state, cx), state.read(cx).edge_scroll.clone())
+                let (Some(dy), Some(scroll)) =
+                    (edge_step(&state, cx), state.read(cx).edge_scroll.clone())
                 else {
                     return false;
                 };
@@ -738,7 +796,13 @@ pub fn selectable_block(
 pub fn group_for(id: ElementId, window: &mut Window, cx: &mut App) -> (Selection, bool) {
     match current_selection() {
         Some(scope) => (scope, false),
-        None => (Selection { state: TextSelection::of(id, window, cx), owner: 0 }, true),
+        None => (
+            Selection {
+                state: TextSelection::of(id, window, cx),
+                owner: 0,
+            },
+            true,
+        ),
     }
 }
 
@@ -847,7 +911,11 @@ impl RenderOnce for SelectableText {
             styled.into_any_element(),
             color,
         );
-        let root = if own { selection_root(&group.state, div(), cx) } else { div() };
+        let root = if own {
+            selection_root(&group.state, div(), cx)
+        } else {
+            div()
+        };
         root.child(block)
     }
 }

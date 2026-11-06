@@ -1,11 +1,7 @@
 //! "Sliders" section.
 
-use gpui::{
-    App, Context, IntoElement, ParentElement, Render, Styled, Window, div, px,
-};
-use gpui_m3::{
-    RangeSlider, Segment, SegmentedButtons, Slider, SliderSize, StopSlider, Theme,
-};
+use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
+use gpui_m3::{RangeSlider, Segment, SegmentedButtons, Slider, SliderSize, StopSlider, Theme};
 
 use super::{column, demo, page, row};
 
@@ -83,7 +79,12 @@ impl SliderDemos {
             sliders = sliders.child(
                 row()
                     .gap(px(16.))
-                    .child(div().w(px(70.)).text_color(s.on_surface_variant).child(name))
+                    .child(
+                        div()
+                            .w(px(70.))
+                            .text_color(s.on_surface_variant)
+                            .child(name),
+                    )
                     .child(
                         Slider::new(("size", i), self.sizes[i], 0.0..=100.)
                             .size(size)
@@ -92,19 +93,22 @@ impl SliderDemos {
                     ),
             );
         }
-        let icons = column().gap(px(18.)).child(
-            Slider::new(("icon", 0usize), self.icon[0], 0.0..=100.)
-                .size(SliderSize::L)
-                .icon("star")
-                .width(px(320.))
-                .on_change(self.set(cx, |d, v| d.icon[0] = v)),
-        ).child(
-            Slider::new(("icon", 1usize), self.icon[1], 0.0..=100.)
-                .size(SliderSize::Xl)
-                .icon("bolt")
-                .width(px(320.))
-                .on_change(self.set(cx, |d, v| d.icon[1] = v)),
-        );
+        let icons = column()
+            .gap(px(18.))
+            .child(
+                Slider::new(("icon", 0usize), self.icon[0], 0.0..=100.)
+                    .size(SliderSize::L)
+                    .icon("star")
+                    .width(px(320.))
+                    .on_change(self.set(cx, |d, v| d.icon[0] = v)),
+            )
+            .child(
+                Slider::new(("icon", 1usize), self.icon[1], 0.0..=100.)
+                    .size(SliderSize::Xl)
+                    .icon("bolt")
+                    .width(px(320.))
+                    .on_change(self.set(cx, |d, v| d.icon[1] = v)),
+            );
         page()
             .child(demo(
                 "Sizes",
@@ -176,7 +180,11 @@ impl SliderDemos {
         let s = *Theme::of(cx);
         let label = |text: String| div().text_color(s.on_surface_variant).child(text);
         let item = |body: gpui::AnyElement, text: String| {
-            column().items_center().gap(px(10.)).child(body).child(label(text))
+            column()
+                .items_center()
+                .gap(px(10.))
+                .child(body)
+                .child(label(text))
         };
         let sliders = row()
             .gap(px(40.))
@@ -209,14 +217,18 @@ impl SliderDemos {
                 .height(px(200.))
                 .on_change(self.set(cx, |d, v| d.vertical_range = v))
                 .into_any_element(),
-                format!("{:.0} to {:.0}", self.vertical_range.0, self.vertical_range.1),
+                format!(
+                    "{:.0} to {:.0}",
+                    self.vertical_range.0, self.vertical_range.1
+                ),
             ))
             .child(item(
                 StopSlider::new("v-stop", 5, self.vertical_stop)
                     .vertical()
                     .on_change(self.set(cx, |d, i: usize| d.vertical_stop = Some(i)))
                     .into_any_element(),
-                self.vertical_stop.map_or("-".into(), |i| format!("stop {i}")),
+                self.vertical_stop
+                    .map_or("-".into(), |i| format!("stop {i}")),
             ))
             .child(item(
                 Slider::new("v-off", 40., 0.0..=100.)
@@ -235,7 +247,11 @@ impl SliderDemos {
 
     fn options_page(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let value = |v: f32| div().text_color(s.on_surface_variant).child(format!("{v:.0}"));
+        let value = |v: f32| {
+            div()
+                .text_color(s.on_surface_variant)
+                .child(format!("{v:.0}"))
+        };
         let centered = column()
             .gap(px(18.))
             .child(

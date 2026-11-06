@@ -11,7 +11,7 @@ use gpui::{
 
 use super::{ClickHandler, Icon};
 use crate::motion::{Spring, animate_f32, animate_from, key, presence};
-use crate::theme::{font_family, Theme, alpha, mix};
+use crate::theme::{Theme, alpha, font_family, mix};
 
 type DropHandler = Rc<dyn Fn(&ExternalPaths, &mut Window, &mut App)>;
 
@@ -295,12 +295,13 @@ impl RenderOnce for ImageThumb {
             .when_some(self.on_click, |d, f| {
                 d.cursor_pointer().on_click(move |e, w, cx| f(e, w, cx))
             })
-            .child(
-                img(self.source)
-                    .size_full()
-                    .rounded(radius)
-                    .object_fit(if self.aspect.is_some() { ObjectFit::Contain } else { ObjectFit::Cover }),
-            )
+            .child(img(self.source).size_full().rounded(radius).object_fit(
+                if self.aspect.is_some() {
+                    ObjectFit::Contain
+                } else {
+                    ObjectFit::Cover
+                },
+            ))
             .children(remove)
     }
 }

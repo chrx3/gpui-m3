@@ -13,9 +13,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Div, ElementId, Entity, Hsla, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, ScrollHandle, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, Window, div, px, relative,
+    AnyElement, App, AppContext as _, ClickEvent, Div, ElementId, Entity, Hsla, InteractiveElement,
+    IntoElement, ParentElement, RenderOnce, ScrollHandle, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window, div, px, relative,
 };
 
 use super::overlays::{ground, over};
@@ -25,9 +25,7 @@ use super::{
 };
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, entrance, key, request_frame};
-use crate::theme::type_scale::{
-    BODY_LARGE, HEADLINE_LARGE, LABEL_LARGE, TypeScaleExt,
-};
+use crate::theme::type_scale::{BODY_LARGE, HEADLINE_LARGE, LABEL_LARGE, TypeScaleExt};
 use crate::theme::{Scheme, Theme, alpha, font_family};
 
 // ---------------------------------------------------------------------------------------------
@@ -113,7 +111,11 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_index = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
     let year = year_of_era + era * 400 + i64::from(month <= 2);
     (year, month, day)
 }
@@ -153,7 +155,11 @@ impl Date {
 
     fn from_days(days: i64) -> Self {
         let (year, month, day) = civil_from_days(days);
-        Self { year: year as i32, month: month as u8, day: day as u8 }
+        Self {
+            year: year as i32,
+            month: month as u8,
+            day: day as u8,
+        }
     }
 
     fn to_days(self) -> i64 {
@@ -182,7 +188,11 @@ impl Date {
         let total = i64::from(self.year) * 12 + i64::from(self.month) - 1 + i64::from(months);
         let year = total.div_euclid(12) as i32;
         let month = total.rem_euclid(12) as u8 + 1;
-        Self { year, month, day: self.day.min(Self::days_in_month(year, month)) }
+        Self {
+            year,
+            month,
+            day: self.day.min(Self::days_in_month(year, month)),
+        }
     }
 
     /// The date kept between `min` and `max` (either may be missing).
@@ -212,7 +222,11 @@ impl Date {
     /// The calendar of a month: six rows of seven days that start on `first_day`. The days
     /// before and after the month belong to the neighbouring months.
     pub fn month_grid(year: i32, month: u8, first_day: Weekday) -> [[Date; 7]; 6] {
-        let first = Date { year, month, day: 1 };
+        let first = Date {
+            year,
+            month,
+            day: 1,
+        };
         let lead = (first.weekday().index() + 7 - first_day.index()) % 7;
         let start = first.add_days(-(lead as i64));
         std::array::from_fn(|row| std::array::from_fn(|col| start.add_days((row * 7 + col) as i64)))
@@ -243,7 +257,10 @@ pub struct DateRange {
 impl DateRange {
     /// A range between two dates, in whichever order they come.
     pub fn new(a: Date, b: Date) -> Self {
-        Self { start: a.min(b), end: a.max(b) }
+        Self {
+            start: a.min(b),
+            end: a.max(b),
+        }
     }
 
     pub fn contains(&self, date: Date) -> bool {
@@ -313,8 +330,18 @@ impl DateNames {
     pub fn english() -> Self {
         Self {
             months: names([
-                "January", "February", "March", "April", "May", "June", "July", "August",
-                "September", "October", "November", "December",
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
             ]),
             months_short: names([
                 "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -337,8 +364,18 @@ impl DateNames {
     pub fn spanish() -> Self {
         Self {
             months: names([
-                "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto",
-                "Septiembre", "Octubre", "Noviembre", "Diciembre",
+                "Enero",
+                "Febrero",
+                "Marzo",
+                "Abril",
+                "Mayo",
+                "Junio",
+                "Julio",
+                "Agosto",
+                "Septiembre",
+                "Octubre",
+                "Noviembre",
+                "Diciembre",
             ]),
             months_short: names([
                 "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic",
@@ -436,22 +473,30 @@ impl State {
                     .placeholder(input_hint)
                     .select_all_on_focus(true)
             });
-            cx.subscribe_in(&field, window, |state: &mut State, _, event: &TextFieldEvent, window, cx| {
-                let TextFieldEvent::Changed(text) = event else { return };
-                // The "not a valid date" line follows the text.
-                cx.notify();
-                let Some(date) = Date::parse(text) else { return };
-                if state.value == Some(date) || !state.allows(date) {
-                    return;
-                }
-                state.value = Some(date);
-                state.cursor = Some(date);
-                state.show_month(date.year, date.month);
-                if let Some(on_change) = state.on_change.clone() {
-                    on_change(date, window, cx);
-                }
-                cx.notify();
-            })
+            cx.subscribe_in(
+                &field,
+                window,
+                |state: &mut State, _, event: &TextFieldEvent, window, cx| {
+                    let TextFieldEvent::Changed(text) = event else {
+                        return;
+                    };
+                    // The "not a valid date" line follows the text.
+                    cx.notify();
+                    let Some(date) = Date::parse(text) else {
+                        return;
+                    };
+                    if state.value == Some(date) || !state.allows(date) {
+                        return;
+                    }
+                    state.value = Some(date);
+                    state.cursor = Some(date);
+                    state.show_month(date.year, date.month);
+                    if let Some(on_change) = state.on_change.clone() {
+                        on_change(date, window, cx);
+                    }
+                    cx.notify();
+                },
+            )
             .detach();
             field
         });
@@ -658,7 +703,10 @@ impl DatePicker {
 
     /// Called with the range on every click of a range picker: after the first click it is one
     /// day long, after the second it is complete.
-    pub fn on_range_change(mut self, f: impl Fn(DateRange, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_range_change(
+        mut self,
+        f: impl Fn(DateRange, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_range_change = Some(Rc::new(f));
         self
     }
@@ -706,7 +754,11 @@ fn icon_circle(
         .child(layer)
         .child(Icon::new(icon).size(px(20.)).color(fg).rotate(rotate));
     let button = interactive(button, &state, enabled, true);
-    if enabled { button.on_click(move |_, window, cx| on_click(window, cx)) } else { button }
+    if enabled {
+        button.on_click(move |_, window, cx| on_click(window, cx))
+    } else {
+        button
+    }
 }
 
 /// Number that identifies a date in element ids: the colors of a day animate where the day is.
@@ -733,9 +785,14 @@ impl RenderOnce for DatePicker {
         let s = *Theme::of(cx);
         let id = self.id.clone();
         let picked_start = self.value.or(self.range_value.map(|r| r.start));
-        let start = picked_start.unwrap_or(self.today).clamp_between(self.min, self.max);
+        let start = picked_start
+            .unwrap_or(self.today)
+            .clamp_between(self.min, self.max);
         let with_field = self.input_mode && !self.range && self.header;
-        let (label, hint) = (self.names.input_label.clone(), self.names.input_hint.clone());
+        let (label, hint) = (
+            self.names.input_label.clone(),
+            self.names.input_hint.clone(),
+        );
         let state = window.use_keyed_state(key(&id, "state"), cx, move |window, cx| {
             State::new(start, with_field, label, hint, window, cx)
         });
@@ -758,12 +815,20 @@ impl RenderOnce for DatePicker {
         let (year, month, view, cursor, keyboard, anchor, slide, generation, scroll_years) = {
             let st = state.read(cx);
             (
-                st.year, st.month, st.view, st.cursor, st.keyboard, st.anchor, st.slide,
-                st.generation, st.scroll_years,
+                st.year,
+                st.month,
+                st.view,
+                st.cursor,
+                st.keyboard,
+                st.anchor,
+                st.slide,
+                st.generation,
+                st.scroll_years,
             )
         };
         let (min, max, range_mode, today) = (self.min, self.max, self.range, self.today);
-        let enabled = move |date: Date| min.is_none_or(|m| date >= m) && max.is_none_or(|m| date <= m);
+        let enabled =
+            move |date: Date| min.is_none_or(|m| date >= m) && max.is_none_or(|m| date <= m);
 
         // What picking a date does.
         let select: SelectDate = {
@@ -807,7 +872,12 @@ impl RenderOnce for DatePicker {
             let state = state.clone();
             move |delta: i32, cx: &mut App| {
                 state.update(cx, |st, cx| {
-                    let moved = Date { year: st.year, month: st.month, day: 1 }.add_months(delta);
+                    let moved = Date {
+                        year: st.year,
+                        month: st.month,
+                        day: 1,
+                    }
+                    .add_months(delta);
                     st.show_month(moved.year, moved.month);
                     cx.notify();
                 })
@@ -842,7 +912,15 @@ impl RenderOnce for DatePicker {
                 }
                 let (view, shown, cursor) = {
                     let st = state.read(cx);
-                    (st.view, Date { year: st.year, month: st.month, day: 1 }, st.cursor)
+                    (
+                        st.view,
+                        Date {
+                            year: st.year,
+                            month: st.month,
+                            day: 1,
+                        },
+                        st.cursor,
+                    )
                 };
                 if view != View::Days {
                     return;
@@ -898,7 +976,11 @@ impl RenderOnce for DatePicker {
 
         if self.header {
             let title = self.title.clone().unwrap_or_else(|| {
-                if range_mode { self.names.select_range.clone() } else { self.names.select_date.clone() }
+                if range_mode {
+                    self.names.select_range.clone()
+                } else {
+                    self.names.select_date.clone()
+                }
             });
             let headline: SharedString = if range_mode {
                 match (shown_range, anchor) {
@@ -920,7 +1002,11 @@ impl RenderOnce for DatePicker {
                     None => self.names.no_date.clone(),
                 }
             };
-            let empty = if range_mode { shown_range.is_none() } else { self.value.is_none() };
+            let empty = if range_mode {
+                shown_range.is_none()
+            } else {
+                self.value.is_none()
+            };
             let toggle = with_field.then(|| {
                 let state = state.clone();
                 let typing = view == View::Input;
@@ -975,7 +1061,11 @@ impl RenderOnce for DatePicker {
                                         .min_w_0()
                                         .type_style(HEADLINE_LARGE)
                                         .text_size(if range_mode { px(28.) } else { px(32.) })
-                                        .text_color(if empty { s.on_surface_variant } else { s.on_surface })
+                                        .text_color(if empty {
+                                            s.on_surface_variant
+                                        } else {
+                                            s.on_surface
+                                        })
                                         .child(headline),
                                 )
                                 .children(toggle),
@@ -987,8 +1077,18 @@ impl RenderOnce for DatePicker {
         // ----- body
         if view != View::Input {
             // Month row.
-            let prev_end = Date { year, month, day: 1 }.add_days(-1);
-            let next_start = Date { year, month, day: 1 }.add_months(1);
+            let prev_end = Date {
+                year,
+                month,
+                day: 1,
+            }
+            .add_days(-1);
+            let next_start = Date {
+                year,
+                month,
+                day: 1,
+            }
+            .add_months(1);
             let can_prev = min.is_none_or(|m| prev_end >= m);
             let can_next = max.is_none_or(|m| next_start <= m);
             let years_open = view == View::Years;
@@ -1070,7 +1170,6 @@ impl RenderOnce for DatePicker {
                     .child(month_button)
                     .when(!years_open, |d| d.child(nav)),
             );
-
         }
         match view {
             View::Input => {
@@ -1090,7 +1189,11 @@ impl RenderOnce for DatePicker {
                             .child(
                                 div()
                                     .type_style(crate::theme::type_scale::BODY_SMALL)
-                                    .text_color(if invalid { s.error } else { s.on_surface_variant })
+                                    .text_color(if invalid {
+                                        s.error
+                                    } else {
+                                        s.on_surface_variant
+                                    })
                                     .child(if invalid {
                                         self.names.invalid_date.clone()
                                     } else {
@@ -1101,7 +1204,14 @@ impl RenderOnce for DatePicker {
                 }
             }
             View::Years => {
-                surface = surface.child(self.year_grid(&state, &s, (year, month), scroll_years, window, cx));
+                surface = surface.child(self.year_grid(
+                    &state,
+                    &s,
+                    (year, month),
+                    scroll_years,
+                    window,
+                    cx,
+                ));
             }
             View::Days => {
                 // Week day letters.
@@ -1155,7 +1265,9 @@ impl RenderOnce for DatePicker {
                                     r.start != r.end && date != r.end,
                                 )
                             }
-                            _ if !range_mode && self.value == Some(date) => (Mark::Edge, false, false),
+                            _ if !range_mode && self.value == Some(date) => {
+                                (Mark::Edge, false, false)
+                            }
                             _ => (Mark::None, false, false),
                         };
                         row = row.child(day_cell(
@@ -1184,8 +1296,15 @@ impl RenderOnce for DatePicker {
         }
 
         if self.modal {
-            let mut buttons = div().flex().justify_end().gap(px(8.)).px(px(12.)).pb(px(8.)).pt(px(8.));
-            let cancel_button = Button::new(child_id(&id, "cancel"), self.names.cancel.clone()).text();
+            let mut buttons = div()
+                .flex()
+                .justify_end()
+                .gap(px(8.))
+                .px(px(12.))
+                .pb(px(8.))
+                .pt(px(8.));
+            let cancel_button =
+                Button::new(child_id(&id, "cancel"), self.names.cancel.clone()).text();
             let ok_button = Button::new(child_id(&id, "ok"), self.names.ok.clone()).text();
             buttons = buttons
                 .child(match cancel {
@@ -1249,7 +1368,9 @@ impl DatePicker {
             // Opens with the shown year near the top. The list must have been laid out once
             // before it can scroll, so this waits for its first frame.
             if scroll_handle.bounds().size.height > px(0.) {
-                scroll_handle.scroll_to_top_of_item(((shown_year - low) as usize / columns).saturating_sub(1));
+                scroll_handle.scroll_to_top_of_item(
+                    ((shown_year - low) as usize / columns).saturating_sub(1),
+                );
                 state.update(cx, |st, _| st.scroll_years = false);
             } else {
                 request_frame(window);
@@ -1296,7 +1417,13 @@ impl DatePicker {
                     .rounded(px(18.))
                     .bg(bg)
                     .type_style(BODY_LARGE)
-                    .text_color(if on { s.on_primary } else if year == this_year { s.primary } else { s.on_surface })
+                    .text_color(if on {
+                        s.on_primary
+                    } else if year == this_year {
+                        s.primary
+                    } else {
+                        s.on_surface
+                    })
                     .when(!on && (year == this_year || Some(year) == picked), |d| {
                         d.border_1().border_color(s.outline)
                     })
@@ -1304,13 +1431,24 @@ impl DatePicker {
                     .child(year.to_string());
                 let pill = interactive(pill, &interaction, true, true).on_click(move |_, _, cx| {
                     state.update(cx, |st, cx| {
-                        let day = Date { year, month: shown_month, day: 1 };
+                        let day = Date {
+                            year,
+                            month: shown_month,
+                            day: 1,
+                        };
                         st.show_month(day.year, day.month);
                         st.view = View::Days;
                         cx.notify();
                     })
                 });
-                row = row.child(div().flex_1().flex().items_center().justify_center().child(pill));
+                row = row.child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(pill),
+                );
             }
             list = list.child(row);
         }
@@ -1367,7 +1505,13 @@ fn day_cell(
             .corners(corners(round))
             .bg(s.secondary_container)
     };
-    let mut cell = div().relative().flex_1().h(px(CELL)).flex().items_center().justify_center();
+    let mut cell = div()
+        .relative()
+        .flex_1()
+        .h(px(CELL))
+        .flex()
+        .items_center()
+        .justify_center();
     if look.mark != Mark::None && look.enabled {
         // The band runs under the days of the range, and rounds at the ends of a week.
         let first_in_week = column == 0;
@@ -1376,7 +1520,11 @@ fn day_cell(
         let right_round = if last_in_week { CIRCLE / 2. } else { 0. };
         match look.mark {
             Mark::Inside => {
-                cell = cell.child(band(0., 0., [left_round, right_round, right_round, left_round]));
+                cell = cell.child(band(
+                    0.,
+                    0.,
+                    [left_round, right_round, right_round, left_round],
+                ));
             }
             Mark::Edge => {
                 if look.band_left {
@@ -1401,7 +1549,9 @@ fn day_cell(
         .bg(bg)
         .type_style(BODY_LARGE)
         .text_color(fg)
-        .when(look.today && look.mark != Mark::Edge, |d| d.border_1().border_color(s.outline))
+        .when(look.today && look.mark != Mark::Edge, |d| {
+            d.border_1().border_color(s.outline)
+        })
         .child(layer)
         .child(date.day.to_string());
     if look.ring {
@@ -1507,10 +1657,22 @@ mod tests {
         let (min, max) = (date(2024, 3, 10), date(2024, 3, 20));
         assert_eq!(date(2024, 3, 5).clamp_between(Some(min), Some(max)), min);
         assert_eq!(date(2024, 3, 25).clamp_between(Some(min), Some(max)), max);
-        assert_eq!(date(2024, 3, 15).clamp_between(Some(min), Some(max)), date(2024, 3, 15));
-        assert_eq!(date(2024, 3, 5).clamp_between(None, Some(max)), date(2024, 3, 5));
-        assert_eq!(date(2024, 3, 25).clamp_between(Some(min), None), date(2024, 3, 25));
-        assert_eq!(date(2024, 3, 25).clamp_between(None, None), date(2024, 3, 25));
+        assert_eq!(
+            date(2024, 3, 15).clamp_between(Some(min), Some(max)),
+            date(2024, 3, 15)
+        );
+        assert_eq!(
+            date(2024, 3, 5).clamp_between(None, Some(max)),
+            date(2024, 3, 5)
+        );
+        assert_eq!(
+            date(2024, 3, 25).clamp_between(Some(min), None),
+            date(2024, 3, 25)
+        );
+        assert_eq!(
+            date(2024, 3, 25).clamp_between(None, None),
+            date(2024, 3, 25)
+        );
     }
 
     #[test]
@@ -1573,7 +1735,10 @@ mod tests {
                 assert_eq!(days.len(), 42);
                 assert!(days.windows(2).all(|pair| pair[1] == pair[0].add_days(1)));
                 assert_eq!(days[0].weekday(), first_day);
-                let inside = days.iter().filter(|d| d.month == month && d.year == year).count();
+                let inside = days
+                    .iter()
+                    .filter(|d| d.month == month && d.year == year)
+                    .count();
                 assert_eq!(inside, usize::from(Date::days_in_month(year, month)));
             }
         }
@@ -1602,7 +1767,13 @@ mod tests {
         assert_eq!(range, DateRange::new(first, first));
         assert_eq!(anchor, Some(first));
         let (range, anchor) = range_click(anchor, second);
-        assert_eq!(range, DateRange { start: second, end: first });
+        assert_eq!(
+            range,
+            DateRange {
+                start: second,
+                end: first
+            }
+        );
         assert_eq!(anchor, None);
         // The next click starts over.
         assert_eq!(range_click(anchor, second).1, Some(second));
@@ -1611,8 +1782,20 @@ mod tests {
     #[test]
     fn names_are_complete_and_text_follows_the_order() {
         for names in [DateNames::english(), DateNames::spanish()] {
-            assert!(names.months.iter().chain(&names.months_short).all(|m| !m.is_empty()));
-            assert!(names.weekdays_short.iter().chain(&names.weekdays_narrow).all(|d| !d.is_empty()));
+            assert!(
+                names
+                    .months
+                    .iter()
+                    .chain(&names.months_short)
+                    .all(|m| !m.is_empty())
+            );
+            assert!(
+                names
+                    .weekdays_short
+                    .iter()
+                    .chain(&names.weekdays_narrow)
+                    .all(|d| !d.is_empty())
+            );
         }
         let day = date(2026, 3, 9);
         assert_eq!(DateNames::english().day_text(day), "Mon, Mar 9");

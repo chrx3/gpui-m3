@@ -19,7 +19,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::{Icon, RoundedExt, all, corners};
 use crate::motion::{Spring, animate_color, animate_f32, continuous_at, key};
-use crate::theme::{font_family, Scheme, Theme, alpha};
+use crate::theme::{Scheme, Theme, alpha, font_family};
 
 actions!(
     m3_text_field,
@@ -122,7 +122,10 @@ pub(super) fn fit_to_limit(kept: usize, new_text: &str, max: Option<usize>) -> &
     let Some(max) = max else {
         return new_text;
     };
-    match new_text.grapheme_indices(true).nth(max.saturating_sub(kept)) {
+    match new_text
+        .grapheme_indices(true)
+        .nth(max.saturating_sub(kept))
+    {
         Some((end, _)) => &new_text[..end],
         None => new_text,
     }
@@ -480,7 +483,11 @@ impl TextField {
 
     /// `new_text` cut so that replacing `range` respects the hard limit.
     fn within_limit<'a>(&self, range: &Range<usize>, new_text: &'a str) -> &'a str {
-        let max = if self.hard_limit { self.max_length } else { None };
+        let max = if self.hard_limit {
+            self.max_length
+        } else {
+            None
+        };
         if max.is_none() {
             return new_text;
         }
@@ -913,7 +920,11 @@ impl Element for TextLine {
         let content = field.content.clone();
         let selected_range = field.selected_range.clone();
         let cursor = field.cursor_offset();
-        let caret_color = if field.is_invalid() { s.error } else { s.primary };
+        let caret_color = if field.is_invalid() {
+            s.error
+        } else {
+            s.primary
+        };
         let style = window.text_style();
 
         let (display_text, text_color) = if content.is_empty() {
@@ -1095,7 +1106,11 @@ impl Render for TextField {
         let invalid = self.is_invalid();
         let filled_style = self.style == TextFieldStyle::Filled;
         // Underline / outline color: error, then focus, then the resting color of the style.
-        let rest_border = if filled_style { s.outline } else { s.outline_variant };
+        let rest_border = if filled_style {
+            s.outline
+        } else {
+            s.outline_variant
+        };
         let border_color = animate_color(
             key(&id, "border"),
             Spring::EFFECTS,
@@ -1149,7 +1164,9 @@ impl Render for TextField {
                     .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
                     .on_mouse_move(cx.listener(Self::on_mouse_move))
             })
-            .when(disabled, |field| field.cursor(CursorStyle::OperationNotAllowed))
+            .when(disabled, |field| {
+                field.cursor(CursorStyle::OperationNotAllowed)
+            })
             .flex()
             .items_center()
             .gap(px(gap))
@@ -1195,8 +1212,12 @@ impl Render for TextField {
         }
         let trailing = self.trailing.as_ref().map(|build| build(window, cx));
         let affix = |text: &Option<SharedString>| {
-            text.clone()
-                .map(|text| div().flex_none().text_color(s.on_surface_variant).child(text))
+            text.clone().map(|text| {
+                div()
+                    .flex_none()
+                    .text_color(s.on_surface_variant)
+                    .child(text)
+            })
         };
         let field = field
             .child(
@@ -1321,10 +1342,7 @@ mod tests {
             supporting_content(Some(&error), Some(&help)),
             Some((&error, true))
         );
-        assert_eq!(
-            supporting_content(None, Some(&help)),
-            Some((&help, false))
-        );
+        assert_eq!(supporting_content(None, Some(&help)), Some((&help, false)));
         assert_eq!(supporting_content(Some(&error), None), Some((&error, true)));
         assert_eq!(supporting_content(None, None), None);
     }

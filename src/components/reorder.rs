@@ -14,7 +14,7 @@ use gpui::{
 
 use super::{RoundedExt, all, shadow_pop};
 use crate::motion::{MotionSettings, Spring, elapsed, key};
-use crate::theme::{font_family, Theme};
+use crate::theme::{Theme, font_family};
 
 /// A finished drag: the row at `from` now goes to index `to` (both count rows only, not
 /// headers). Apply it with [`apply_reorder`].

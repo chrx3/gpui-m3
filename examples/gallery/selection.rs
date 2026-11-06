@@ -7,9 +7,7 @@ use gpui::{
     App, ClickEvent, Context, IntoElement, ParentElement, Render, SharedString, Styled, Window,
     div, px,
 };
-use gpui_m3::{
-    CheckState, Checkbox, ChoiceRow, Radio, Segment, SegmentedButtons, Switch, Theme,
-};
+use gpui_m3::{CheckState, Checkbox, ChoiceRow, Radio, Segment, SegmentedButtons, Switch, Theme};
 
 use super::{column, demo, page, row};
 
@@ -39,8 +37,15 @@ impl SelectionDemos {
         Self {
             part: std::env::var("M3_PART").unwrap_or_default(),
             boxes: [
-                Unchecked, Checked, Indeterminate, Unchecked, Checked, Indeterminate, Unchecked,
-                Checked, Indeterminate,
+                Unchecked,
+                Checked,
+                Indeterminate,
+                Unchecked,
+                Checked,
+                Indeterminate,
+                Unchecked,
+                Checked,
+                Indeterminate,
             ],
             children: [true, false, true],
             radio: 1,
@@ -117,7 +122,10 @@ impl SelectionDemos {
                 .child(label("Error"))
                 .child(label("Disabled")),
         );
-        for (r, name) in ["Unchecked", "Checked", "Indeterminate"].into_iter().enumerate() {
+        for (r, name) in ["Unchecked", "Checked", "Indeterminate"]
+            .into_iter()
+            .enumerate()
+        {
             let mut line = row().gap(px(0.)).child(label(name));
             for c in 0..3 {
                 let i = c * 3 + r;
@@ -150,23 +158,27 @@ impl SelectionDemos {
         };
         let mut children = column().gap(px(10.)).pl(px(28.));
         for (i, name) in CHILDREN.into_iter().enumerate() {
-            children = children.child(
-                row().gap(px(10.)).child(
-                    Checkbox::new(("child", i), self.children[i]).on_change(self.on(
-                        cx,
-                        move |d, checked: bool| d.children[i] = checked,
-                    )),
-                ).child(text(name, 400.)),
-            );
+            children =
+                children.child(
+                    row()
+                        .gap(px(10.))
+                        .child(Checkbox::new(("child", i), self.children[i]).on_change(
+                            self.on(cx, move |d, checked: bool| d.children[i] = checked),
+                        ))
+                        .child(text(name, 400.)),
+                );
         }
         column()
             .gap(px(10.))
             .child(
-                row().gap(px(10.)).child(
-                    Checkbox::new("parent", false)
-                        .state(parent)
-                        .on_change(self.on(cx, |d, checked: bool| d.set_children(checked))),
-                ).child(text("All notifications", 600.)),
+                row()
+                    .gap(px(10.))
+                    .child(
+                        Checkbox::new("parent", false)
+                            .state(parent)
+                            .on_change(self.on(cx, |d, checked: bool| d.set_children(checked))),
+                    )
+                    .child(text("All notifications", 600.)),
             )
             .child(children)
     }
@@ -200,7 +212,11 @@ impl SelectionDemos {
         let s = *Theme::of(cx);
         let group = |cx: &mut Context<Self>, name: &'static str, error: bool, selected: usize| {
             let mut options = row().gap(px(14.)).child(
-                div().w(px(64.)).text_size(px(12.)).text_color(s.on_surface_variant).child(name),
+                div()
+                    .w(px(64.))
+                    .text_size(px(12.))
+                    .text_color(s.on_surface_variant)
+                    .child(name),
             );
             for i in 0..3 {
                 options = options.child(
@@ -222,35 +238,59 @@ impl SelectionDemos {
             .child(group(cx, "Normal", false, self.radio))
             .child(group(cx, "Error", true, self.radio_error))
             .child(
-                row().gap(px(14.)).child(
-                    div().w(px(64.)).text_size(px(12.)).text_color(s.on_surface_variant).child("Disabled"),
-                )
-                .child(Radio::new("radio-off-a", false).size(px(20.)).disabled(true))
-                .child(Radio::new("radio-off-b", true).size(px(20.)).disabled(true)),
+                row()
+                    .gap(px(14.))
+                    .child(
+                        div()
+                            .w(px(64.))
+                            .text_size(px(12.))
+                            .text_color(s.on_surface_variant)
+                            .child("Disabled"),
+                    )
+                    .child(
+                        Radio::new("radio-off-a", false)
+                            .size(px(20.))
+                            .disabled(true),
+                    )
+                    .child(Radio::new("radio-off-b", true).size(px(20.)).disabled(true)),
             )
     }
 
     fn switches(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
         let caption = |text: &'static str| {
-            div().w(px(120.)).text_size(px(12.)).text_color(s.on_surface_variant).child(text)
+            div()
+                .w(px(120.))
+                .text_size(px(12.))
+                .text_color(s.on_surface_variant)
+                .child(text)
         };
-        let toggle = |cx: &mut Context<Self>, i: usize| {
-            self.on(cx, move |d, on: bool| d.switches[i] = on)
-        };
+        let toggle =
+            |cx: &mut Context<Self>, i: usize| self.on(cx, move |d, on: bool| d.switches[i] = on);
         column()
             .child(
-                row().child(caption("Standard"))
+                row()
+                    .child(caption("Standard"))
                     .child(Switch::new("sw-a", self.switches[0]).on_toggle(toggle(cx, 0)))
                     .child(Switch::new("sw-b", self.switches[1]).on_toggle(toggle(cx, 1))),
             )
             .child(
-                row().child(caption("With icons"))
-                    .child(Switch::new("sw-c", self.switches[0]).icons(true).on_toggle(toggle(cx, 0)))
-                    .child(Switch::new("sw-d", self.switches[1]).icons(true).on_toggle(toggle(cx, 1))),
+                row()
+                    .child(caption("With icons"))
+                    .child(
+                        Switch::new("sw-c", self.switches[0])
+                            .icons(true)
+                            .on_toggle(toggle(cx, 0)),
+                    )
+                    .child(
+                        Switch::new("sw-d", self.switches[1])
+                            .icons(true)
+                            .on_toggle(toggle(cx, 1)),
+                    ),
             )
             .child(
-                row().child(caption("Compact, icons"))
+                row()
+                    .child(caption("Compact, icons"))
                     .child(
                         Switch::new("sw-e", self.switches[2])
                             .compact(true)
@@ -265,7 +305,8 @@ impl SelectionDemos {
                     ),
             )
             .child(
-                row().child(caption("Custom icons"))
+                row()
+                    .child(caption("Custom icons"))
                     .child(
                         Switch::new("sw-g", self.switches[4])
                             .thumb_icons("sun", "moon")
@@ -278,7 +319,8 @@ impl SelectionDemos {
                     ),
             )
             .child(
-                row().child(caption("Disabled"))
+                row()
+                    .child(caption("Disabled"))
                     .child(Switch::new("sw-i", true).icons(true).disabled(true))
                     .child(Switch::new("sw-j", false).icons(true).disabled(true)),
             )
@@ -288,12 +330,23 @@ impl SelectionDemos {
         let s = *Theme::of(cx);
         let words = || ["Day", "Week", "Month", "Year"].map(Segment::label);
         let status = |on: &[bool], names: &[&str]| -> SharedString {
-            let picked: Vec<&str> =
-                names.iter().zip(on).filter(|(_, on)| **on).map(|(n, _)| *n).collect();
-            if picked.is_empty() { "Nothing selected".into() } else { picked.join(", ").into() }
+            let picked: Vec<&str> = names
+                .iter()
+                .zip(on)
+                .filter(|(_, on)| **on)
+                .map(|(n, _)| *n)
+                .collect();
+            if picked.is_empty() {
+                "Nothing selected".into()
+            } else {
+                picked.join(", ").into()
+            }
         };
         let note = |text: SharedString| {
-            div().text_size(px(12.)).text_color(s.on_surface_variant).child(text)
+            div()
+                .text_size(px(12.))
+                .text_color(s.on_surface_variant)
+                .child(text)
         };
         let many = |cx: &mut Context<Self>, set: fn(&mut Self, Vec<bool>)| {
             self.on(cx, move |d, flags: Vec<bool>| set(d, flags))
@@ -313,8 +366,11 @@ impl SelectionDemos {
                 column()
                     .items_start()
                     .child(note(
-                        format!("Multi-select: {}", status(&self.multi, &["Day", "Week", "Month", "Year"]))
-                            .into(),
+                        format!(
+                            "Multi-select: {}",
+                            status(&self.multi, &["Day", "Week", "Month", "Year"])
+                        )
+                        .into(),
                     ))
                     .child(
                         SegmentedButtons::multi("seg-multi", words(), self.multi)
@@ -324,7 +380,9 @@ impl SelectionDemos {
             .child(
                 column()
                     .items_start()
-                    .child(note("Segments with an icon keep it and show no check".into()))
+                    .child(note(
+                        "Segments with an icon keep it and show no check".into(),
+                    ))
                     .child(
                         SegmentedButtons::multi(
                             "seg-multi-icons",
@@ -343,22 +401,32 @@ impl SelectionDemos {
                     .gap(px(24.))
                     .items_end()
                     .child(
-                        column().items_start().child(note("Dense, single".into())).child(
-                            SegmentedButtons::new("seg-dense-single", words(), self.dense_single)
+                        column()
+                            .items_start()
+                            .child(note("Dense, single".into()))
+                            .child(
+                                SegmentedButtons::new(
+                                    "seg-dense-single",
+                                    words(),
+                                    self.dense_single,
+                                )
                                 .dense(true)
                                 .on_change(self.on(cx, |d, i: usize| d.dense_single = i)),
-                        ),
+                            ),
                     )
                     .child(
-                        column().items_start().child(note("Dense, multi".into())).child(
-                            SegmentedButtons::multi(
-                                "seg-dense-multi",
-                                ["Bold", "Italic", "Link"].map(Segment::label),
-                                self.dense_multi,
-                            )
-                            .dense(true)
-                            .on_change_many(many(cx, |d, f| d.dense_multi.copy_from_slice(&f))),
-                        ),
+                        column()
+                            .items_start()
+                            .child(note("Dense, multi".into()))
+                            .child(
+                                SegmentedButtons::multi(
+                                    "seg-dense-multi",
+                                    ["Bold", "Italic", "Link"].map(Segment::label),
+                                    self.dense_multi,
+                                )
+                                .dense(true)
+                                .on_change_many(many(cx, |d, f| d.dense_multi.copy_from_slice(&f))),
+                            ),
                     ),
             )
             .child(

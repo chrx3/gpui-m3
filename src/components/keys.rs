@@ -12,7 +12,7 @@ use gpui::{
 
 use super::{ClickHandler, Tooltip, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::theme::{font_family, Theme};
+use crate::theme::{Theme, font_family};
 
 /// The words shown for the modifiers and named keys.
 ///

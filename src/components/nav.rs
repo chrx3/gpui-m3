@@ -12,7 +12,7 @@ use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, animate_on_activate, key};
 use crate::shapes::Tone;
-use crate::theme::{font_family, Theme, alpha};
+use crate::theme::{Theme, alpha, font_family};
 
 /// Navigation row (the sidebar in the reference design). The selected indicator starts at the
 /// center and stretches with the spring.

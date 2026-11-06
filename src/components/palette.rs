@@ -8,7 +8,7 @@ use gpui::{
 
 use super::{Icon, MenuItem, TextField, TextFieldEvent, pop_in, shadow_pop};
 use crate::motion::{Spring, entrance, key};
-use crate::theme::{font_family, Theme, alpha};
+use crate::theme::{Theme, alpha, font_family};
 
 actions!(m3_command_palette, [SelectPrevious, SelectNext]);
 

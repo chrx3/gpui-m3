@@ -13,7 +13,7 @@ use super::{ClickHandler, Icon, Radio, RoundedExt, all, child_id, corners};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, entrance, key, replay};
 use crate::shapes::Tone;
-use crate::theme::{font_family, MONO_FONT_FAMILY, Scheme, Theme, alpha, mix};
+use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family, mix};
 
 /// Shadow for menus and popovers .
 pub fn shadow_pop(s: &Scheme) -> Vec<BoxShadow> {

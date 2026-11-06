@@ -14,7 +14,7 @@ use gpui::{
 use super::{Icon, IconButton, TextField, TextFieldEvent, all, child_id};
 use crate::interaction::{focus_ring, interactive, state_layer, use_interaction};
 use crate::motion::{self, Spring, entrance, key};
-use crate::theme::{font_family, Elevation, Theme};
+use crate::theme::{Elevation, Theme, font_family};
 
 /// Height of the search bar and of the input row of the view.
 const BAR_HEIGHT: f32 = 56.;
@@ -211,11 +211,7 @@ fn input_row(
             .child(text.clone())
             .into_any_element()
     } else {
-        div()
-            .flex_1()
-            .min_w_0()
-            .child(field)
-            .into_any_element()
+        div().flex_1().min_w_0().child(field).into_any_element()
     };
     let clear = (!text.is_empty()).then(|| {
         let search = search.clone();
@@ -295,8 +291,15 @@ impl RenderOnce for SearchBar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         if self.active {
-            return input_row(&self.id, &self.search, RowKind::Active, self.trailing, false, cx)
-                .into_any_element();
+            return input_row(
+                &self.id,
+                &self.search,
+                RowKind::Active,
+                self.trailing,
+                false,
+                cx,
+            )
+            .into_any_element();
         }
         let (expanded, field) = {
             let search = self.search.read(cx);
@@ -306,7 +309,9 @@ impl RenderOnce for SearchBar {
             return div().w_full().h(px(BAR_HEIGHT)).into_any_element();
         }
         let focused = field.read(cx).is_focused(window);
-        let blur = self.search.update(cx, |search, _| std::mem::take(&mut search.blur_pending));
+        let blur = self
+            .search
+            .update(cx, |search, _| std::mem::take(&mut search.blur_pending));
         if blur && focused {
             window.blur();
         }
@@ -315,7 +320,14 @@ impl RenderOnce for SearchBar {
         let radii = all(px(RADIUS));
         let layer = state_layer(&self.id, &state, radii, s.on_surface, window, cx);
         let ring = focus_ring(&self.id, focused, radii, window, cx);
-        let row = input_row(&self.id, &self.search, RowKind::Docked, self.trailing, false, cx);
+        let row = input_row(
+            &self.id,
+            &self.search,
+            RowKind::Docked,
+            self.trailing,
+            false,
+            cx,
+        );
         let bar = div()
             .id(self.id.clone())
             .relative()
@@ -413,11 +425,24 @@ impl RenderOnce for SearchView {
         };
         let leaving = !expanded;
         // Both restart each time the view appears, because their state lives only while it is drawn.
-        let reveal = entrance(key(&self.id, "reveal"), Spring::SPATIAL_FAST, 0., window, cx)
-            .clamp(0., 1.);
+        let reveal = entrance(
+            key(&self.id, "reveal"),
+            Spring::SPATIAL_FAST,
+            0.,
+            window,
+            cx,
+        )
+        .clamp(0., 1.);
         let fade = entrance(key(&self.id, "fade"), Spring::EFFECTS, 0., window, cx).clamp(0., 1.);
 
-        let row = input_row(&self.id, &self.search, RowKind::Active, self.trailing, leaving, cx);
+        let row = input_row(
+            &self.id,
+            &self.search,
+            RowKind::Active,
+            self.trailing,
+            leaving,
+            cx,
+        );
 
         let results = if self.children.is_empty() {
             self.empty_text.map(|text| {

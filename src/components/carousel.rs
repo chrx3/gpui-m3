@@ -12,8 +12,8 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Bounds, ElementId, FontWeight, Hsla, ImageSource, InteractiveElement,
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ObjectFit, ParentElement, Pixels, RenderOnce, ScrollWheelEvent, SharedString,
-    Styled, StyledImage, Window, canvas, div, img, px,
+    ObjectFit, ParentElement, Pixels, RenderOnce, ScrollWheelEvent, SharedString, Styled,
+    StyledImage, Window, canvas, div, img, px,
 };
 
 use super::{ChangeHandler, RoundedExt, all};
@@ -361,7 +361,9 @@ impl Scroll {
             .iter()
             .find(|(t, _)| now.duration_since(*t).as_secs_f32() < 0.1)
             .filter(|(t, _)| *t < now)
-            .map_or(0., |(t, p)| (self.pos - p) / now.duration_since(*t).as_secs_f32());
+            .map_or(0., |(t, p)| {
+                (self.pos - p) / now.duration_since(*t).as_secs_f32()
+            });
         let max = self.max.max(0.);
         if self.snap {
             let target = snap_target(self.pos, velocity, max);
@@ -581,7 +583,11 @@ impl RenderOnce for Carousel {
         };
         let measured = {
             let b = bounds_cell.get();
-            f32::from(if vertical { b.size.height } else { b.size.width })
+            f32::from(if vertical {
+                b.size.height
+            } else {
+                b.size.width
+            })
         };
         let container = fixed.unwrap_or(measured);
         let container = if container > 0. {
@@ -593,7 +599,9 @@ impl RenderOnce for Carousel {
         let cross = if vertical { cross_width } else { height };
 
         let item = match layout {
-            CarouselLayout::Uncontained => self.item_width.unwrap_or(DEFAULT_ITEM_WIDTH).min(container),
+            CarouselLayout::Uncontained => {
+                self.item_width.unwrap_or(DEFAULT_ITEM_WIDTH).min(container)
+            }
             CarouselLayout::FullScreen => container,
             _ => 0.,
         };
@@ -627,7 +635,11 @@ impl RenderOnce for Carousel {
             let ring = animate_f32(
                 key(&item_key(&self.id, slot.index), "ring"),
                 Spring::EFFECTS,
-                if self.selected == Some(slot.index) { 1. } else { 0. },
+                if self.selected == Some(slot.index) {
+                    1.
+                } else {
+                    0.
+                },
                 window,
                 cx,
             );
@@ -637,9 +649,15 @@ impl RenderOnce for Carousel {
                 .corners(all(px(radius)))
                 .bg(entry.background.unwrap_or(s.surface_container_highest));
             el = if vertical {
-                el.top(px(slot.start)).left_0().h(px(slot.extent)).w(px(cross))
+                el.top(px(slot.start))
+                    .left_0()
+                    .h(px(slot.extent))
+                    .w(px(cross))
             } else {
-                el.left(px(slot.start)).top_0().w(px(slot.extent)).h(px(cross))
+                el.left(px(slot.start))
+                    .top_0()
+                    .w(px(slot.extent))
+                    .h(px(cross))
             };
             el = match entry.content {
                 Content::Image(source) => {
@@ -662,7 +680,12 @@ impl RenderOnce for Carousel {
                         )
                 }
                 Content::Element(content) => {
-                    let inner = div().absolute().top_0().left_0().overflow_hidden().child(content);
+                    let inner = div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .overflow_hidden()
+                        .child(content);
                     el.child(if vertical {
                         inner.w(px(cross)).h(px(natural))
                     } else {
@@ -717,17 +740,25 @@ impl RenderOnce for Carousel {
                     let scroll = scroll.clone();
                     move |bounds: Bounds<Pixels>, window, cx| {
                         bounds_cell.set(bounds);
-                        let length = f32::from(if vertical { bounds.size.height } else { bounds.size.width });
+                        let length = f32::from(if vertical {
+                            bounds.size.height
+                        } else {
+                            bounds.size.width
+                        });
                         if (length - scroll.read(cx).used).abs() > 0.5 {
                             window.request_animation_frame();
                         }
                     }
                 },
                 move |bounds, _, window, _| {
-                    let along = move |p: gpui::Point<Pixels>| f32::from(if vertical { p.y } else { p.x });
+                    let along =
+                        move |p: gpui::Point<Pixels>| f32::from(if vertical { p.y } else { p.x });
                     let st = scroll.clone();
                     window.on_mouse_event(move |e: &MouseDownEvent, phase, window, cx| {
-                        if !phase.bubble() || e.button != MouseButton::Left || !bounds.contains(&e.position) {
+                        if !phase.bubble()
+                            || e.button != MouseButton::Left
+                            || !bounds.contains(&e.position)
+                        {
                             return;
                         }
                         window.focus(&handle);
@@ -817,7 +848,11 @@ impl RenderOnce for Carousel {
                 }
             })
             .on_key_down(move |e: &KeyDownEvent, _, cx| {
-                let (back, forward) = if vertical { ("up", "down") } else { ("left", "right") };
+                let (back, forward) = if vertical {
+                    ("up", "down")
+                } else {
+                    ("left", "right")
+                };
                 let key = e.keystroke.key.as_str();
                 if ![back, forward, "home", "end"].contains(&key) {
                     return;
@@ -903,8 +938,14 @@ mod tests {
                     if let Some(before) = previous.iter().find(|p| p.index == slot.index) {
                         // 1 % of an item of scroll moves a size by about 1 % of the strip. An item
                         // that is almost gone moves the next one twice as fast (its gap goes too).
-                        assert!((slot.extent - before.extent).abs() < 6., "{layout:?} at {offset}");
-                        assert!((slot.start - before.start).abs() < 12., "{layout:?} at {offset}");
+                        assert!(
+                            (slot.extent - before.extent).abs() < 6.,
+                            "{layout:?} at {offset}"
+                        );
+                        assert!(
+                            (slot.start - before.start).abs() < 12.,
+                            "{layout:?} at {offset}"
+                        );
                     }
                 }
                 previous = next;
@@ -924,7 +965,10 @@ mod tests {
     #[test]
     fn center_hero_centers_the_large_item_with_a_small_one_each_side() {
         let middle = slots(CarouselLayout::CenterHero, 3.);
-        assert_eq!(middle.iter().map(|s| s.index).collect::<Vec<_>>(), [2, 3, 4]);
+        assert_eq!(
+            middle.iter().map(|s| s.index).collect::<Vec<_>>(),
+            [2, 3, 4]
+        );
         let large = middle[1];
         assert!((large.start + large.extent / 2. - W / 2.).abs() < 1e-3);
         assert_eq!(middle[0].extent, SMALL);
@@ -962,7 +1006,10 @@ mod tests {
             for step in 0..60 {
                 let offset = step as f32 * 0.15 - 1.;
                 for slot in slots(layout, offset) {
-                    assert!(slot.extent > 0. && slot.extent <= W, "{layout:?} at {offset}");
+                    assert!(
+                        slot.extent > 0. && slot.extent <= W,
+                        "{layout:?} at {offset}"
+                    );
                     assert!(slot.start < W && slot.index < 10);
                 }
             }
@@ -1067,7 +1114,10 @@ mod tests {
         };
         scroll.pos = 1.3;
         scroll.settle_to(1., 0., Spring::SPATIAL, t0);
-        scroll.advance(t0 + std::time::Duration::from_secs(5), MotionSettings::default());
+        scroll.advance(
+            t0 + std::time::Duration::from_secs(5),
+            MotionSettings::default(),
+        );
         assert_eq!(scroll.pos, 1.);
         assert!(!scroll.busy());
     }

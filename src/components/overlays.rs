@@ -12,20 +12,29 @@ use gpui::prelude::FluentBuilder as _;
 
 use super::{ClickHandler, RoundedExt, all};
 use crate::motion::{Spring, animate_f32, entrance, key};
-use crate::theme::{font_family, Scheme, Theme, alpha};
+use crate::theme::{Scheme, Theme, alpha, font_family};
 
 /// `color` laid over `base`: the opaque result.
 pub(super) fn over(color: Hsla, base: Hsla) -> Hsla {
     let (c, b) = (Rgba::from(color), Rgba::from(base));
     let a = c.a.clamp(0., 1.);
     let mix = |x: f32, y: f32| x * a + y * (1. - a);
-    Hsla::from(Rgba { r: mix(c.r, b.r), g: mix(c.g, b.g), b: mix(c.b, b.b), a: 1. })
+    Hsla::from(Rgba {
+        r: mix(c.r, b.r),
+        g: mix(c.g, b.g),
+        b: mix(c.b, b.b),
+        a: 1.,
+    })
 }
 
 /// An opaque ground for translucent schemes: the container surface laid over the surface, over
 /// a near-black (dark scheme) or near-white (light scheme) fallback.
 pub(super) fn ground(s: &Scheme) -> Hsla {
-    let fallback = if s.on_surface.l > 0.5 { gpui::hsla(0., 0., 0.12, 1.) } else { gpui::hsla(0., 0., 0.97, 1.) };
+    let fallback = if s.on_surface.l > 0.5 {
+        gpui::hsla(0., 0., 0.12, 1.)
+    } else {
+        gpui::hsla(0., 0., 0.97, 1.)
+    };
     over(s.surface_container, over(s.surface, fallback))
 }
 
@@ -155,7 +164,11 @@ impl RenderOnce for Dialog {
             })
             .p(self.padding)
             .rounded(radius)
-            .bg(if translucent { over(s.surface_container_high, ground(&s)) } else { s.surface_container_high })
+            .bg(if translucent {
+                over(s.surface_container_high, ground(&s))
+            } else {
+                s.surface_container_high
+            })
             .text_color(s.on_surface_variant)
             .text_size(px(13.5))
             .shadow(super::shadow_pop(&s))
@@ -207,7 +220,11 @@ impl RenderOnce for Dialog {
             .flex()
             .items_center()
             .justify_center()
-            .bg(if translucent { alpha(ground(&s), 0.7 * fade) } else { alpha(gpui::black(), 0.32 * fade) })
+            .bg(if translucent {
+                alpha(ground(&s), 0.7 * fade)
+            } else {
+                alpha(gpui::black(), 0.32 * fade)
+            })
             .font_family(font_family())
             .occlude()
             .child(card);
@@ -316,7 +333,10 @@ pub fn context_menu(position: Point<Pixels>, content: impl IntoElement) -> impl 
 /// (glass) has a translucent `surface`, and the text vanished on the light background (an
 /// empty white box): then the text takes near black or near white, whichever reads.
 fn inverse(s: &Scheme) -> (gpui::Hsla, gpui::Hsla) {
-    let bg = gpui::Hsla { a: 1., ..s.on_surface };
+    let bg = gpui::Hsla {
+        a: 1.,
+        ..s.on_surface
+    };
     let fg = if s.surface.a >= 0.95 {
         s.surface
     } else if bg.l > 0.5 {

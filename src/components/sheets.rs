@@ -242,9 +242,17 @@ impl RenderOnce for BottomSheet {
             return sheet.into_any_element();
         }
 
-        sheet = shield(sheet.max_h(viewport.height - px(TOP_MARGIN)).child(
-            div().absolute().left_0().right_0().bottom(px(-SKIRT)).h(px(SKIRT)).bg(bg),
-        ));
+        sheet = shield(
+            sheet.max_h(viewport.height - px(TOP_MARGIN)).child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom(px(-SKIRT))
+                    .h(px(SKIRT))
+                    .bg(bg),
+            ),
+        );
         // The height is measured while painting, to know how far to slide.
         let measured = window
             .use_keyed_state(key(&self.id, "height"), cx, |_, _| Rc::new(Cell::new(0f32)))
@@ -260,11 +268,14 @@ impl RenderOnce for BottomSheet {
             .top(px(slide_offset(entered, shown, travel)))
             .when(shown < 1., |d| d.opacity(shown))
             .child(
-                canvas(move |bounds, _, _| measured.set(f32::from(bounds.size.height)), |_, _, _, _| {})
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full(),
+                canvas(
+                    move |bounds, _, _| measured.set(f32::from(bounds.size.height)),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
             );
         overlay(
             scrim_layer(&self.id, &s, shown, self.on_dismiss, window, cx)
@@ -480,7 +491,11 @@ impl RenderOnce for SideSheet {
 
         // The skirt sits behind the screen edge, so the overshoot of the spring shows no gap.
         let skirt = div().absolute().top_0().bottom_0().w(px(SKIRT)).bg(bg);
-        let skirt = if right { skirt.right(px(-SKIRT)) } else { skirt.left(px(-SKIRT)) };
+        let skirt = if right {
+            skirt.right(px(-SKIRT))
+        } else {
+            skirt.left(px(-SKIRT))
+        };
         let entered = entrance(key(&self.id, "slide"), Spring::SPATIAL, 0., window, cx);
         let shown = self.shown;
         let offset = slide_offset(entered, shown, f32::from(self.width));
@@ -488,8 +503,15 @@ impl RenderOnce for SideSheet {
             .left(px(if right { offset } else { -offset }))
             .when(shown < 1., |d| d.opacity(shown));
         let scrim = scrim_layer(&self.id, &s, shown, self.on_dismiss, window, cx).flex();
-        overlay(if right { scrim.justify_end() } else { scrim.justify_start() }.child(sheet))
-            .into_any_element()
+        overlay(
+            if right {
+                scrim.justify_end()
+            } else {
+                scrim.justify_start()
+            }
+            .child(sheet),
+        )
+        .into_any_element()
     }
 }
 
