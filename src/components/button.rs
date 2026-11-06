@@ -90,26 +90,26 @@ pub enum M3ButtonSize {
 }
 
 /// Measurements of one step of the [`M3ButtonSize`] scale, in pixels.
-struct M3Metrics {
-    height: f32,
+pub(super) struct M3Metrics {
+    pub(super) height: f32,
     /// Side padding of a button.
-    padding: f32,
+    pub(super) padding: f32,
     /// Icon size of a button.
-    icon: f32,
+    pub(super) icon: f32,
     /// Gap between a button's icon and its label.
-    gap: f32,
+    pub(super) gap: f32,
     /// Corner radius of the square shape.
-    square: f32,
+    pub(super) square: f32,
     /// Corner radius while pressed.
-    pressed: f32,
+    pub(super) pressed: f32,
     /// Outline width of the outlined variants.
-    outline: f32,
+    pub(super) outline: f32,
     /// Label typography of a button.
-    text: TypeStyle,
+    pub(super) text: TypeStyle,
 }
 
 impl M3ButtonSize {
-    fn metrics(self) -> M3Metrics {
+    pub(super) fn metrics(self) -> M3Metrics {
         let (height, padding, icon, gap, square, pressed, outline, text) = match self {
             M3ButtonSize::Xs => (32., 12., 20., 4., corner::M, corner::S, 1., LABEL_LARGE),
             M3ButtonSize::S => (40., 16., 20., 8., corner::M, corner::S, 1., LABEL_LARGE),
@@ -130,7 +130,7 @@ impl M3ButtonSize {
     }
 
     /// Icon size and side padding of an icon button of this size and `width`.
-    fn icon_button(self, width: IconButtonWidth) -> (f32, f32) {
+    pub(super) fn icon_button(self, width: IconButtonWidth) -> (f32, f32) {
         let (icon, [narrow, default, wide]) = match self {
             M3ButtonSize::Xs => (20., [4., 6., 10.]),
             M3ButtonSize::S => (24., [4., 8., 14.]),
@@ -959,6 +959,11 @@ pub struct Fab {
     label: Option<SharedString>,
     size: FabSize,
     hover_radius: Option<f32>,
+    /// Container and content colors of a FAB inside a toolbar, which also drops the shadow.
+    in_toolbar: Option<(Hsla, Hsla)>,
+    /// What a [`FabMenu`](super::FabMenu) changes while it opens: colors (the shadow stays),
+    /// whether it rests as a circle and the icon's turn in radians.
+    menu_look: Option<(Hsla, Hsla, bool, f32)>,
     on_click: Option<ClickHandler>,
 }
 
@@ -970,6 +975,8 @@ impl Fab {
             label: None,
             size: FabSize::default(),
             hover_radius: None,
+            in_toolbar: None,
+            menu_look: None,
             on_click: None,
         }
     }
@@ -1000,6 +1007,18 @@ impl Fab {
         self
     }
 
+    /// Colors it for a toolbar's container and removes its shadow.
+    pub(super) fn in_toolbar(mut self, container: Hsla, content: Hsla) -> Self {
+        self.in_toolbar = Some((container, content));
+        self
+    }
+
+    /// The look of a FAB menu's button: colors, circle or rounded square, and icon turn.
+    pub(super) fn menu_look(mut self, container: Hsla, content: Hsla, circle: bool, turn: f32) -> Self {
+        self.menu_look = Some((container, content, circle, turn));
+        self
+    }
+
     /// Extended FAB (with text), like a "New conversation" button.
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
@@ -1021,7 +1040,10 @@ impl RenderOnce for Fab {
             (st.hovered, st.pressed)
         };
         let extended = self.label.is_some();
-        let (size, rest_radius, icon_size) = self.size.metrics();
+        let (size, mut rest_radius, icon_size) = self.size.metrics();
+        if let Some((_, _, true, _)) = self.menu_look {
+            rest_radius = size / 2.;
+        }
         // The baseline extended FAB keeps its compact 42 px; the small extended FAB is 56 px
         // tall, not 40.
         let compact = extended && self.size == FabSize::Baseline;
@@ -1051,14 +1073,14 @@ impl RenderOnce for Fab {
             window,
             cx,
         );
-        let layer = state_layer(
-            &self.id,
-            &state,
-            all(radius),
-            s.on_primary_container,
-            window,
-            cx,
-        );
+        let (container, content) = match self.menu_look {
+            Some((container, content, _, _)) => (container, content),
+            None => self
+                .in_toolbar
+                .unwrap_or((s.primary_container, s.on_primary_container)),
+        };
+        let icon_turn = self.menu_look.map_or(0., |look| look.3);
+        let layer = state_layer(&self.id, &state, all(radius), content, window, cx);
         let shadow = gpui::BoxShadow {
             color: s.shadow,
             offset: gpui::point(px(0.), px(2.)),
@@ -1084,14 +1106,17 @@ impl RenderOnce for Fab {
             }))
             .h(px(height * scale))
             .corners(all(radius))
-            .bg(s.primary_container)
-            .text_color(s.on_primary_container)
-            .shadow(vec![shadow, shadow_far])
+            .bg(container)
+            .text_color(content)
+            .when(self.in_toolbar.is_none(), |d| {
+                d.shadow(vec![shadow, shadow_far])
+            })
             .child(layer)
             .child(
                 Icon::new(self.icon)
                     .size(px(if compact { 19. } else { icon_size }))
-                    .color(s.on_primary_container),
+                    .color(content)
+                    .rotate(icon_turn),
             );
         face = if let Some(label) = self.label {
             // Side padding and label size of the extended FAB.

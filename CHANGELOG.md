@@ -1,8 +1,80 @@
 # Changelog
 
+## 0.2.0 — 2026-11-06
+
+Más componentes, color y elevación / More components, color and elevation
+
+### Español
+
+- **Nuevo:** Shape::drift: la forma deambula en un lazo lento alrededor de su sitio, pensada para fondos, sin recalcular el layout
+- **Mejorado:** Las formas animadas ya no saltan a su pose inicial al perder el foco la ventana: se congelan y siguen desde donde estaban (motion::ambient_clock), y no piden cuadros mientras tanto
+- **Nuevo:** Slider con tamaños Expressive (XS a XL, con ícono opcional), versión vertical, modo centrado, marcas de graduación y burbuja con el valor al arrastrar, más RangeSlider con dos manijas; ahora también se manejan con el teclado
+- **Nuevo:** StopSlider vertical y con control por flechas, Inicio y Fin
+- **Nuevo:** Casillas con estado indeterminado y de error, interruptores con íconos en el pulgar, y botones segmentados de selección múltiple y densos
+- **Nuevo:** Campos de texto con estados de Material 3: error con mensaje, texto de apoyo, contador de caracteres con límite opcional, prefijo y sufijo, deshabilitado y solo lectura
+- **Nuevo:** El área de texto ahora muestra error, texto de apoyo y contador de caracteres
+- **Nuevo:** Selectores de fecha (día o rango) y de hora (reloj de 12 h o 24 h, o dos campos numéricos), en línea o en un diálogo modal, con teclado y nombres traducibles
+- **Nuevo:** Carousel Expressive (multi-browse, sin contención, héroe, héroe centrado y pantalla completa) con arrastre, rueda, teclado y ajuste al elemento más cercano, y FabMenu, el FAB que se abre en un menú de acciones con animación escalonada
+- **Nuevo:** ButtonGroup: grupos de botones estándar (el botón presionado se ensancha) y conectados (el seleccionado se vuelve píldora), de selección simple o múltiple, en cinco tamaños
+- **Nuevo:** Toolbar flotante (horizontal o vertical, estándar o vibrant, con FAB) y Toolbar anclada
+- **Nuevo:** TopAppBar pequeña, centrada, mediana y grande, que se colapsa con TopAppBar::collapse y collapse_progress
+- **Nuevo:** SearchBar y SearchView: la barra de búsqueda y su vista expandida con resultados
+- **Nuevo:** BottomSheet y SideSheet, modales (con scrim, Escape y entrada con resorte) y estándar
+- **Nuevo:** Divider con sus márgenes y RichTooltip con título, texto y acciones
+- **Nuevo:** Roles de color completos en Scheme: secondary, on_tertiary, on_error, surface_dim, surface_bright, surface_container_lowest y low, inverse_surface, inverse_on_surface, inverse_primary y scrim. Si armas un Scheme a mano, completa con ..Scheme::baseline_dark() y derive_roles()
+- **Nuevo:** Las nueve variantes de color dinámico (Expressive, Vibrant, Neutral, Monochrome, Fidelity, Content, Rainbow, Fruit salad) y tres niveles de contraste con Scheme::from_seed_variant
+- **Nuevo:** Elevación de M3: seis niveles de sombra con Elevation::shadow
+- **Nuevo:** Sección «What's new» en el gallery con las novedades de cada versión, en español e inglés
+- **Corregido:** Compila de nuevo con el gpui publicado en crates.io: al arrastrar una selección de texto más allá del borde, la lista rueda con TextSelection::on_edge_scroll o edge_scroll_handle
+
+### English
+
+- **New:** Shape::drift: the shape wanders in a slow loop around its place, meant for backdrops, without recalculating the layout
+- **Improved:** Animated shapes no longer jump back to their first pose when the window loses focus: they freeze and resume where they were (motion::ambient_clock), and request no frames meanwhile
+- **New:** Slider with Expressive sizes (XS to XL, with an optional icon), vertical orientation, a centered mode, tick marks and a value bubble while dragging, plus a two-handle RangeSlider; they now also work with the keyboard
+- **New:** StopSlider in a vertical orientation and with arrow, Home and End keys
+- **New:** Checkboxes with indeterminate and error states, switches with thumb icons, and multi-select and dense segmented buttons
+- **New:** Text fields with Material 3 states: error with message, supporting text, character counter with optional hard limit, prefix and suffix, disabled and read-only
+- **New:** The text area now shows error, supporting text and a character counter
+- **New:** Date pickers (single day or range) and time pickers (12 h or 24 h dial, or two number fields), docked or modal, with keyboard support and translatable names
+- **New:** Expressive Carousel (multi-browse, uncontained, hero, center-aligned hero and full-screen) with drag, wheel, keyboard and snapping, and FabMenu, the FAB that opens into a staggered stack of actions
+- **New:** ButtonGroup: standard button groups (the pressed button widens) and connected ones (the selected one turns into a pill), single or multiple selection, in five sizes
+- **New:** Floating Toolbar (horizontal or vertical, standard or vibrant, with a FAB) and docked Toolbar
+- **New:** TopAppBar small, centered, medium and large, collapsing with TopAppBar::collapse and collapse_progress
+- **New:** SearchBar and SearchView: the search bar and its expanded view with results
+- **New:** BottomSheet and SideSheet, modal (with scrim, Escape and a spring entrance) and standard
+- **New:** Divider with its insets, and RichTooltip with a title, text and actions
+- **New:** The full set of color roles in Scheme: secondary, on_tertiary, on_error, surface_dim, surface_bright, surface_container_lowest and low, inverse_surface, inverse_on_surface, inverse_primary and scrim. If you build a Scheme by hand, fill the rest with ..Scheme::baseline_dark() and derive_roles()
+- **New:** The nine dynamic color variants (Expressive, Vibrant, Neutral, Monochrome, Fidelity, Content, Rainbow, Fruit salad) and three contrast levels with Scheme::from_seed_variant
+- **New:** M3 elevation: six shadow levels with Elevation::shadow
+- **New:** A "What's new" section in the gallery with the notes of every version, in Spanish and English
+- **Fixed:** Builds again against the gpui published on crates.io: dragging a text selection past the edge scrolls the list through TextSelection::on_edge_scroll or edge_scroll_handle
+
 ## 0.1.0 — 2026-10-10
 
-First release.
+Primera versión / First release
+
+### Español
+
+- **Nuevo:** Botones, botones de ícono, FAB, chips y segmented buttons con el movimiento de Material 3 Expressive
+- **Nuevo:** Controles de selección: Switch, Radio, Checkbox, Slider y chips de filtro
+- **Nuevo:** Menús, popovers y tarjetas con entrada animada
+- **Nuevo:** Las formas de M3 Expressive con morphing, y avatares con foto recortada a la forma
+- **Nuevo:** Progreso ondulado, circular y lineal, más el LoadingIndicator
+- **Nuevo:** Campos de texto, diálogos, toasts y tooltips
+- **Nuevo:** Color dinámico desde cualquier color semilla, o tus propios colores con Theme::set_scheme
+
+### English
+
+- **New:** Buttons, icon buttons, FABs, chips and segmented buttons with Material 3 Expressive motion
+- **New:** Selection controls: Switch, Radio, Checkbox, Slider and filter chips
+- **New:** Menus, popovers and cards with animated entrances
+- **New:** The M3 Expressive shapes with morphing, and avatars with a photo clipped to the shape
+- **New:** Wavy, circular and linear progress, plus the LoadingIndicator
+- **New:** Text fields, dialogs, toasts and tooltips
+- **New:** Dynamic color from any seed color, or your own colors with Theme::set_scheme
+
+### Details
 
 - Theme: M3 color roles with the baseline scheme, dynamic color from a seed (tonal spot) and
   custom schemes via `Theme::set_scheme`.

@@ -15,7 +15,7 @@ use crate::motion::{Spring, animate_f32, entrance, key};
 use crate::theme::{font_family, Scheme, Theme, alpha};
 
 /// `color` laid over `base`: the opaque result.
-fn over(color: Hsla, base: Hsla) -> Hsla {
+pub(super) fn over(color: Hsla, base: Hsla) -> Hsla {
     let (c, b) = (Rgba::from(color), Rgba::from(base));
     let a = c.a.clamp(0., 1.);
     let mix = |x: f32, y: f32| x * a + y * (1. - a);
@@ -24,7 +24,7 @@ fn over(color: Hsla, base: Hsla) -> Hsla {
 
 /// An opaque ground for translucent schemes: the container surface laid over the surface, over
 /// a near-black (dark scheme) or near-white (light scheme) fallback.
-fn ground(s: &Scheme) -> Hsla {
+pub(super) fn ground(s: &Scheme) -> Hsla {
     let fallback = if s.on_surface.l > 0.5 { gpui::hsla(0., 0., 0.12, 1.) } else { gpui::hsla(0., 0., 0.97, 1.) };
     over(s.surface_container, over(s.surface, fallback))
 }

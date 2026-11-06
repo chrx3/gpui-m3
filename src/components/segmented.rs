@@ -7,8 +7,8 @@ use gpui::{
 };
 
 use super::{ChangeHandler, Icon, RoundedExt, corners};
-use crate::interaction::{interactive, use_interaction};
-use crate::motion::{Spring, animate, animate_color, key};
+use crate::interaction::{interactive, keyboard_focus, use_interaction};
+use crate::motion::{Spring, animate, animate_color, animate_f32, key};
 use crate::theme::{font_family, Theme};
 
 /// A group option: text, icon or both.
@@ -42,6 +42,9 @@ impl Segment {
 /// Connected button group (M3 Expressive): the ends are round, the inner buttons
 /// nearly square, and the selected one springs into a pill.
 ///
+/// [`SegmentedButtons::multi`] lets several segments be selected at once; the ones without an
+/// icon show a check when selected.
+///
 /// With [`SegmentedButtons::sliding`], the options sit on a single track and the
 /// selected pill travels between them instead: its leading edge springs ahead
 /// and the trailing one follows, so it stretches like a liquid on the way.
@@ -50,15 +53,22 @@ pub struct SegmentedButtons {
     id: ElementId,
     segments: Vec<Segment>,
     selected: usize,
+    /// Multiple selection: one flag per segment (`selected` is then unused).
+    multi: Option<Vec<bool>>,
     on_change: Option<ChangeHandler<usize>>,
+    on_change_many: Option<ChangeHandler<Vec<bool>>>,
     sliding: bool,
+    dense: bool,
 }
+
+/// The x and width of each option, relative to the track.
+type SlotSpans = Rc<[(f32, f32)]>;
 
 /// Where each option of a sliding group was last frame (x and width, relative
 /// to the track), and which way the pill last went.
 #[derive(Default)]
 struct Slots {
-    spans: Cell<Option<Rc<[(f32, f32)]>>>,
+    spans: Cell<Option<SlotSpans>>,
     target: Cell<Option<(f32, f32)>>,
     forward: Cell<bool>,
 }
@@ -76,9 +86,32 @@ impl SegmentedButtons {
             id: id.into(),
             segments: segments.into_iter().collect(),
             selected,
+            multi: None,
             on_change: None,
+            on_change_many: None,
             sliding: false,
+            dense: false,
         }
+    }
+
+    /// Multiple selection: `selected` has one flag per segment (missing ones count as off).
+    /// Selected segments without an icon show a check. Not combined with [`Self::sliding`].
+    pub fn multi(
+        id: impl Into<ElementId>,
+        segments: impl IntoIterator<Item = Segment>,
+        selected: impl IntoIterator<Item = bool>,
+    ) -> Self {
+        let mut group = Self::new(id, segments, 0);
+        let mut flags: Vec<bool> = selected.into_iter().collect();
+        flags.resize(group.segments.len(), false);
+        group.multi = Some(flags);
+        group
+    }
+
+    /// Smaller height (24 px instead of 32 px).
+    pub fn dense(mut self, dense: bool) -> Self {
+        self.dense = dense;
+        self
     }
 
     /// One track with a pill that slides to the selected option.
@@ -91,6 +124,24 @@ impl SegmentedButtons {
         self.on_change = Some(Rc::new(f));
         self
     }
+
+    /// Receives the new flags with the clicked segment toggled (for [`Self::multi`]).
+    pub fn on_change_many(
+        mut self,
+        f: impl Fn(Vec<bool>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_change_many = Some(Rc::new(f));
+        self
+    }
+}
+
+/// The flags with segment `index` flipped.
+fn toggled(selected: &[bool], index: usize) -> Vec<bool> {
+    let mut next = selected.to_vec();
+    if let Some(flag) = next.get_mut(index) {
+        *flag = !*flag;
+    }
+    next
 }
 
 impl RenderOnce for SegmentedButtons {
@@ -104,7 +155,8 @@ impl RenderOnce for SegmentedButtons {
             .max_w_full()
             .gap(px(2.))
             .font_family(font_family());
-        let slots = self.sliding.then(|| {
+        let height = if self.dense { 24. } else { 32. };
+        let slots = (self.sliding && self.multi.is_none()).then(|| {
             window
                 .use_keyed_state(key(&self.id, "slots"), cx, |_, _| Rc::new(Slots::default()))
                 .read(cx)
@@ -120,7 +172,7 @@ impl RenderOnce for SegmentedButtons {
             row = row
                 .relative()
                 .p(px(TRACK_PAD))
-                .rounded(px(16. + TRACK_PAD))
+                .rounded(px(height / 2. + TRACK_PAD))
                 .bg(s.surface_container_highest);
             if let Some((left, right)) = pill {
                 // The edge that leads springs fast; the other one trails.
@@ -141,8 +193,8 @@ impl RenderOnce for SegmentedButtons {
                         .left(px(l))
                         .w(px((r - l).max(0.)))
                         .top(px(TRACK_PAD + inset))
-                        .h(px(32. - 2. * inset))
-                        .rounded(px(16.))
+                        .h(px(height - 2. * inset))
+                        .rounded(px(height / 2.))
                         .bg(s.primary),
                 );
             }
@@ -165,15 +217,16 @@ impl RenderOnce for SegmentedButtons {
             let id = ElementId::NamedInteger(format!("{}-seg", self.id).into(), i as u64);
             let state = use_interaction(&id, window, cx);
             let pressed = state.read(cx).pressed;
-            let on = i == self.selected;
+            let on = match &self.multi {
+                Some(flags) => flags.get(i).copied().unwrap_or(false),
+                None => i == self.selected,
+            };
             let (first, last) = (i == 0, i + 1 == count);
-            let outer = 16.;
+            let outer = height / 2.;
             let inner = if pressed { 4. } else { 6. };
             let start = if first { outer } else { inner };
             let end = if last { outer } else { inner };
-            let target = if slots.is_some() {
-                [outer; 4]
-            } else if on && !pressed {
+            let target = if slots.is_some() || (on && !pressed) {
                 [outer; 4]
             } else {
                 [start, end, end, start]
@@ -189,8 +242,8 @@ impl RenderOnce for SegmentedButtons {
             let bg = animate_color(key(&id, "bg"), Spring::EFFECTS, bg, window, cx);
             let fg = animate_color(key(&id, "fg"), Spring::EFFECTS, fg, window, cx);
 
+            let icon_size = if self.dense { 14. } else { 16. };
             let mut item = div()
-                .id(id.clone())
                 .flex()
                 .items_center()
                 .justify_center()
@@ -198,25 +251,82 @@ impl RenderOnce for SegmentedButtons {
                 // In a narrow container the segments shrink and clip their labels.
                 .min_w_0()
                 .overflow_hidden()
-                .h(px(32.))
-                .px(px(if segment.label.is_some() { 14. } else { 10. }))
+                .h(px(height))
+                .px(px(match (segment.label.is_some(), self.dense) {
+                    (true, false) => 14.,
+                    (true, true) => 12.,
+                    (false, _) => 10.,
+                }))
                 .corners(corners(r))
                 .bg(bg)
                 .text_color(fg)
-                .text_size(px(12.5))
+                .text_size(px(if self.dense { 12. } else { 12.5 }))
                 .font_weight(FontWeight(if on { 600. } else { 500. }));
+            if self.multi.is_some() && segment.icon.is_none() {
+                // The check grows in from nothing and takes its gap with it.
+                let check = animate_f32(
+                    key(&id, "check"),
+                    Spring::SPATIAL_FAST,
+                    if on { 1. } else { 0. },
+                    window,
+                    cx,
+                )
+                .max(0.);
+                if check > 0.001 {
+                    item = item.gap(px(0.)).child(
+                        div()
+                            .flex_none()
+                            .overflow_hidden()
+                            .w(px((icon_size + 6.) * check))
+                            .child(Icon::new("check").size(px(icon_size)).color(fg)),
+                    );
+                }
+            }
             if let Some(icon) = segment.icon {
-                item = item.child(Icon::new(icon).size(px(16.)).color(fg));
+                item = item.child(Icon::new(icon).size(px(icon_size)).color(fg));
             }
             if let Some(label) = segment.label {
                 item = item.child(div().min_w_0().truncate().child(label));
             }
+            // The wrapper keeps the focus ring from being clipped with the segment.
+            let item = div().id(id.clone()).flex().min_w_0().child(item);
             let mut item = interactive(item, &state, true, false);
-            if let Some(f) = self.on_change.clone() {
+            item = keyboard_focus(item, &id, corners(r), false, window, cx);
+            if let Some(flags) = &self.multi {
+                if let Some(f) = self.on_change_many.clone() {
+                    let next = toggled(flags, i);
+                    item = item.on_click(move |_, w, cx| f(next.clone(), w, cx));
+                }
+            } else if let Some(f) = self.on_change.clone() {
                 item = item.on_click(move |_, w, cx| f(i, w, cx));
             }
             row = row.child(item);
         }
         row
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toggling_flips_only_the_clicked_segment() {
+        assert_eq!(toggled(&[true, false, true], 1), [true, true, true]);
+        assert_eq!(toggled(&[true, false, true], 0), [false, false, true]);
+    }
+
+    #[test]
+    fn toggling_out_of_range_changes_nothing() {
+        assert_eq!(toggled(&[true, false], 5), [true, false]);
+    }
+
+    #[test]
+    fn multi_pads_missing_flags_and_drops_extra_ones() {
+        let segments = || ["a", "b", "c"].map(Segment::label);
+        let short = SegmentedButtons::multi("g", segments(), [true]);
+        assert_eq!(short.multi, Some(vec![true, false, false]));
+        let long = SegmentedButtons::multi("g", segments(), [true, true, true, true]);
+        assert_eq!(long.multi, Some(vec![true, true, true]));
     }
 }

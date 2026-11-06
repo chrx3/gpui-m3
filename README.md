@@ -23,15 +23,17 @@ cargo run --example gallery
 ```
 
 The gallery shows every component with light/dark mode, nine seed colors and a **Slow ×5** switch to
-inspect the motion. The first build compiles GPUI and takes a few minutes. `M3_SECTION=<n>` opens a
-section directly and `M3_SIZE=<width>x<height>` sets the window size (handy for screenshots).
+inspect the motion, and a **What's new** section with the notes of every version. The first build
+compiles GPUI and takes a few minutes. `M3_SECTION=<n>` opens a section directly,
+`M3_SIZE=<width>x<height>` sets the window size and `M3_MODE=light|dark` and `M3_SEED=<n>` the look
+(handy for screenshots). How release notes are written: [changelog/README.md](changelog/README.md).
 
 ## Install
 
 ```toml
 [dependencies]
 gpui = "0.2.2"
-gpui-m3 = "0.1"
+gpui-m3 = "0.2"
 ```
 
 ```rust
@@ -61,17 +63,17 @@ an entity you create once (`cx.new(|cx| TextField::new(cx))`) and keep in your v
 
 | Group | Components |
 |---|---|
-| Buttons | `Button` (filled, tonal, outlined, text, ghost; 6 sizes; toggle, sublabel, confirmation), `IconButton` (tooltip, launch), `Fab`, `FavStar` |
-| Selection | `Switch`, `SegmentedButtons`, `StopSlider`, `Slider`, `Chip` (assist, filled, filter, input, tonal, small), `SplitButton`, `Badge`, `Radio`, `Checkbox`, `ChoiceRow`, `MorphDot` |
-| Navigation | `NavItem` (drawer rows), `RailItem`, `IconTabs`, `TabStrip`, `TreeRow`, `ListItem` |
-| Text & feedback | `TextField` (pill, compact, inline, bare, filled, outlined), `TextArea` (multi-line), `CommandPalette`, `SuggestionList` (@-mentions, with `SuggestionNav`, `match_ranges`, `rank_mentions`), `Dialog`, `Toast`, `Tooltip`, `context_menu`, `Banner`, `DividerLabel` |
-| Surfaces | `Menu` (header, back row, scrolling), `MenuItem` (dense, radio, danger, shortcuts), `Popover`, `Card`, `ExpandableCard`, `ListGroup`, `Bubble` |
+| Buttons | `Button` (filled, tonal, outlined, text, ghost; 6 sizes; toggle, sublabel, confirmation), `IconButton` (tooltip, launch), `Fab`, `FavStar`, `ButtonGroup` (standard and connected) |
+| Selection | `Switch` (thumb icons), `SegmentedButtons` (multi-select, dense), `StopSlider` (also vertical), `Slider` (continuous, centered, vertical, five Expressive sizes with icon, ticks, value indicator), `RangeSlider`, `Chip` (assist, filled, filter, input, tonal, small), `SplitButton`, `Badge`, `Radio` (error), `Checkbox` (indeterminate, error), `ChoiceRow` (indeterminate, error), `MorphDot` |
+| Navigation | `NavItem` (drawer rows), `RailItem`, `IconTabs`, `TabStrip`, `TreeRow`, `ListItem`, `TopAppBar` (small, centered, medium and large, collapsing), `Toolbar` (floating and docked), `Carousel` (multi-browse, uncontained, hero, center hero, full-screen; drag, wheel, keys, snap), `FabMenu` |
+| Text & feedback | `TextField` (pill, compact, inline, bare, filled, outlined; error and supporting text, character counter, prefix and suffix, disabled, read-only), `TextArea` (multi-line; error, supporting text, counter), `DatePicker` (docked or modal; day or range; `DateNames`), `TimePicker` (dial or number fields; 12 h or 24 h), `CommandPalette`, `SuggestionList` (@-mentions, with `SuggestionNav`, `match_ranges`, `rank_mentions`), `Dialog`, `Toast`, `Tooltip`, `context_menu`, `Banner`, `DividerLabel`, `SearchBar` and `SearchView`, `RichTooltip` |
+| Surfaces | `Menu` (header, back row, scrolling), `MenuItem` (dense, radio, danger, shortcuts), `Popover`, `Card`, `ExpandableCard`, `ListGroup`, `Bubble`, `BottomSheet`, `SideSheet`, `Divider` |
 | Shapes & progress | `Shape` (14 shapes, breathe, breathe on hover, photo fill, spin), `Avatar` (initials or a photo), `LoadingIndicator`, `WavyProgress`, `Ring`, `LinearProgress` |
 | Attachments | `DropZone` (files from the system), `ImageThumb` |
 | Code | `CodeEditor` over a `CodeBuffer` (virtualized with `uniform_list`, line numbers, mouse and keyboard selection, clipboard, undo/redo, read-only mode, a `LineHighlighter` hook), `Markdown` (GFM: tables, tasks, nested lists, quotes, links, paths; parsed with `pulldown-cmark` and cached), `CodeBlock` (language name, Copy → Copied, highlighting), `CodeOutput` (clipped tool output), `DiffView` / `Diff` (real line diff with `similar`, folding, `+N −M`), `DiffBar` |
 | Appearance | `SelectCard`, `ColorSwatches`, `HsvPicker` |
 | Settings & keys | `SettingRow` (title, description and a control on the right, for a `ListGroup`), `Kbd` (one key cap), `KeyCombo` (a combination such as `ctrl-shift-k` in a row, clickable, with a pulsing "capturing" state), `KeyNames` (English or Spanish key words), `parse_keys` |
-| Foundations | `theme` (`Scheme`, `Theme`, `corner`), `syntax` (`SyntaxHighlighter` line by line, `SyntaxPalette`), `motion` (`Spring`, `animate*`, `entrance`, `presence`, `play_on_rise`), `Presence` (exit animations), `shapes`, `interaction` (state layer, ripples, focus ring) |
+| Foundations | `theme` (`Scheme` with its nine `SchemeVariant`s and contrast levels, `Theme`, `Elevation`, `corner`), `syntax` (`SyntaxHighlighter` line by line, `SyntaxPalette`), `motion` (`Spring`, `animate*`, `entrance`, `presence`, `play_on_rise`), `Presence` (exit animations), `shapes`, `interaction` (state layer, ripples, focus ring) |
 
 ## Theming
 

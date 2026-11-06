@@ -1,6 +1,6 @@
 [package]
 name = "gpui-m3"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Material 3 Expressive components for GPUI: shape morphing, spring motion and dynamic color"
@@ -11,7 +11,7 @@ readme = "README.md"
 documentation = "https://docs.rs/gpui-m3"
 keywords = ["gpui", "material-design", "ui", "components", "gui"]
 categories = ["gui"]
-exclude = ["/docs", "/.github", "/.cargo"]
+exclude = ["/docs", "/changelog/*/", "/.github", "/.cargo"]
 
 [dependencies]
 gpui = "0.2.2"
@@ -41,6 +41,11 @@ frame-stats = []
 # Draws ```mermaid blocks of `Markdown` as diagrams (flowchart, sequence, class, state, ER, pie…)
 # with a pure-Rust renderer; a block that cannot be read stays a code block.
 mermaid = ["dep:mermaid-rs-renderer", "dep:resvg", "dep:usvg"]
+
+# Read the gallery's "What's new" section from changelog/changelog.json (already in GPUI's tree).
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Unoptimized GPUI is very slow. In development, dependencies are optimized (built once) and
 # this crate gets a light optimization that keeps rebuilds fast. Copy these into your app.

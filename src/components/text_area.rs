@@ -18,6 +18,10 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
+use super::text_field::{
+    counter_text, fit_to_limit, grapheme_count, has_supporting_row, is_over_limit,
+    supporting_content, supporting_row,
+};
 use crate::motion::continuous_at;
 use crate::theme::{font_family, Theme, alpha};
 
@@ -113,6 +117,10 @@ pub struct TextArea {
     placeholder: SharedString,
     min_rows: usize,
     max_height: Pixels,
+    error: Option<SharedString>,
+    supporting_text: Option<SharedString>,
+    max_length: Option<usize>,
+    hard_limit: bool,
     selected_range: Range<usize>,
     selection_reversed: bool,
     marked_range: Option<Range<usize>>,
@@ -141,6 +149,10 @@ impl TextArea {
             placeholder: SharedString::default(),
             min_rows: 1,
             max_height: px(240.),
+            error: None,
+            supporting_text: None,
+            max_length: None,
+            hard_limit: false,
             selected_range: 0..0,
             selection_reversed: false,
             marked_range: None,
@@ -191,6 +203,57 @@ impl TextArea {
     pub fn max_height(mut self, max_height: Pixels) -> Self {
         self.max_height = max_height;
         self
+    }
+
+    /// Error state: the caret and the supporting row turn `error` and the message replaces the
+    /// supporting text. The host paints the box, so it can follow with [`Self::is_invalid`].
+    pub fn error(mut self, error: Option<SharedString>) -> Self {
+        self.error = error;
+        self
+    }
+
+    pub fn set_error(&mut self, error: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.error != error {
+            self.error = error;
+            cx.notify();
+        }
+    }
+
+    /// 12 px line under the text. Setting it reserves the line's height, so an error message
+    /// taking its place does not move what is below.
+    pub fn supporting_text(mut self, text: impl Into<SharedString>) -> Self {
+        self.supporting_text = Some(text.into());
+        self
+    }
+
+    /// Shows a "12 / 50" counter at the end of the supporting line. It only flags: past the
+    /// limit it turns `error` and typing still works (see [`Self::hard_limit`]).
+    pub fn max_length(mut self, max: usize) -> Self {
+        self.max_length = Some(max);
+        self
+    }
+
+    /// With [`Self::max_length`], typing, pasting and IME input are cut at the limit.
+    /// [`Self::set_text`] and [`Self::replace_range`] are not.
+    pub fn hard_limit(mut self, hard: bool) -> Self {
+        self.hard_limit = hard;
+        self
+    }
+
+    /// An error was set or the text is past `max_length`.
+    pub fn is_invalid(&self) -> bool {
+        self.error.is_some() || is_over_limit(grapheme_count(&self.content), self.max_length)
+    }
+
+    /// `new_text` cut so that replacing `range` respects the hard limit.
+    fn within_limit<'a>(&self, range: &Range<usize>, new_text: &'a str) -> &'a str {
+        let max = if self.hard_limit { self.max_length } else { None };
+        if max.is_none() {
+            return new_text;
+        }
+        let kept = grapheme_count(&self.content[..range.start])
+            + grapheme_count(&self.content[range.end..]);
+        fit_to_limit(kept, new_text, max)
     }
 
     pub fn text(&self) -> &SharedString {
@@ -572,6 +635,7 @@ impl EntityInputHandler for TextArea {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        let new_text = self.within_limit(&range, new_text);
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -594,6 +658,7 @@ impl EntityInputHandler for TextArea {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        let new_text = self.within_limit(&range, new_text);
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -604,6 +669,8 @@ impl EntityInputHandler for TextArea {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        let end = self.content.len();
+        self.selected_range = self.selected_range.start.min(end)..self.selected_range.end.min(end);
         self.changed(cx);
     }
 
@@ -936,9 +1003,14 @@ impl Element for TextBody {
         cx: &mut App,
     ) {
         let s = *Theme::of(cx);
-        let (focus_handle, last_edit, scroll_y) = {
+        let (focus_handle, last_edit, scroll_y, invalid) = {
             let area = self.area.read(cx);
-            (area.focus_handle.clone(), area.last_edit, area.scroll_y)
+            (
+                area.focus_handle.clone(),
+                area.last_edit,
+                area.scroll_y,
+                area.is_invalid(),
+            )
         };
         window.handle_input(
             &focus_handle,
@@ -972,7 +1044,7 @@ impl Element for TextBody {
             {
                 let since_edit = last_edit.elapsed().as_secs_f32();
                 if since_edit < 0.5 || ((since_edit / 0.53) as u32).is_multiple_of(2) {
-                    window.paint_quad(fill(cursor, s.primary));
+                    window.paint_quad(fill(cursor, if invalid { s.error } else { s.primary }));
                 }
             }
         });
@@ -1029,5 +1101,22 @@ impl Render for TextArea {
             .font_weight(FontWeight(400.))
             .line_height(relative(1.5))
             .child(TextBody { area: cx.entity() })
+            .children(
+                has_supporting_row(
+                    self.supporting_text.as_ref(),
+                    self.max_length,
+                    self.error.as_ref(),
+                )
+                .then(|| {
+                    let count = grapheme_count(&self.content);
+                    let content =
+                        supporting_content(self.error.as_ref(), self.supporting_text.as_ref())
+                            .map(|(text, error)| (text.clone(), error));
+                    let counter = self
+                        .max_length
+                        .map(|max| (counter_text(count, max), is_over_limit(count, Some(max))));
+                    supporting_row(content, counter, 0., &s)
+                }),
+            )
     }
 }

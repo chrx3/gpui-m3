@@ -2181,7 +2181,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-m3"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "gpui",
  "image",
@@ -2191,6 +2191,8 @@ dependencies = [
  "mermaid-rs-renderer",
  "pulldown-cmark",
  "resvg",
+ "serde",
+ "serde_json",
  "similar",
  "syntect",
  "unicode-segmentation",

@@ -170,7 +170,7 @@ impl ShapeName {
     /// Rounded-polygon outline (unit box, y down) and the point its rays are cast from, for
     /// the shapes that are not a simple radius function. Vertices and roundings follow
     /// Compose's `MaterialShapes`; corner smoothing is left out.
-    fn outline(self) -> Option<(Vec<(f32, f32)>, (f32, f32))> {
+    fn outline(self) -> Option<Outline> {
         const CENTER: (f32, f32) = (0.5, 0.5);
         let corners = match self {
             ShapeName::Square => rectangle(1., 1., [0.3; 4]),
@@ -441,6 +441,9 @@ fn star(points: usize, inner: f32, rounding: f32, rotate: f32) -> Vec<Corner> {
         .collect()
 }
 
+/// A rounded-polygon outline in the unit box and the point its rays are cast from.
+type Outline = (Vec<(f32, f32)>, (f32, f32));
+
 /// Compose's `RoundedPolygon.rectangle`, centered in the unit box. Roundings go bottom-right,
 /// bottom-left, top-left, top-right.
 fn rectangle(width: f32, height: f32, rounding: [f32; 4]) -> Vec<Corner> {
@@ -492,8 +495,8 @@ fn rounded_outline(corners: &[Corner]) -> Vec<(f32, f32)> {
         }
     };
     let mut out = Vec::with_capacity(n * (CURVE_STEPS + 1));
-    for i in 0..n {
-        let d = wanted[i] * fit(i + n - 1).min(fit(i));
+    for (i, &want) in wanted.iter().enumerate() {
+        let d = want * fit(i + n - 1).min(fit(i));
         let v = vertex(i);
         if d <= 1e-6 {
             out.push(v);

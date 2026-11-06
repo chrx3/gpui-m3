@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, AnyView, App, AppContext, Application, Bounds, ClickEvent, Context, ElementId,
+    AnyElement, AnyView, App, AppContext, Application, Global, Bounds, ClickEvent, Context, ElementId,
     Entity, ExternalPaths, FontStyle, FontWeight, HighlightStyle, Hsla, InteractiveElement,
     IntoElement, KeyBinding, MouseButton, ParentElement, PathBuilder, Pixels, Point, Render,
     RenderImage, Rgba, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
@@ -24,17 +24,36 @@ use gpui_m3::{
     Splitter, Spring, StopSlider, Suggestion, SuggestionAccept, SuggestionDismiss, SuggestionList,
     SuggestionNav, SuggestionNext, SuggestionPrevious, Switch, Tab, TabStrip, TextArea,
     TextAreaEvent, TextField, TextFieldEvent, Theme, ThemeReveal, Toast, Tone, TreeRow,
-    WavyCircularProgress, WavyProgress, animate_theme, apply_reorder, context_menu,
+    Elevation, Scheme, SchemeVariant, WavyCircularProgress, WavyProgress, animate_scheme,
+    animate_theme, apply_reorder, context_menu,
     motion::{animate_color, animate_f32, key, pulse},
     rank_mentions,
     theme::{FONT_FAMILY, alpha, hex},
     theme_reveal,
 };
 
+#[path = "gallery/button_group.rs"]
+mod button_group;
+#[path = "gallery/carousel.rs"]
+mod carousel;
+#[path = "gallery/changelog.rs"]
+mod changelog;
 #[path = "gallery/code.rs"]
 mod code;
+#[path = "gallery/field.rs"]
+mod field;
+#[path = "gallery/pickers.rs"]
+mod pickers;
+#[path = "gallery/search.rs"]
+mod search;
+#[path = "gallery/selection.rs"]
+mod selection;
+#[path = "gallery/sheets.rs"]
+mod sheets;
+#[path = "gallery/slider.rs"]
+mod slider;
 
-const SECTIONS: [(&str, &str); 16] = [
+const SECTIONS: [(&str, &str); 25] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -51,7 +70,38 @@ const SECTIONS: [(&str, &str); 16] = [
     ("Code and Markdown", "terminal"),
     ("Motion", "refresh"),
     ("Editor and layout", "terminal"),
+    ("What's new", "spark"),
+    ("Groups and toolbars", "panel-bottom"),
+    ("App bars and search", "search"),
+    ("Sheets and dividers", "panel-right"),
+    ("Sliders", "gear"),
+    ("Selection variants", "check"),
+    ("Text field states", "pen"),
+    ("Date and time", "history"),
+    ("Carousel and FAB menu", "layers"),
 ];
+
+/// The dynamic color the toolbar and the Appearance section share.
+#[derive(Clone, Copy)]
+struct Look {
+    seed: Option<Hsla>,
+    variant: SchemeVariant,
+    /// -1 to 1.
+    contrast: f32,
+}
+
+impl Global for Look {}
+
+/// The scheme of the current look in `dark` or light mode. The baseline purple stays exact
+/// while nothing was changed.
+fn scheme_for(dark: bool, cx: &App) -> Scheme {
+    let look = *cx.global::<Look>();
+    if look.seed.is_none() && look.variant == SchemeVariant::TonalSpot && look.contrast == 0. {
+        return Theme::new(dark, None).scheme;
+    }
+    let seed = look.seed.unwrap_or_else(|| hex(SEEDS[0]));
+    Scheme::from_seed_variant(seed, dark, look.variant, look.contrast)
+}
 
 /// Seed colors for M3 Expressive; the first one is the base scheme.
 const SEEDS: [&str; 9] = [
@@ -128,6 +178,15 @@ struct Gallery {
 struct Demos {
     section: usize,
     code_demos: Entity<code::CodeDemos>,
+    changelog: Entity<changelog::Changelog>,
+    button_groups: Entity<button_group::ButtonGroupDemos>,
+    search_demos: Entity<search::SearchDemos>,
+    sheet_demos: Entity<sheets::SheetDemos>,
+    slider_demos: Entity<slider::SliderDemos>,
+    selection_demos: Entity<selection::SelectionDemos>,
+    field_demos: Entity<field::FieldDemos>,
+    picker_demos: Entity<pickers::PickerDemos>,
+    carousel_demos: Entity<carousel::CarouselDemos>,
     toggles: [bool; 4],
     icon_toggle: bool,
     switches: [bool; 3],
@@ -327,13 +386,39 @@ impl Render for Logo {
 
 impl Gallery {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let dark = matches!(
-            window.appearance(),
-            WindowAppearance::Dark | WindowAppearance::VibrantDark
-        );
+        // M3_MODE=light|dark and M3_SEED=<n> fix the look (handy for screenshots).
+        let dark = match std::env::var("M3_MODE").as_deref() {
+            Ok("light") => false,
+            Ok("dark") => true,
+            _ => matches!(
+                window.appearance(),
+                WindowAppearance::Dark | WindowAppearance::VibrantDark
+            ),
+        };
+        let seed = std::env::var("M3_SEED")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|seed| *seed < SEEDS.len())
+            .unwrap_or(0);
+        let seed_color = (seed != 0).then(|| hex(SEEDS[seed]));
+        // M3_VARIANT=<0-8> (the order of the Color variants chips) and M3_CONTRAST=<-1..1>.
+        let variant = std::env::var("M3_VARIANT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .and_then(|i| SchemeVariant::ALL.get(i).copied())
+            .unwrap_or_default();
+        let contrast = std::env::var("M3_CONTRAST")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .map_or(0., |c| c.clamp(-1., 1.));
+        cx.set_global(Look {
+            seed: seed_color,
+            variant,
+            contrast,
+        });
         Self {
             dark,
-            seed: 0,
+            seed,
             slow: false,
             demos: cx.new(Demos::new),
             logo: cx.new(|_| Logo),
@@ -346,12 +431,13 @@ impl Gallery {
     }
 
     fn apply_theme(&self, cx: &mut App) {
-        Theme::set(self.dark, self.seed_color(), cx);
+        Theme::set_scheme(scheme_for(self.dark, cx), self.dark, cx);
     }
 }
 
 impl Demos {
     fn new(cx: &mut Context<Self>) -> Self {
+        let demos = cx.weak_entity();
         let search = cx.new(|cx| {
             TextField::new(cx)
                 .placeholder("Search chats")
@@ -542,6 +628,15 @@ impl Demos {
             context_menu: None,
             section: 0,
             code_demos: cx.new(code::CodeDemos::new),
+            changelog: cx.new(|_| changelog::Changelog::new(demos)),
+            button_groups: cx.new(button_group::ButtonGroupDemos::new),
+            search_demos: cx.new(search::SearchDemos::new),
+            sheet_demos: cx.new(sheets::SheetDemos::new),
+            slider_demos: cx.new(slider::SliderDemos::new),
+            selection_demos: cx.new(selection::SelectionDemos::new),
+            field_demos: cx.new(field::FieldDemos::new),
+            picker_demos: cx.new(pickers::PickerDemos::new),
+            carousel_demos: cx.new(carousel::CarouselDemos::new),
             toggles: [true, false, false, false],
             icon_toggle: true,
             switches: [true, false, true],
@@ -659,7 +754,15 @@ impl Render for Gallery {
                     .text_color(s.primary)
                     .child("Components"),
             )
-            .child(nav);
+            .child(
+                div()
+                    .id("sections")
+                    .flex_1()
+                    .min_h_0()
+                    .pb(px(12.))
+                    .overflow_y_scroll()
+                    .child(nav),
+            );
 
         let panel = div()
             .flex()
@@ -713,7 +816,16 @@ impl Render for Demos {
             12 => self.attachments(window, cx),
             13 => self.code_demos.clone().into_any_element(),
             14 => self.motion(window, cx),
-            _ => self.editor_section(window, cx),
+            15 => self.editor_section(window, cx),
+            16 => self.changelog.clone().into_any_element(),
+            17 => self.button_groups.clone().into_any_element(),
+            18 => self.search_demos.clone().into_any_element(),
+            19 => self.sheet_demos.clone().into_any_element(),
+            20 => self.slider_demos.clone().into_any_element(),
+            21 => self.selection_demos.clone().into_any_element(),
+            22 => self.field_demos.clone().into_any_element(),
+            23 => self.picker_demos.clone().into_any_element(),
+            _ => self.carousel_demos.clone().into_any_element(),
         };
         div()
             .id(("content", self.section))
@@ -750,7 +862,8 @@ impl Gallery {
                     .child(div().size(px(14.)).rounded(px(7.)).bg(color))
                     .on_click(click(cx, move |this, cx| {
                         this.seed = i;
-                        animate_theme(this.dark, this.seed_color(), cx);
+                        cx.global_mut::<Look>().seed = this.seed_color();
+                        animate_scheme(scheme_for(this.dark, cx), this.dark, cx);
                     })),
             );
         }
@@ -781,7 +894,7 @@ impl Gallery {
                     move |i: usize, window, cx| {
                         view.update(cx, |this, cx| {
                             this.dark = i == 1;
-                            let scheme = Theme::new(this.dark, this.seed_color()).scheme;
+                            let scheme = scheme_for(this.dark, cx);
                             theme_reveal(scheme, this.dark, window, cx);
                         })
                         .ok();
@@ -1483,6 +1596,11 @@ impl Demos {
         let s = *Theme::of(cx);
         page()
             .child(demo(
+                "Elevation",
+                "The six M3 levels (0, 1, 3, 6, 8 and 12 dp): a key shadow and a tighter ambient one, in the scheme's shadow color. Built with Elevation::shadow.",
+                elevation_levels(&s),
+            ))
+            .child(demo(
                 "Tonal cards",
                 "28 px corners and color containers (the Claude version card in Settings).",
                 row()
@@ -1655,6 +1773,46 @@ impl Demos {
                         ),
                     ),
             ))
+            .into_any_element()
+    }
+
+    fn variants(&self, cx: &mut Context<Self>) -> AnyElement {
+        let look = *cx.global::<Look>();
+        let mut variants = row().w(px(560.));
+        for (i, variant) in SchemeVariant::ALL.into_iter().enumerate() {
+            variants = variants.child(
+                Chip::new(("variant", i), variant.label())
+                    .filter(look.variant == variant)
+                    .on_click(click(cx, move |_, cx| {
+                        cx.global_mut::<Look>().variant = variant;
+                        let dark = Theme::get(cx).dark;
+                        animate_scheme(scheme_for(dark, cx), dark, cx);
+                    })),
+            );
+        }
+        let contrast = [-1., 0., 1.]
+            .iter()
+            .position(|c| *c == look.contrast)
+            .unwrap_or(1);
+        column()
+            .gap(px(14.))
+            .child(variants)
+            .child(
+                SegmentedButtons::new(
+                    "contrast",
+                    [
+                        Segment::label("Reduced"),
+                        Segment::label("Standard"),
+                        Segment::label("High"),
+                    ],
+                    contrast,
+                )
+                .on_change(update(cx, |_, i: usize, cx| {
+                    cx.global_mut::<Look>().contrast = [-1., 0., 1.][i];
+                    let dark = Theme::get(cx).dark;
+                    animate_scheme(scheme_for(dark, cx), dark, cx);
+                })),
+            )
             .into_any_element()
     }
 
@@ -2420,6 +2578,16 @@ impl Demos {
 
         let presets = SEEDS.map(hex);
         page()
+            .child(demo(
+                "Color variants",
+                "The nine Material variants of the same seed, and three contrast levels. Pick a seed in the toolbar to see each one with it.",
+                self.variants(cx),
+            ))
+            .child(demo(
+                "Color roles",
+                "Every role of the scheme, on its own container color. It follows the light/dark mode, the seed, the variant and the contrast.",
+                color_roles(&s),
+            ))
             .child(demo(
                 "Favorite star",
                 "Hover a row to reveal its star; turning it on spins it in and throws a burst.",
@@ -3304,6 +3472,99 @@ impl gpui::RenderOnce for DemoBlock {
             )
             .child(self.body)
     }
+}
+
+/// A tile for each color role, written in the color that M3 pairs it with.
+fn color_roles(s: &Scheme) -> impl IntoElement {
+    let roles: [(&str, Hsla, Hsla); 34] = [
+        ("primary", s.primary, s.on_primary),
+        ("on_primary", s.on_primary, s.primary),
+        ("primary_container", s.primary_container, s.on_primary_container),
+        ("on_primary_container", s.on_primary_container, s.primary_container),
+        ("secondary", s.secondary, s.on_secondary),
+        ("on_secondary", s.on_secondary, s.secondary),
+        ("secondary_container", s.secondary_container, s.on_secondary_container),
+        ("on_secondary_container", s.on_secondary_container, s.secondary_container),
+        ("tertiary", s.tertiary, s.on_tertiary),
+        ("on_tertiary", s.on_tertiary, s.tertiary),
+        ("tertiary_container", s.tertiary_container, s.on_tertiary_container),
+        ("on_tertiary_container", s.on_tertiary_container, s.tertiary_container),
+        ("error", s.error, s.on_error),
+        ("on_error", s.on_error, s.error),
+        ("error_container", s.error_container, s.on_error_container),
+        ("on_error_container", s.on_error_container, s.error_container),
+        ("surface_dim", s.surface_dim, s.on_surface),
+        ("surface", s.surface, s.on_surface),
+        ("surface_bright", s.surface_bright, s.on_surface),
+        ("surface_container_lowest", s.surface_container_lowest, s.on_surface),
+        ("surface_container_low", s.surface_container_low, s.on_surface),
+        ("surface_container", s.surface_container, s.on_surface),
+        ("surface_container_high", s.surface_container_high, s.on_surface),
+        ("surface_container_highest", s.surface_container_highest, s.on_surface),
+        ("on_surface", s.on_surface, s.surface),
+        ("on_surface_variant", s.on_surface_variant, s.surface),
+        ("outline", s.outline, s.surface),
+        ("outline_variant", s.outline_variant, s.on_surface),
+        ("inverse_surface", s.inverse_surface, s.inverse_on_surface),
+        ("inverse_on_surface", s.inverse_on_surface, s.inverse_surface),
+        ("inverse_primary", s.inverse_primary, s.inverse_surface),
+        ("scrim", s.scrim, hex("#ffffff")),
+        ("success", s.success, s.surface),
+        ("warning", s.warning, s.surface),
+    ];
+    let mut grid = row().w(px(700.)).gap(px(8.));
+    for (name, fill, text) in roles {
+        grid = grid.child(
+            div()
+                .w(px(166.))
+                .h(px(52.))
+                .px(px(10.))
+                .rounded(px(12.))
+                .bg(fill)
+                .border_1()
+                .border_color(alpha(s.outline_variant, 0.6))
+                .flex()
+                .items_end()
+                .pb(px(6.))
+                .text_size(px(11.))
+                .text_color(text)
+                .child(name),
+        );
+    }
+    grid
+}
+
+/// The six elevation levels on cards.
+fn elevation_levels(s: &Scheme) -> impl IntoElement {
+    let mut levels = row().gap(px(22.)).pt(px(8.)).pb(px(14.));
+    for level in Elevation::ALL {
+        levels = levels.child(
+            div()
+                .w(px(92.))
+                .h(px(92.))
+                .rounded(px(16.))
+                .bg(s.surface_container_low)
+                .shadow(level.shadow(s))
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(px(2.))
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .font_weight(FontWeight(600.))
+                        .child(format!("Level {}", level as usize)),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(s.on_surface_variant)
+                        .child(format!("{} dp", level.dp())),
+                ),
+        );
+    }
+    levels
 }
 
 fn demo_note(text: &'static str, cx: &App) -> impl IntoElement {

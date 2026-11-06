@@ -25,7 +25,7 @@ pub use components::*;
 pub use motion::{MotionSettings, Spring};
 pub use shapes::{Morph, ShapeName, Tone};
 pub use syntax::{SyntaxHighlighter, SyntaxLines, SyntaxPalette, TokenKind};
-pub use theme::{Scheme, Theme, corner};
+pub use theme::{Elevation, Scheme, SchemeVariant, Theme, corner};
 
 /// Registers the typeface, the base (light) theme and the motion settings.
 pub fn init(cx: &mut App) {

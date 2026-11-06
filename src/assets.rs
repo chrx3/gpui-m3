@@ -46,6 +46,7 @@ impl AssetSource for Assets {
 pub const ICON_PREFIX: &str = "m3/icons/";
 
 const ICONS: &[(&str, &[u8])] = &[
+    ("alert", include_bytes!("../assets/icons/alert.svg")),
     (
         "arrow-left",
         include_bytes!("../assets/icons/arrow-left.svg"),

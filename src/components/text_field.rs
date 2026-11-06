@@ -19,7 +19,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::{Icon, RoundedExt, all, corners};
 use crate::motion::{Spring, animate_color, animate_f32, continuous_at, key};
-use crate::theme::{font_family, Theme, alpha};
+use crate::theme::{font_family, Scheme, Theme, alpha};
 
 actions!(
     m3_text_field,
@@ -102,6 +102,83 @@ pub enum TextFieldStyle {
     Outlined,
 }
 
+/// Number of user-perceived characters, which is what the counter and the limit count.
+pub(super) fn grapheme_count(text: &str) -> usize {
+    text.graphemes(true).count()
+}
+
+/// Text of the character counter ("12 / 50").
+pub(super) fn counter_text(count: usize, max: usize) -> String {
+    format!("{count} / {max}")
+}
+
+pub(super) fn is_over_limit(count: usize, max: Option<usize>) -> bool {
+    max.is_some_and(|max| count > max)
+}
+
+/// The part of `new_text` that still fits when `kept` characters stay and at most `max` are
+/// allowed (everything when there is no limit).
+pub(super) fn fit_to_limit(kept: usize, new_text: &str, max: Option<usize>) -> &str {
+    let Some(max) = max else {
+        return new_text;
+    };
+    match new_text.grapheme_indices(true).nth(max.saturating_sub(kept)) {
+        Some((end, _)) => &new_text[..end],
+        None => new_text,
+    }
+}
+
+/// What the supporting row shows on the left and whether it is an error: the error message
+/// while there is one, otherwise the supporting text. An empty error message only colors the
+/// field.
+pub(super) fn supporting_content<'a>(
+    error: Option<&'a SharedString>,
+    supporting: Option<&'a SharedString>,
+) -> Option<(&'a SharedString, bool)> {
+    match error {
+        Some(message) if !message.is_empty() => Some((message, true)),
+        _ => supporting.map(|text| (text, false)),
+    }
+}
+
+/// The row under the field exists (and keeps its height) when supporting text or a counter is
+/// configured; an error message alone makes it appear.
+pub(super) fn has_supporting_row(
+    supporting: Option<&SharedString>,
+    max_length: Option<usize>,
+    error: Option<&SharedString>,
+) -> bool {
+    supporting.is_some() || max_length.is_some() || error.is_some_and(|message| !message.is_empty())
+}
+
+/// 12 px row under a field: message at the start, counter at the end. `inset` is the left and
+/// right padding; a minimum height of one line stops the layout from jumping.
+pub(super) fn supporting_row(
+    content: Option<(SharedString, bool)>,
+    counter: Option<(String, bool)>,
+    inset: f32,
+    s: &Scheme,
+) -> gpui::Div {
+    let color = |error: bool| if error { s.error } else { s.on_surface_variant };
+    div()
+        .flex()
+        .items_start()
+        .gap(px(16.))
+        .w_full()
+        .min_h(px(16.))
+        .mt(px(4.))
+        .px(px(inset))
+        .text_size(px(12.))
+        .line_height(px(16.))
+        .child(
+            div()
+                .flex_1()
+                .text_color(color(content.as_ref().is_some_and(|(_, error)| *error)))
+                .children(content.map(|(text, _)| text)),
+        )
+        .children(counter.map(|(text, over)| div().flex_none().text_color(color(over)).child(text)))
+}
+
 /// Builds the trailing content of a [`TextField`] on each render (e.g. a clear button).
 type TrailingBuilder = Box<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
@@ -117,6 +194,14 @@ pub struct TextField {
     focus_ring: Option<Pixels>,
     label: Option<SharedString>,
     trailing: Option<TrailingBuilder>,
+    error: Option<SharedString>,
+    supporting_text: Option<SharedString>,
+    max_length: Option<usize>,
+    hard_limit: bool,
+    prefix: Option<SharedString>,
+    suffix: Option<SharedString>,
+    disabled: bool,
+    read_only: bool,
     select_all_on_focus: bool,
     restore_on_cancel: bool,
     was_focused: bool,
@@ -153,6 +238,14 @@ impl TextField {
             focus_ring: None,
             label: None,
             trailing: None,
+            error: None,
+            supporting_text: None,
+            max_length: None,
+            hard_limit: false,
+            prefix: None,
+            suffix: None,
+            disabled: false,
+            read_only: false,
             select_all_on_focus: false,
             restore_on_cancel: false,
             was_focused: false,
@@ -293,6 +386,109 @@ impl TextField {
         self
     }
 
+    /// Error state: the underline or outline, the label and the caret turn `error`, an alert
+    /// icon appears at the end and the message replaces the supporting text. An empty message
+    /// only colors the field.
+    pub fn error(mut self, error: Option<SharedString>) -> Self {
+        self.error = error;
+        self
+    }
+
+    pub fn set_error(&mut self, error: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.error != error {
+            self.error = error;
+            cx.notify();
+        }
+    }
+
+    /// Helper line under the field (12 px). Setting it reserves the line's height, so showing
+    /// an error message in its place does not move what is below.
+    pub fn supporting_text(mut self, text: impl Into<SharedString>) -> Self {
+        self.supporting_text = Some(text.into());
+        self
+    }
+
+    pub fn set_supporting_text(&mut self, text: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.supporting_text != text {
+            self.supporting_text = text;
+            cx.notify();
+        }
+    }
+
+    /// Shows a "12 / 50" character counter at the end of the supporting row. As in M3 the
+    /// limit only flags: past it the counter and the field turn `error` and typing still
+    /// works. Use [`Self::hard_limit`] to block typing instead. Characters are counted as
+    /// user-perceived characters (grapheme clusters).
+    pub fn max_length(mut self, max: usize) -> Self {
+        self.max_length = Some(max);
+        self
+    }
+
+    /// With [`Self::max_length`], typing, pasting and IME input are cut at the limit.
+    /// [`Self::set_text`] is not cut: the host decides what it puts in.
+    pub fn hard_limit(mut self, hard: bool) -> Self {
+        self.hard_limit = hard;
+        self
+    }
+
+    /// Text before the input, in `on_surface_variant` (e.g. "$").
+    pub fn prefix_text(mut self, text: impl Into<SharedString>) -> Self {
+        self.prefix = Some(text.into());
+        self
+    }
+
+    /// Text after the input, in `on_surface_variant` (e.g. "kg").
+    pub fn suffix_text(mut self, text: impl Into<SharedString>) -> Self {
+        self.suffix = Some(text.into());
+        self
+    }
+
+    /// Dimmed to 38 %, takes no focus and ignores the mouse and the keyboard.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
+        if self.disabled != disabled {
+            self.disabled = disabled;
+            cx.notify();
+        }
+    }
+
+    /// Focusable, selectable and copyable, but not editable.
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
+    }
+
+    pub fn set_read_only(&mut self, read_only: bool, cx: &mut Context<Self>) {
+        if self.read_only != read_only {
+            self.read_only = read_only;
+            cx.notify();
+        }
+    }
+
+    /// The field shows its error look: an error was set or the text is past `max_length`.
+    pub fn is_invalid(&self) -> bool {
+        self.error.is_some() || is_over_limit(grapheme_count(&self.content), self.max_length)
+    }
+
+    fn editable(&self) -> bool {
+        !self.disabled && !self.read_only
+    }
+
+    /// `new_text` cut so that replacing `range` respects the hard limit.
+    fn within_limit<'a>(&self, range: &Range<usize>, new_text: &'a str) -> &'a str {
+        let max = if self.hard_limit { self.max_length } else { None };
+        if max.is_none() {
+            return new_text;
+        }
+        let kept = grapheme_count(&self.content[..range.start])
+            + grapheme_count(&self.content[range.end..]);
+        fit_to_limit(kept, new_text, max)
+    }
+
     /// Moves keyboard focus to the field.
     pub fn focus(&self, window: &mut Window) {
         window.focus(&self.focus_handle);
@@ -357,6 +553,9 @@ impl TextField {
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.editable() {
+            return;
+        }
         if self.selected_range.is_empty() {
             self.select_to(self.previous_boundary(self.cursor_offset()), cx)
         }
@@ -364,6 +563,9 @@ impl TextField {
     }
 
     fn delete(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.editable() {
+            return;
+        }
         if self.selected_range.is_empty() {
             self.select_to(self.next_boundary(self.cursor_offset()), cx)
         }
@@ -407,6 +609,9 @@ impl TextField {
     }
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.editable() {
+            return;
+        }
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             self.replace_text_in_range(None, &text.replace('\n', " "), window, cx);
         }
@@ -425,7 +630,9 @@ impl TextField {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
-            self.replace_text_in_range(None, "", window, cx)
+            if self.editable() {
+                self.replace_text_in_range(None, "", window, cx)
+            }
         }
     }
 
@@ -570,6 +777,10 @@ impl EntityInputHandler for TextField {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        if !self.editable() {
+            return;
+        }
+        let new_text = self.within_limit(&range, new_text);
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -591,6 +802,10 @@ impl EntityInputHandler for TextField {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        if !self.editable() {
+            return;
+        }
+        let new_text = self.within_limit(&range, new_text);
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -601,6 +816,8 @@ impl EntityInputHandler for TextField {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        let end = self.content.len();
+        self.selected_range = self.selected_range.start.min(end)..self.selected_range.end.min(end);
         self.changed(cx);
     }
 
@@ -696,6 +913,7 @@ impl Element for TextLine {
         let content = field.content.clone();
         let selected_range = field.selected_range.clone();
         let cursor = field.cursor_offset();
+        let caret_color = if field.is_invalid() { s.error } else { s.primary };
         let style = window.text_style();
 
         let (display_text, text_color) = if content.is_empty() {
@@ -749,7 +967,7 @@ impl Element for TextLine {
                 None,
                 Some(fill(
                     Bounds::new(point(bounds.left() + x, bounds.top()), size(px(2.), height)),
-                    s.primary,
+                    caret_color,
                 )),
             )
         } else {
@@ -821,7 +1039,7 @@ impl Render for TextField {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *Theme::of(cx);
         let id = ElementId::from(("m3-text-field", cx.entity_id().as_u64()));
-        let focused = self.focus_handle.is_focused(window);
+        let focused = !self.disabled && self.focus_handle.is_focused(window);
         if focused && !self.was_focused {
             self.text_at_focus = self.content.clone();
             if self.select_all_on_focus {
@@ -873,29 +1091,65 @@ impl Render for TextField {
             window,
             cx,
         );
+        let count = grapheme_count(&self.content);
+        let invalid = self.is_invalid();
+        let filled_style = self.style == TextFieldStyle::Filled;
+        // Underline / outline color: error, then focus, then the resting color of the style.
+        let rest_border = if filled_style { s.outline } else { s.outline_variant };
+        let border_color = animate_color(
+            key(&id, "border"),
+            Spring::EFFECTS,
+            if invalid {
+                s.error
+            } else if focused {
+                s.primary
+            } else {
+                rest_border
+            },
+            window,
+            cx,
+        );
+        let label_color = animate_color(
+            key(&id, "label"),
+            Spring::EFFECTS,
+            if invalid {
+                s.error
+            } else if filled_style {
+                s.primary
+            } else {
+                s.on_surface_variant
+            },
+            window,
+            cx,
+        );
+        let disabled = self.disabled;
         let mut field = div()
             .id(id)
-            .key_context(self.key_context())
-            .track_focus(&self.focus_handle)
-            .cursor(CursorStyle::IBeam)
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::delete))
-            .on_action(cx.listener(Self::left))
-            .on_action(cx.listener(Self::right))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
-            .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::home))
-            .on_action(cx.listener(Self::end))
-            .on_action(cx.listener(Self::paste))
-            .on_action(cx.listener(Self::cut))
-            .on_action(cx.listener(Self::copy))
-            .on_action(cx.listener(Self::submit))
-            .on_action(cx.listener(Self::cancel))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .when(!disabled, |field| {
+                field
+                    .key_context(self.key_context())
+                    .track_focus(&self.focus_handle)
+                    .cursor(CursorStyle::IBeam)
+                    .on_action(cx.listener(Self::backspace))
+                    .on_action(cx.listener(Self::delete))
+                    .on_action(cx.listener(Self::left))
+                    .on_action(cx.listener(Self::right))
+                    .on_action(cx.listener(Self::select_left))
+                    .on_action(cx.listener(Self::select_right))
+                    .on_action(cx.listener(Self::select_all))
+                    .on_action(cx.listener(Self::home))
+                    .on_action(cx.listener(Self::end))
+                    .on_action(cx.listener(Self::paste))
+                    .on_action(cx.listener(Self::cut))
+                    .on_action(cx.listener(Self::copy))
+                    .on_action(cx.listener(Self::submit))
+                    .on_action(cx.listener(Self::cancel))
+                    .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+                    .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
+                    .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
+                    .on_mouse_move(cx.listener(Self::on_mouse_move))
+            })
+            .when(disabled, |field| field.cursor(CursorStyle::OperationNotAllowed))
             .flex()
             .items_center()
             .gap(px(gap))
@@ -912,22 +1166,21 @@ impl Render for TextField {
             TextFieldStyle::Filled => field
                 .corners(corners([f32::from(radius), f32::from(radius), 0., 0.]))
                 .border_b(px(if focused { 2. } else { 1. }))
-                .border_color(if focused { s.primary } else { s.outline }),
+                .border_color(border_color),
             TextFieldStyle::Outlined => field
                 .corners(all(radius))
                 .border(px(if focused { 2. } else { 1. }))
-                .border_color(if focused {
-                    s.primary
-                } else {
-                    s.outline_variant
-                }),
+                .border_color(border_color),
             TextFieldStyle::Inline => field
                 .corners(all(radius))
                 .border(px(1.5))
-                .border_color(s.primary),
+                .border_color(if invalid { s.error } else { s.primary }),
             _ => {
                 let field = field.corners(all(radius));
                 match self.focus_ring {
+                    _ if invalid && self.style != TextFieldStyle::Bare => field
+                        .border(px(if focused { 2. } else { 1.5 }))
+                        .border_color(s.error),
                     Some(width) if focused => field.border(width).border_color(s.primary),
                     _ => field,
                 }
@@ -941,17 +1194,33 @@ impl Render for TextField {
             }));
         }
         let trailing = self.trailing.as_ref().map(|build| build(window, cx));
+        let affix = |text: &Option<SharedString>| {
+            text.clone()
+                .map(|text| div().flex_none().text_color(s.on_surface_variant).child(text))
+        };
         let field = field
             .child(
                 div()
                     .flex_1()
-                    .overflow_hidden()
-                    .child(TextLine { field: cx.entity() }),
+                    .min_w(px(0.))
+                    .flex()
+                    .items_center()
+                    .gap(px(2.))
+                    .children(affix(&self.prefix))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .child(TextLine { field: cx.entity() }),
+                    )
+                    .children(affix(&self.suffix)),
             )
+            .children(invalid.then(|| Icon::new("alert").size(px(icon_size)).color(s.error)))
             .children(trailing);
-        match self.label.clone() {
+        let labelled = match self.label.clone() {
             Some(label) => {
-                let filled = self.style == TextFieldStyle::Filled;
+                let filled = filled_style;
                 div()
                     .flex()
                     .flex_col()
@@ -962,17 +1231,121 @@ impl Render for TextField {
                         div()
                             .text_size(px(if filled { 11.5 } else { 12. }))
                             .font_weight(FontWeight(600.))
-                            .text_color(if filled {
-                                s.primary
-                            } else {
-                                s.on_surface_variant
-                            })
+                            .text_color(label_color)
                             .child(label),
                     )
                     .child(field)
                     .into_any_element()
             }
             None => field.into_any_element(),
+        };
+        let row = has_supporting_row(
+            self.supporting_text.as_ref(),
+            self.max_length,
+            self.error.as_ref(),
+        )
+        .then(|| {
+            let content = supporting_content(self.error.as_ref(), self.supporting_text.as_ref())
+                .map(|(text, error)| (text.clone(), error));
+            let counter = self
+                .max_length
+                .map(|max| (counter_text(count, max), is_over_limit(count, Some(max))));
+            let inset = match self.style {
+                TextFieldStyle::Bare => 0.,
+                TextFieldStyle::Filled | TextFieldStyle::Outlined => 16.,
+                _ => pad,
+            };
+            supporting_row(content, counter, inset, &s)
+        });
+        if row.is_none() && !disabled {
+            return labelled;
         }
+        div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .when(disabled, |stack| stack.opacity(0.38))
+            .child(labelled)
+            .children(row)
+            .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(value: &str) -> SharedString {
+        value.to_string().into()
+    }
+
+    #[test]
+    fn counter_shows_count_and_limit() {
+        assert_eq!(counter_text(12, 50), "12 / 50");
+        assert_eq!(counter_text(0, 8), "0 / 8");
+    }
+
+    #[test]
+    fn counts_user_perceived_characters() {
+        assert_eq!(grapheme_count("año"), 3);
+        assert_eq!(grapheme_count("e\u{301}"), 1);
+        assert_eq!(grapheme_count("👍🏽x"), 2);
+    }
+
+    #[test]
+    fn over_limit_only_past_the_maximum() {
+        assert!(!is_over_limit(50, Some(50)));
+        assert!(is_over_limit(51, Some(50)));
+        assert!(!is_over_limit(1000, None));
+    }
+
+    #[test]
+    fn hard_limit_cuts_the_insertion() {
+        assert_eq!(fit_to_limit(8, "abcdef", Some(10)), "ab");
+        assert_eq!(fit_to_limit(10, "abc", Some(10)), "");
+        assert_eq!(fit_to_limit(11, "abc", Some(10)), "");
+        assert_eq!(fit_to_limit(0, "abc", Some(10)), "abc");
+        assert_eq!(fit_to_limit(0, "abc", None), "abc");
+    }
+
+    #[test]
+    fn hard_limit_never_splits_a_character() {
+        assert_eq!(fit_to_limit(0, "e\u{301}e\u{301}", Some(1)), "e\u{301}");
+        assert_eq!(fit_to_limit(0, "👍🏽👍🏽", Some(1)), "👍🏽");
+    }
+
+    #[test]
+    fn error_message_replaces_the_supporting_text() {
+        let (error, help) = (text("Required"), text("Your full name"));
+        assert_eq!(
+            supporting_content(Some(&error), Some(&help)),
+            Some((&error, true))
+        );
+        assert_eq!(
+            supporting_content(None, Some(&help)),
+            Some((&help, false))
+        );
+        assert_eq!(supporting_content(Some(&error), None), Some((&error, true)));
+        assert_eq!(supporting_content(None, None), None);
+    }
+
+    #[test]
+    fn empty_error_message_keeps_the_supporting_text() {
+        let (empty, help) = (text(""), text("Your full name"));
+        assert_eq!(
+            supporting_content(Some(&empty), Some(&help)),
+            Some((&help, false))
+        );
+        assert_eq!(supporting_content(Some(&empty), None), None);
+    }
+
+    #[test]
+    fn supporting_row_is_reserved_when_configured() {
+        let (error, empty, help) = (text("Required"), text(""), text("Help"));
+        assert!(!has_supporting_row(None, None, None));
+        assert!(has_supporting_row(Some(&help), None, None));
+        assert!(has_supporting_row(None, Some(20), None));
+        assert!(has_supporting_row(None, None, Some(&error)));
+        assert!(!has_supporting_row(None, None, Some(&empty)));
     }
 }
