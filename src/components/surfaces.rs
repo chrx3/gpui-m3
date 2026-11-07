@@ -250,6 +250,7 @@ pub struct Menu {
     radius: Pixels,
     direction: PopDirection,
     header: Option<AnyElement>,
+    footer: Option<AnyElement>,
     back: Option<(SharedString, ClickHandler)>,
     content_key: Option<u64>,
     stagger: bool,
@@ -270,6 +271,7 @@ impl Menu {
             radius: px(24.),
             direction: PopDirection::Up,
             header: None,
+            footer: None,
             back: None,
             content_key: None,
             stagger: true,
@@ -310,6 +312,14 @@ impl Menu {
     /// Fixed content above the scrolling items (a filter field, [`super::IconTabs`]…).
     pub fn header(mut self, header: impl IntoElement) -> Self {
         self.header = Some(header.into_any_element());
+        self
+    }
+
+    /// Fixed content below the scrolling items. In a menu that opens upward its edge next to
+    /// the anchor stays put, so a filter field or tabs here don't move while the items
+    /// above them grow or shrink.
+    pub fn footer(mut self, footer: impl IntoElement) -> Self {
+        self.footer = Some(footer.into_any_element());
         self
     }
 
@@ -416,6 +426,9 @@ impl RenderOnce for Menu {
             if has_header {
                 content = content.pt(px(2.));
             }
+            if self.footer.is_some() {
+                content = content.pb(px(2.));
+            }
             let mut n = 0usize;
             for (i, group) in self.groups.into_iter().enumerate() {
                 if i > 0 {
@@ -475,6 +488,18 @@ impl RenderOnce for Menu {
                         .child(content.flex_none()),
                 ),
                 None => card.child(content),
+            };
+            let card = match self.footer {
+                Some(footer) => card.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_none()
+                        .px(self.padding)
+                        .pb(self.padding)
+                        .child(footer),
+                ),
+                None => card,
             };
             pop_in_toward(card, &self.id, 0., self.direction, window, cx)
         }

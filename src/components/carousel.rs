@@ -169,12 +169,16 @@ fn step_px(layout: CarouselLayout, container: f32, item: f32) -> f32 {
     (natural_extent(layout, container, item) + GAP).max(1.)
 }
 
-/// The largest offset: the last item at the focus position, or (multi-browse) the last three
-/// items showing, or (uncontained) the last item at the end of the strip.
+/// The largest offset: the last item at the focus position, or (multi-browse) the last item
+/// at the medium position, or (uncontained) the last item at the end of the strip.
+///
+/// Multi-browse used to stop with the last three items showing, which left the last one in
+/// the small slot (a sliver nobody can read). It now goes one further, so the last item is
+/// legible at the medium size and the small slot stays empty.
 fn max_offset(layout: CarouselLayout, container: f32, item: f32, count: usize) -> f32 {
     let last = count.saturating_sub(1) as f32;
     match layout {
-        CarouselLayout::MultiBrowse => count.saturating_sub(3) as f32,
+        CarouselLayout::MultiBrowse => count.saturating_sub(2) as f32,
         CarouselLayout::Hero | CarouselLayout::CenterHero | CarouselLayout::FullScreen => last,
         CarouselLayout::Uncontained => {
             let step = item + GAP;
@@ -1051,7 +1055,7 @@ mod tests {
 
     #[test]
     fn ranges_end_on_the_last_items() {
-        assert_eq!(max_offset(CarouselLayout::MultiBrowse, W, 0., 10), 7.);
+        assert_eq!(max_offset(CarouselLayout::MultiBrowse, W, 0., 10), 8.);
         assert_eq!(max_offset(CarouselLayout::MultiBrowse, W, 0., 2), 0.);
         assert_eq!(max_offset(CarouselLayout::Hero, W, 0., 10), 9.);
         assert_eq!(max_offset(CarouselLayout::CenterHero, W, 0., 1), 0.);

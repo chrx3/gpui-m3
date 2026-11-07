@@ -1,5 +1,23 @@
 # Changelog
 
+## Sin publicar / Unreleased
+
+Arreglos encontrados al usar la librería en Atic Code / Fixes found while using the library in Atic Code
+
+### Español
+
+- **Corregido:** Una onda (ripple) cuyo soltar se perdía (el clic abrió otra ventana o movió el foco) pedía cuadros para siempre y la ventana se redibujaba sin parar (~58 % de un núcleo en reposo). Ahora solo se piden cuadros mientras la onda crece o se desvanece, y pasar el mouse sin botón apretado la suelta
+- **Nuevo:** Menu::footer: contenido fijo bajo los ítems. En un menú que abre hacia arriba, un buscador o pestañas ahí no se mueven mientras la lista crece o se achica
+- **Corregido:** El carrusel multi-browse terminaba con el último ítem en el puesto chico, donde no se lee; ahora llega hasta dejarlo en el puesto mediano
+- **Nuevo:** Ícono `smartphone`
+
+### English
+
+- **Fixed:** A ripple whose release got lost (the press opened another window or moved focus) requested frames forever and the window kept redrawing (~58 % of a core at rest). Frames are now requested only while the ripple grows or fades, and moving the pointer over the component with no button held releases it
+- **New:** Menu::footer: fixed content below the items. In a menu that opens upward, a filter field or tabs there stay put while the list grows or shrinks
+- **Fixed:** The multi-browse carousel ended with the last item in the small slot, where it cannot be read; it now scrolls until the last item sits in the medium slot
+- **New:** `smartphone` icon
+
 ## 0.2.0 — 2026-11-06
 
 Más componentes, color y elevación / More components, color and elevation

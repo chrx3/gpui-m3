@@ -62,6 +62,7 @@ pub fn interactive(
     let down = state.clone();
     let up = state.clone();
     let up_out = state.clone();
+    let moved = state.clone();
     el.cursor_pointer()
         .on_hover(move |hovered, _, cx| {
             hover.update(cx, |s, cx| {
@@ -97,6 +98,18 @@ pub fn interactive(
                 }
             })
         })
+        // The mouse-up can get lost (the press opened another window or moved
+        // focus): moving over the component with no button held releases it.
+        .on_mouse_move(move |event, _, cx| {
+            if event.pressed_button.is_none() {
+                moved.update(cx, |s, cx| {
+                    if s.pressed {
+                        s.release();
+                        cx.notify();
+                    }
+                })
+            }
+        })
 }
 
 /// State layer: hover (8 % of the content color) and ripples (14 %).
@@ -128,7 +141,13 @@ pub fn state_layer(
         });
         s.ripples.clone()
     });
-    if !ripples.is_empty() {
+    // Only while a ripple is moving: growing, or fading after release. A grown
+    // ripple that is still held is static and needs no frames (if its mouse-up
+    // got lost, asking for frames here would redraw the window forever).
+    let animating = ripples.iter().any(|r| {
+        r.released.is_some() || now.duration_since(r.start).as_secs_f32() / scale < RIPPLE_GROW
+    });
+    if animating {
         crate::motion::request_frame(window);
     }
     let bounds_cell = state.read(cx).bounds.clone();
