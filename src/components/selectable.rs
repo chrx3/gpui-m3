@@ -736,7 +736,8 @@ fn edge_scroll(state: &Entity<TextSelection>, window: &mut Window, cx: &mut App)
 
 /// A selectable block in `group` (numbered in paint order within its owner): the text of
 /// `layout` (a `StyledText`'s) drawn by `inner` (that `StyledText`, or an `InteractiveText`
-/// around it), with the selection painted behind. `joint` goes before its text when a copy
+/// around it), with the selection painted behind, plus a lighter wash on top so it also shows
+/// over runs with their own background (inline code). `joint` goes before its text when a copy
 /// also takes the block before it; `whole` is what "Copy all" copies over it.
 pub fn selectable_block(
     group: &Selection,
@@ -749,6 +750,9 @@ pub fn selectable_block(
 ) -> AnyElement {
     let state = group.state.clone();
     let owner = group.owner;
+    // What the bottom canvas found selected this frame, for the wash painted over `inner`.
+    let shown: std::rc::Rc<std::cell::RefCell<Option<Range<usize>>>> = Default::default();
+    let (shown_below, wash_layout) = (shown.clone(), layout.clone());
     div()
         .relative()
         .child(
@@ -776,9 +780,10 @@ pub fn selectable_block(
                         );
                         (key, s.block_range(key))
                     });
-                    if let Some(range) = selected {
+                    if let Some(range) = selected.clone() {
                         paint_range(&layout, bounds, range, color, window);
                     }
+                    *shown_below.borrow_mut() = selected;
                     press(&state, key, hitbox, window);
                 },
             )
@@ -788,6 +793,22 @@ pub fn selectable_block(
             .size_full(),
         )
         .child(inner)
+        // On top: inline code paints its own background over the selection, which hid it.
+        // Painting only, no hitbox, so links and hovers underneath keep working.
+        .child(
+            canvas(
+                |_, _, _| (),
+                move |bounds, _, window, _| {
+                    if let Some(range) = shown.borrow_mut().take() {
+                        paint_range(&wash_layout, bounds, range, alpha(color, color.a * 0.6), window);
+                    }
+                },
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
+        )
         .into_any_element()
 }
 

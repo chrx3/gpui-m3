@@ -302,8 +302,11 @@ pub fn keyboard_focus(
     cx: &mut App,
 ) -> Stateful<Div> {
     let (state, handle, ring_visible) = use_focus(id, window, cx);
+    // Read every frame, even without `autofocus`: keyed state only survives while it is
+    // read, so skipping a frame forgot it and the element grabbed the focus again
+    // (stealing it from a text field the user was typing in).
+    let asked = window.use_keyed_state(key(id, "autofocus"), cx, |_, _| false);
     if autofocus && !handle.is_focused(window) {
-        let asked = window.use_keyed_state(key(id, "autofocus"), cx, |_, _| false);
         if !*asked.read(cx) {
             asked.update(cx, |asked, _| *asked = true);
             window.focus(&handle);
