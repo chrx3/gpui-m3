@@ -14,12 +14,13 @@ use gpui::{
     AnyElement, App, ElementId, Font, FontFeatures, FontStyle, FontWeight, Hsla,
     InteractiveElement, InteractiveText, IntoElement, ParentElement, Pixels, RenderOnce,
     SharedString, StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, TextRun,
-    Window, div, px, relative,
+    Window, canvas, div, px, relative,
 };
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
 use super::{CodeBlock, Icon, Selection, group_for, selectable_block, selection_root};
 use crate::cache::{Lru, content_key};
+use crate::motion::key;
 use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family, text};
 
 /* ─────────── Model ─────────── */
@@ -1179,7 +1180,9 @@ impl Render<'_> {
                 }
                 list.into_any_element()
             }
-            MarkdownBlock::Table { align, head, rows } => self.table(align, head, rows),
+            MarkdownBlock::Table { align, head, rows } => {
+                self.table(align, head, rows, window, cx)
+            }
             MarkdownBlock::Rule => div()
                 .my(px(size * 0.35))
                 .h(px(1.))
@@ -1197,6 +1200,8 @@ impl Render<'_> {
         align: &[ColumnAlign],
         head: &[RichText],
         rows: &[Vec<RichText>],
+        window: &mut Window,
+        cx: &mut App,
     ) -> AnyElement {
         let s = self.s;
         let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
@@ -1211,6 +1216,17 @@ impl Render<'_> {
             }
         }
         let total: f32 = weights.iter().sum();
+        // El texto de GPUI, medido sin un ancho definido, devuelve el tamaño de su medición
+        // anterior: con columnas en porcentaje cada fila salía de otro ancho y el texto se
+        // montaba sobre la siguiente. Las columnas se reparten en píxeles a partir del ancho
+        // visible del cuadro anterior; solo el primer cuadro usa porcentajes.
+        let id = self.next_id("table");
+        let measured = window.use_keyed_state(key(&id, "width"), cx, |_, _| px(0.));
+        let min_width = px(columns as f32 * 72.);
+        let last = *measured.read(cx);
+        let width = (last > px(0.)).then(|| last.max(min_width));
+        // Sin el borde de la tabla, que es de 1 px por lado.
+        let inner = width.map(|w| w - px(2.));
         let row_el = |cells: &[RichText], header: bool, last: bool, this: &mut Self| {
             let mut row = div()
                 .flex()
@@ -1237,7 +1253,10 @@ impl Render<'_> {
                     )
                 });
                 let cell = div()
-                    .w(relative(weight / total))
+                    .map(|d| match inner {
+                        Some(inner) => d.flex_none().w(inner * (weight / total)),
+                        None => d.w(relative(weight / total)),
+                    })
                     .min_w(px(48.))
                     .px(px(10.))
                     .py(px(4.))
@@ -1257,7 +1276,11 @@ impl Render<'_> {
         let mut table = div()
             .flex()
             .flex_col()
-            .min_w(px(columns as f32 * 72.))
+            .map(|d| match width {
+                Some(width) => d.flex_none().w(width),
+                None => d.w_full(),
+            })
+            .min_w(min_width)
             .border_1()
             .border_color(s.outline_variant)
             .rounded(px(8.))
@@ -1269,10 +1292,31 @@ impl Render<'_> {
         for (i, row) in rows.iter().enumerate() {
             table = table.child(row_el(row, false, i + 1 == rows.len(), self));
         }
+        let measure = canvas(
+            move |bounds, window, cx| {
+                let changed = measured.update(cx, |w, _| {
+                    let changed = (*w - bounds.size.width).abs() > px(0.5);
+                    if changed {
+                        *w = bounds.size.width;
+                    }
+                    changed
+                });
+                if changed {
+                    window.refresh();
+                }
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full();
         div()
-            .id(self.next_id("table"))
+            .id(id)
+            .relative()
             .overflow_x_scroll()
             .child(table)
+            .child(measure)
             .into_any_element()
     }
 

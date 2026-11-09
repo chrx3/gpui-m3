@@ -244,6 +244,7 @@ pub struct Button {
     label_on_hover: bool,
     icon_only: bool,
     truncate: bool,
+    full_width: bool,
     autofocus: bool,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
@@ -268,10 +269,20 @@ impl Button {
             label_on_hover: false,
             icon_only: false,
             truncate: false,
+            full_width: false,
             autofocus: false,
             tooltip: None,
             on_click: None,
         }
+    }
+
+    /// Fills its container's width like a [`NavItem`](super::NavItem) row: content starts on
+    /// the left with the row's padding and gap (icons line up with the rows below) and the
+    /// [`trailing`](Self::trailing) element goes to the right edge. For a primary action at the
+    /// top of a navigation list ("New chat").
+    pub fn full_width(mut self, full_width: bool) -> Self {
+        self.full_width = full_width;
+        self
     }
 
     /// Shows only the icon, in a round button as wide as it is tall, and moves the label (and
@@ -520,6 +531,8 @@ impl RenderOnce for Button {
                     pad
                 }))
             })
+            // As wide as the container, aligned with the `NavItem` rows (12 px padding, 10 px gap).
+            .when(self.full_width && !icon_only, |d| d.w_full().flex_shrink().min_w_0().justify_start().px(px(12.)).gap(px(10.)))
             .corners(all(radius))
             .bg(bg)
             .text_color(fg)
@@ -600,7 +613,7 @@ impl RenderOnce for Button {
             );
         }
         if let Some(trailing) = self.trailing.filter(|_| !icon_only) {
-            el = el.child(trailing);
+            el = if self.full_width { el.child(div().ml_auto().flex_none().child(trailing)) } else { el.child(trailing) };
         }
         if let Some(tooltip) = tooltip {
             el = el.tooltip(super::Tooltip::text(tooltip));
