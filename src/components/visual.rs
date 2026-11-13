@@ -547,14 +547,27 @@ impl RenderOnce for LoadingIndicator {
 pub struct WavyProgress {
     id: ElementId,
     value: Option<f32>,
+    amplitude: f32,
 }
 
 impl WavyProgress {
+    /// Default wave amplitude, in pixels.
+    pub const DEFAULT_AMPLITUDE: f32 = 3.;
+
     pub fn new(id: impl Into<ElementId>, value: Option<f32>) -> Self {
         Self {
             id: id.into(),
             value,
+            amplitude: Self::DEFAULT_AMPLITUDE,
         }
+    }
+
+    /// Wave amplitude in pixels ([`WavyProgress::DEFAULT_AMPLITUDE`] by default), animated with
+    /// the fast spatial spring. At `0` the wave lies flat and the bar stays straight: animate it
+    /// down to pause without a jump.
+    pub fn amplitude(mut self, amplitude: f32) -> Self {
+        self.amplitude = amplitude.max(0.);
+        self
     }
 }
 
@@ -568,6 +581,13 @@ impl RenderOnce for WavyProgress {
             key(&self.id, "value"),
             Spring::SPATIAL,
             self.value.unwrap_or(0.).clamp(0., 1.),
+            window,
+            cx,
+        );
+        let amplitude = animate_f32(
+            key(&self.id, "amplitude"),
+            Spring::SPATIAL_FAST,
+            self.amplitude,
             window,
             cx,
         );
@@ -626,9 +646,10 @@ impl RenderOnce for WavyProgress {
                     window,
                 );
 
-                // Active wave: 3 px amplitude, 20 px wavelength, advances one wavelength per second.
+                // Active wave: the amplitude fades in over the first 18 px, 20 px wavelength,
+                // one wavelength per second. A zero amplitude draws a straight bar.
                 if end - start > 0.5 {
-                    let amplitude = 3.0f32.min((end - start) / 6.);
+                    let amplitude = amplitude * ((end - start) / 18.).clamp(0., 1.);
                     let phase = (t % 1.) * 20.;
                     let steps = ((end - start) / 1.5).ceil().max(2.) as usize;
                     let points: Vec<Point<Pixels>> = (0..=steps)

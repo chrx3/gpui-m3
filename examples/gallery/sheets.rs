@@ -1,7 +1,7 @@
 //! "Sheets and dividers" section: dividers, bottom and side sheets and rich tooltips.
 //!
-//! `M3_OPEN=bottom-sheet|side-sheet|side-sheet-left` opens a modal sheet on start and
-//! `M3_PART=dividers|bottom|side|tooltip` shows one demo only (both for screenshots).
+//! `M3_OPEN=bottom-sheet|bottom-sheet-bouncy|side-sheet|side-sheet-left` opens a modal sheet on
+//! start and `M3_PART=dividers|bottom|side|tooltip` shows one demo only (both for screenshots).
 
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Hsla, InteractiveElement, IntoElement,
@@ -11,7 +11,7 @@ use gpui::{
 use gpui_m3::{
     BottomSheet, Button, Divider, DividerInset, Icon, ListItem, RichTooltip, Scheme, SheetSide,
     SideSheet, Theme,
-    motion::{key, presence},
+    motion::{Spring, key, presence},
     theme::alpha,
 };
 
@@ -20,6 +20,7 @@ use super::{column, demo, page, row};
 /// Demos of the sheets, in their own view.
 pub struct SheetDemos {
     bottom: bool,
+    bottom_bouncy: bool,
     side_right: bool,
     side_left: bool,
     tooltip_action: SharedString,
@@ -31,6 +32,7 @@ impl SheetDemos {
         let open = std::env::var("M3_OPEN").unwrap_or_default();
         Self {
             bottom: open == "bottom-sheet",
+            bottom_bouncy: open == "bottom-sheet-bouncy",
             side_right: open == "side-sheet",
             side_left: open == "side-sheet-left",
             tooltip_action: SharedString::default(),
@@ -154,6 +156,7 @@ impl Render for SheetDemos {
                 presence(key(&ElementId::Name(name.into()), "p"), open, window, cx)
             };
         let bottom = progress("sheet-bottom", self.bottom, window, cx);
+        let bottom_bouncy = progress("sheet-bottom-bouncy", self.bottom_bouncy, window, cx);
         let right = progress("sheet-right", self.side_right, window, cx);
         let left = progress("sheet-left", self.side_left, window, cx);
 
@@ -282,6 +285,9 @@ impl Render for SheetDemos {
         let open_bottom = Button::new("open-bottom", "Open modal bottom sheet")
             .filled()
             .on_click(Self::setter(cx, |d, v| d.bottom = v, true));
+        let open_bottom_bouncy = Button::new("open-bottom-bouncy", "Open with a bouncier spring")
+            .tonal()
+            .on_click(Self::setter(cx, |d, v| d.bottom_bouncy = v, true));
         let open_right = Button::new("open-right", "Open modal side sheet (right)")
             .filled()
             .on_click(Self::setter(cx, |d, v| d.side_right = v, true));
@@ -298,8 +304,11 @@ impl Render for SheetDemos {
             )))
             .when(shows("bottom"), |d| d.child(demo(
                 "Bottom sheet",
-                "Modal: scrim, spring slide-up, dismissed by the scrim, Escape or the handler. Standard: the same surface in place.",
-                column().gap(px(16.)).child(row().child(open_bottom)).child(standard_bottom),
+                "Modal: scrim, spring slide-up, dismissed by the scrim, Escape or the handler. spring() picks that spring. Standard: the same surface in place.",
+                column()
+                    .gap(px(16.))
+                    .child(row().child(open_bottom).child(open_bottom_bouncy))
+                    .child(standard_bottom),
             )))
             .when(shows("side"), |d| d.child(demo(
                 "Side sheet",
@@ -332,6 +341,36 @@ impl Render for SheetDemos {
                             Button::new("modal-bottom-close", "Close")
                                 .text()
                                 .on_click(Self::setter(cx, |d, v| d.bottom = v, false)),
+                        )),
+                )
+            })
+            .when_some(bottom_bouncy, |d, progress| {
+                d.child(
+                    BottomSheet::modal("modal-bottom-bouncy")
+                        // A custom spring: quicker and with a deeper overshoot.
+                        .spring(Spring {
+                            stiffness: 700.,
+                            damping_ratio: 0.55,
+                        })
+                        .exit(progress)
+                        .on_dismiss(Self::setter(cx, |d, v| d.bottom_bouncy = v, false))
+                        .child(
+                            div()
+                                .pb(px(8.))
+                                .text_size(px(22.))
+                                .text_color(s.on_surface)
+                                .child("A bouncier entrance"),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(13.5))
+                                .text_color(alpha(s.on_surface, 0.8))
+                                .child("The sheet's own spring, instead of Spring::SPATIAL."),
+                        )
+                        .child(row().justify_end().pt(px(16.)).child(
+                            Button::new("modal-bottom-bouncy-close", "Close")
+                                .text()
+                                .on_click(Self::setter(cx, |d, v| d.bottom_bouncy = v, false)),
                         )),
                 )
             })

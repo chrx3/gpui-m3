@@ -10,6 +10,10 @@ Arreglos encontrados al usar la librería en Atic Code / Fixes found while using
 - **Nuevo:** Menu::footer: contenido fijo bajo los ítems. En un menú que abre hacia arriba, un buscador o pestañas ahí no se mueven mientras la lista crece o se achica
 - **Corregido:** El carrusel multi-browse terminaba con el último ítem en el puesto chico, donde no se lee; ahora llega hasta dejarlo en el puesto mediano
 - **Nuevo:** Ícono `smartphone`
+- **Nuevo:** `IconButton`, `ListItem` y `RailItem` reciben foco con Tab, muestran el anillo de foco y se activan con Enter o Espacio cuando son clickeables
+- **Nuevo:** `BottomSheet::spring` elige el resorte de entrada de la hoja; por defecto sigue siendo `Spring::SPATIAL`
+- **Nuevo:** `WavyProgress::amplitude` anima la amplitud de la onda entre 0 (barra recta) y los 3 px normales (`WavyProgress::DEFAULT_AMPLITUDE`), para pasar de onda a recta al pausar sin salto
+- **Mejorado:** El botón de ícono se encoge a 0.96 al presionar (antes 0.94); `IconButton` y `Fab` comparten `PRESS_SCALE`
 
 ### English
 
@@ -17,6 +21,10 @@ Arreglos encontrados al usar la librería en Atic Code / Fixes found while using
 - **New:** Menu::footer: fixed content below the items. In a menu that opens upward, a filter field or tabs there stay put while the list grows or shrinks
 - **Fixed:** The multi-browse carousel ended with the last item in the small slot, where it cannot be read; it now scrolls until the last item sits in the medium slot
 - **New:** `smartphone` icon
+- **New:** `IconButton`, `ListItem` and `RailItem` take keyboard focus with Tab, show the focus ring and activate with Enter or Space when they are clickable
+- **New:** `BottomSheet::spring` picks the sheet's entrance spring; it stays `Spring::SPATIAL` by default
+- **New:** `WavyProgress::amplitude` animates the wave amplitude between 0 (straight bar) and the normal 3 px (`WavyProgress::DEFAULT_AMPLITUDE`), so pausing flattens the wave without a jump
+- **Improved:** The icon button shrinks to 0.96 while pressed (was 0.94); `IconButton` and `Fab` share `PRESS_SCALE`
 
 ## 0.2.0 — 2026-11-06
 

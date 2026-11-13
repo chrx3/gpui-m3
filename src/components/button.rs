@@ -25,6 +25,9 @@ use crate::theme::type_scale::{
 };
 use crate::theme::{Theme, alpha, corner, font_family};
 
+/// Scale of a button while pressed (the reference design uses 0.96).
+const PRESS_SCALE: f32 = 0.96;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ButtonVariant {
     /// Primary (filled with the primary color).
@@ -823,7 +826,7 @@ impl RenderOnce for IconButton {
         let scale = animate_f32(
             key(&self.id, "scale"),
             Spring::SPATIAL_FAST,
-            if pressed { 0.94 } else { 1. },
+            if pressed { PRESS_SCALE } else { 1. },
             window,
             cx,
         );
@@ -916,6 +919,9 @@ impl RenderOnce for IconButton {
             el = el.tooltip(super::Tooltip::text(text));
         }
         let mut el = interactive(el, &state, enabled, true);
+        if enabled && self.on_click.is_some() {
+            el = keyboard_focus(el, &self.id, all(radius), false, window, cx);
+        }
         if let (Some(f), true) = (self.on_click, enabled) {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
         }
@@ -1116,7 +1122,7 @@ impl RenderOnce for Fab {
         let scale = animate_f32(
             key(&self.id, "scale"),
             Spring::SPATIAL_FAST,
-            if pressed { 0.95 } else { 1. },
+            if pressed { PRESS_SCALE } else { 1. },
             window,
             cx,
         );

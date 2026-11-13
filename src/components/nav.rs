@@ -9,7 +9,7 @@ use gpui::{
 };
 
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
-use crate::interaction::{interactive, state_layer, use_interaction};
+use crate::interaction::{interactive, keyboard_focus, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, animate_on_activate, key};
 use crate::shapes::Tone;
 use crate::theme::{Theme, alpha, font_family};
@@ -351,6 +351,7 @@ impl RenderOnce for RailItem {
 
         let el = div()
             .id(self.id.clone())
+            .relative()
             .flex()
             .flex_col()
             .items_center()
@@ -365,6 +366,9 @@ impl RenderOnce for RailItem {
             .child(pill)
             .child(self.label);
         let mut el = interactive(el, &state, true, true);
+        if self.on_click.is_some() {
+            el = keyboard_focus(el, &self.id, all(px(12.)), false, window, cx);
+        }
         if let Some(f) = self.on_click {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
         }

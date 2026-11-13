@@ -11,7 +11,7 @@ use gpui::{
 };
 
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, Tooltip, all, child_id};
-use crate::interaction::{interactive, state_layer, use_interaction};
+use crate::interaction::{interactive, keyboard_focus, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, key};
 use crate::theme::{MONO_FONT_FAMILY, Theme, alpha, font_family};
 
@@ -372,6 +372,9 @@ impl RenderOnce for ListItem {
             row = row.tooltip(Tooltip::text(text));
         }
         let mut row = interactive(row, &state, true, true);
+        if self.on_click.is_some() {
+            row = keyboard_focus(row, &self.id, all(px(radius)), false, window, cx);
+        }
         if let Some(f) = self.on_click {
             row = row.on_click(move |e, w, cx| f(e, w, cx));
         }

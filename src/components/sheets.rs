@@ -119,7 +119,7 @@ fn shield<E: InteractiveElement + StatefulInteractiveElement>(sheet: E) -> E {
 /// click on the scrim call [`BottomSheet::on_dismiss`]. To animate its exit, keep building it
 /// while [`crate::motion::presence`] returns `Some` and pass the progress to
 /// [`BottomSheet::exit`]; a `Presence` around it cannot do this, because the sheet is drawn
-/// deferred.
+/// deferred. [`BottomSheet::spring`] changes the spring of that entrance.
 ///
 /// A standard sheet is the same surface drawn in place, without scrim, for the host to position.
 #[derive(IntoElement)]
@@ -132,6 +132,7 @@ pub struct BottomSheet {
     children: Vec<AnyElement>,
     on_dismiss: Option<ClickHandler>,
     shown: f32,
+    spring: Spring,
 }
 
 impl BottomSheet {
@@ -145,6 +146,7 @@ impl BottomSheet {
             children: Vec::new(),
             on_dismiss: None,
             shown: 1.,
+            spring: Spring::SPATIAL,
         }
     }
 
@@ -180,6 +182,12 @@ impl BottomSheet {
     /// [`crate::motion::presence`] returns it. The scrim fades and the sheet slides down.
     pub fn exit(mut self, progress: f32) -> Self {
         self.shown = progress.clamp(0., 1.);
+        self
+    }
+
+    /// Spring of the slide up (and the overshoot at the top): [`Spring::SPATIAL`] by default.
+    pub fn spring(mut self, spring: Spring) -> Self {
+        self.spring = spring;
         self
     }
 
@@ -262,7 +270,7 @@ impl RenderOnce for BottomSheet {
             height if height > 0. => height,
             _ => f32::from(viewport.height),
         };
-        let entered = entrance(key(&self.id, "slide"), Spring::SPATIAL, 0., window, cx);
+        let entered = entrance(key(&self.id, "slide"), self.spring, 0., window, cx);
         let shown = self.shown;
         let sheet = sheet
             .top(px(slide_offset(entered, shown, travel)))

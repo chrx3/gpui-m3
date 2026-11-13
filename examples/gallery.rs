@@ -206,6 +206,8 @@ struct Demos {
     menu_switch: bool,
     menu_effort: usize,
     progress: f32,
+    /// The wavy progress demo draws a straight bar when set.
+    wave_flat: bool,
     ring: f32,
     motion_flip: bool,
     search: Entity<TextField>,
@@ -656,6 +658,7 @@ impl Demos {
             menu_switch: true,
             menu_effort: 1,
             progress: 0.42,
+            wave_flat: false,
             ring: 0.65,
             motion_flip: false,
         }
@@ -1539,6 +1542,11 @@ impl Demos {
 
     fn progress(&self, cx: &mut Context<Self>) -> AnyElement {
         let s = *Theme::of(cx);
+        let amplitude = if self.wave_flat {
+            0.
+        } else {
+            WavyProgress::DEFAULT_AMPLITUDE
+        };
         page()
             .child(demo(
                 "Loading indicator",
@@ -1552,19 +1560,24 @@ impl Demos {
             ))
             .child(demo(
                 "Wavy progress",
-                "The wave advances one wavelength per second; the value changes with the spatial spring.",
+                "The wave advances one wavelength per second; the value changes with the spatial spring. amplitude() springs the wave between its 3 px default and a straight bar (0).",
                 column()
                     .w(px(520.))
-                    .child(WavyProgress::new("wavy", Some(self.progress)))
+                    .child(WavyProgress::new("wavy", Some(self.progress)).amplitude(amplitude))
                     .child(
                         row()
                             .child(Button::new("p-0", "0 %").size(ButtonSize::Small).on_click(click(cx, |this, _| this.progress = 0.)))
                             .child(Button::new("p-25", "25 %").size(ButtonSize::Small).on_click(click(cx, |this, _| this.progress = 0.25)))
                             .child(Button::new("p-70", "70 %").size(ButtonSize::Small).on_click(click(cx, |this, _| this.progress = 0.7)))
-                            .child(Button::new("p-100", "100 %").size(ButtonSize::Small).on_click(click(cx, |this, _| this.progress = 1.))),
+                            .child(Button::new("p-100", "100 %").size(ButtonSize::Small).on_click(click(cx, |this, _| this.progress = 1.)))
+                            .child(
+                                Button::new("p-flat", if self.wave_flat { "Wave" } else { "Straight" })
+                                    .size(ButtonSize::Small)
+                                    .on_click(click(cx, |this, _| this.wave_flat = !this.wave_flat)),
+                            ),
                     )
                     .child(div().text_size(px(12.)).text_color(s.on_surface_variant).child("Indeterminate"))
-                    .child(WavyProgress::new("wavy-ind", None)),
+                    .child(WavyProgress::new("wavy-ind", None).amplitude(amplitude)),
             ))
             .child(demo(
                 "Wavy circular progress",
