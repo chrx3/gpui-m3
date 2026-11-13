@@ -222,7 +222,7 @@ pub fn continuous(window: &mut Window, cx: &App) -> f32 {
 }
 
 /// Frame rate cap for [`continuous_at`] while its window is not the active one.
-const BACKGROUND_FPS: f32 = 12.;
+const BACKGROUND_FPS: f32 = 4.;
 
 thread_local! {
     /// Views that already have a redraw scheduled by [`continuous_at`] (avoids piling up timers).

@@ -487,8 +487,9 @@ impl Default for LoadingIndicator {
 impl RenderOnce for LoadingIndicator {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        // 30 fps: it looks just as smooth and each frame redraws the view that holds it.
-        let t = continuous_at(30., window, cx);
+        // 15 fps: still reads as continuous, and each frame redraws the whole view that holds it,
+        // so more costs battery for no visible gain.
+        let t = continuous_at(15., window, cx);
         // As in Compose: a new morph every 650 ms driven by a bouncy spring, each one adding a
         // quarter turn, on top of a constant full turn every 4666 ms.
         const SEGMENT: f32 = 0.65;
