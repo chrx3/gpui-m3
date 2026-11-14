@@ -24,6 +24,7 @@ pub struct NavItem {
     leading: Option<AnyElement>,
     trailing: Option<AnyElement>,
     selected: bool,
+    indicator: bool,
     dense: bool,
     muted: bool,
     emphasized: bool,
@@ -43,6 +44,7 @@ impl NavItem {
             leading: None,
             trailing: None,
             selected: false,
+            indicator: true,
             dense: false,
             muted: false,
             emphasized: false,
@@ -98,6 +100,14 @@ impl NavItem {
 
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
+        self
+    }
+
+    /// Whether the row draws its own selected indicator (on by default). Turn it off when the
+    /// container paints one shared indicator that slides between rows, like a navigation
+    /// rail; the selected row keeps its label color and weight.
+    pub fn indicator(mut self, indicator: bool) -> Self {
+        self.indicator = indicator;
         self
     }
 
@@ -192,7 +202,7 @@ impl RenderOnce for NavItem {
         if let Some(group) = self.group {
             row = row.group(group);
         }
-        if self.selected {
+        if self.selected && self.indicator {
             row = row.child(
                 div()
                     .absolute()

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.2 — 2026-11-14
+
+Indicador que se desliza, texto que entra y esquinas limpias / A sliding indicator, fading-in text and clean corners
+
+### Español
+
+- **Nuevo:** NavItem::indicator(false): la fila no dibuja su propio indicador de elegida, para que el contenedor pinte uno compartido que se desliza entre filas (como el del riel de navegación)
+- **Nuevo:** Markdown::fade_tail: mientras llega en vivo, los trozos recién llegados del último párrafo entran con un fundido; la opacidad la calcula quien llama con la hora de llegada de cada trozo, sin pedir cuadros propios
+- **Corregido:** DiffView: el fondo rojo o verde de la primera y la última fila ya no sobresale por las esquinas redondeadas (GPUI recorta en rectángulo); lo mismo con «Mostrar todo» de DiffView y CodeOutput y con el encabezado de las tablas de Markdown
+
+### English
+
+- **New:** NavItem::indicator(false): the row draws no selected indicator of its own, so the container can paint a shared one that slides between rows (like a navigation rail's)
+- **New:** Markdown::fade_tail: while streaming, the chunks that just arrived in the last paragraph fade in; the caller computes the opacity from each chunk's arrival time, with no frames of its own
+- **Fixed:** DiffView: the red or green background of the first and last rows no longer shows past the rounded corners (GPUI clips to a rectangle); the same for DiffView's and CodeOutput's "Show all" and Markdown tables' header
+
 ## 0.2.1 — 2026-11-14
 
 Estados, marcas y salida de herramientas / States, marks and tool output

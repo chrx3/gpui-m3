@@ -830,6 +830,7 @@ pub struct Markdown {
     #[cfg(feature = "mermaid")]
     on_diagram: Option<super::mermaid::DiagramHandler>,
     streaming: bool,
+    fade_tail: Vec<(usize, f32)>,
 }
 
 impl Markdown {
@@ -844,6 +845,7 @@ impl Markdown {
             #[cfg(feature = "mermaid")]
             on_diagram: None,
             streaming: false,
+            fade_tail: Vec::new(),
         }
     }
 
@@ -872,6 +874,18 @@ impl Markdown {
     /// the same text, when the reply ends. Off by default.
     pub fn streaming(mut self, streaming: bool) -> Self {
         self.streaming = streaming;
+        self
+    }
+
+    /// While [`Markdown::streaming`], fades in the text that just arrived: each entry is a
+    /// chunk, as how many bytes of the source it spans counted from the end and the opacity
+    /// it should have now (0 when it just arrived, 1 once in). It applies to the last block
+    /// when it is a paragraph or a heading (where streamed prose lands), mapped from the end of
+    /// its text, so hidden marks can shift it by a few characters. The caller derives the
+    /// opacities from each chunk's arrival time and redraws on its own streaming ticks:
+    /// nothing here requests frames. Ignored when not streaming.
+    pub fn fade_tail(mut self, chunks: Vec<(usize, f32)>) -> Self {
+        self.fade_tail = chunks;
         self
     }
 
@@ -924,6 +938,8 @@ struct Render<'a> {
     /// What goes before the next text block in a copy (see [`super::TextSelection::selected_text`]);
     /// a blank line when `None`.
     joint: Option<String>,
+    /// Chunks to fade in on the next rich text drawn (see [`Markdown::fade_tail`]).
+    fade: Vec<(usize, f32)>,
 }
 
 impl Render<'_> {
@@ -979,6 +995,11 @@ impl Render<'_> {
                 }
             })
             .collect();
+        let runs = if self.fade.is_empty() {
+            runs
+        } else {
+            fade_runs(runs, &rich.text, &std::mem::take(&mut self.fade))
+        };
         let styled = StyledText::new(rich.text.clone()).with_runs(runs);
         let layout = styled.layout().clone();
         let joint: SharedString = self.joint.take().unwrap_or_else(|| "\n\n".into()).into();
@@ -1233,7 +1254,12 @@ impl Render<'_> {
                 .w_full()
                 .when(!last, |d| d.border_b_1().border_color(s.outline_variant));
             if header {
-                row = row.bg(s.surface_container);
+                // Rounded with the table's inner radius (8 minus its border): GPUI clips to a
+                // rectangle, so a square fill would show past the table's curved corners.
+                row = row.bg(s.surface_container).rounded_tl(px(7.)).rounded_tr(px(7.));
+                if last {
+                    row = row.rounded_bl(px(7.)).rounded_br(px(7.));
+                }
             }
             for (c, weight) in weights.iter().enumerate() {
                 let content = cells.get(c).map(|cell| {
@@ -1378,8 +1404,66 @@ fn task_box(done: bool, size: f32, s: &Scheme) -> impl IntoElement {
         })
 }
 
+/// `runs` with the end of `text` faded: each of `fades` is (bytes from the end, opacity), and
+/// a byte takes the lowest opacity of the chunks that cover it. Runs are split at the chunk
+/// edges (on character boundaries) so only the new text changes color.
+fn fade_runs(runs: Vec<TextRun>, text: &str, fades: &[(usize, f32)]) -> Vec<TextRun> {
+    let len = text.len();
+    let mut cuts: Vec<(usize, f32)> = fades
+        .iter()
+        .filter(|(_, opacity)| *opacity < 1.)
+        .map(|&(back, opacity)| {
+            let mut at = len.saturating_sub(back);
+            while at < len && !text.is_char_boundary(at) {
+                at += 1;
+            }
+            (at, opacity.clamp(0., 1.))
+        })
+        .filter(|(at, _)| *at < len)
+        .collect();
+    if cuts.is_empty() {
+        return runs;
+    }
+    cuts.sort_by_key(|(at, _)| *at);
+    let opacity_at = |byte: usize| {
+        cuts.iter()
+            .filter(|(at, _)| *at <= byte)
+            .map(|(_, o)| *o)
+            .fold(1f32, f32::min)
+    };
+    let mut out = Vec::with_capacity(runs.len() + cuts.len());
+    let mut start = 0;
+    for run in runs {
+        let end = start + run.len;
+        let mut from = start;
+        let edges = cuts
+            .iter()
+            .map(|(at, _)| *at)
+            .filter(|at| *at > start && *at < end)
+            .chain(std::iter::once(end));
+        for to in edges {
+            if to <= from {
+                continue;
+            }
+            let mut piece = run.clone();
+            piece.len = to - from;
+            let opacity = opacity_at(from);
+            if opacity < 1. {
+                piece.color = piece.color.opacity(opacity);
+                if let Some(bg) = piece.background_color.as_mut() {
+                    *bg = bg.opacity(opacity);
+                }
+            }
+            out.push(piece);
+            from = to;
+        }
+        start = end;
+    }
+    out
+}
+
 impl RenderOnce for Markdown {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let mut tail_fence_open = false;
         let (blocks, tail) = if self.streaming {
@@ -1407,6 +1491,7 @@ impl RenderOnce for Markdown {
             diagrams: true,
             whole: self.text.clone(),
             joint: None,
+            fade: Vec::new(),
         };
         let mut children = r.blocks(&blocks, 0, window, cx);
         if let Some(tail) = &tail {
@@ -1414,7 +1499,13 @@ impl RenderOnce for Markdown {
             for (i, block) in tail.iter().enumerate() {
                 // The last block is code whose fence is still open: it stays code until it closes.
                 r.diagrams = !(tail_fence_open && i + 1 == tail.len());
+                let fades = i + 1 == tail.len()
+                    && matches!(block, MarkdownBlock::Paragraph(_) | MarkdownBlock::Heading { .. });
+                if fades && !self.fade_tail.is_empty() {
+                    r.fade = std::mem::take(&mut self.fade_tail);
+                }
                 children.push(r.block(block, first && i == 0, 0, window, cx));
+                r.fade.clear();
             }
         }
         let root = if own {
@@ -1451,6 +1542,36 @@ mod tests {
             .filter(|(_, s)| f(s))
             .map(|(r, _)| &rich.text[r.clone()])
             .collect()
+    }
+
+    fn run(len: usize) -> TextRun {
+        TextRun {
+            len,
+            font: gpui::font("Inter"),
+            color: gpui::black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }
+    }
+
+    #[test]
+    fn fade_tail_splits_runs_at_the_chunks() {
+        let text = "hello brave world";
+        // One run; the last 11 bytes arrived in two chunks (" brave" older, " world" newest).
+        let out = fade_runs(vec![run(text.len())], text, &[(12, 0.6), (6, 0.2)]);
+        let lens: Vec<usize> = out.iter().map(|r| r.len).collect();
+        assert_eq!(lens, vec![5, 6, 6]);
+        assert_eq!(out[0].color.a, 1.);
+        assert!((out[1].color.a - 0.6).abs() < 1e-6);
+        assert!((out[2].color.a - 0.2).abs() < 1e-6);
+        // Settled chunks (opacity 1) change nothing.
+        assert_eq!(fade_runs(vec![run(text.len())], text, &[(6, 1.)]).len(), 1);
+        // Cuts land on char boundaries (the cut inside «ñ» moves past it).
+        let accented = "añá";
+        let out = fade_runs(vec![run(accented.len())], accented, &[(3, 0.5)]);
+        let lens: Vec<usize> = out.iter().map(|r| r.len).collect();
+        assert_eq!(lens, vec![3, 2]);
     }
 
     #[test]

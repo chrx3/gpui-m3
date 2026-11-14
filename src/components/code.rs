@@ -314,6 +314,9 @@ impl RenderOnce for CodeOutput {
                         .text_size(px(11.5))
                         .text_color(s.primary)
                         .cursor_pointer()
+                        // The hover fill sits in the rounded bottom corners (GPUI clips to a rectangle).
+                        .rounded_bl(px(12.))
+                        .rounded_br(px(12.))
                         .hover(|d| d.bg(s.surface_container_high))
                         .on_click(move |_, _, cx| {
                             all_state.update(cx, |a, cx| {

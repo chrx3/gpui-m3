@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px, relative,
+    App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 use similar::{ChangeTag, DiffTag, TextDiff};
 
@@ -377,6 +377,11 @@ fn expand_tabs(text: &str) -> String {
     text.replace('\t', "    ")
 }
 
+/// Height of a diff line (12 px text at 1.5).
+const LINE_H: f32 = 18.;
+/// The bordered view's corner radius (16) minus its 1 px border.
+const INNER_RADIUS: f32 = 15.;
+
 /// A line diff like the reference design's: old and new line numbers, `+`/`−` marks, unchanged
 /// runs folded as "⋯ N unchanged lines" (click to open), "Show all" past `max_rows`, and an
 /// optional header with the file name and `+N −M`. A new file hides the old numbers.
@@ -485,8 +490,57 @@ impl RenderOnce for DiffView {
                 .child(n.map(|n| n.to_string()).unwrap_or_default())
         };
 
+        // GPUI clips children to a rectangle, not to the rounded border: a colored row in a
+        // corner would show its square background past the curve. The first and last rows
+        // touching the rounded corners paint their background in a layer behind the body,
+        // rounded with the inner radius and as wide as the visible box (rows can be wider and
+        // scroll sideways).
+        let more_shown = !show_all && total > self.max_rows;
+        let corner_bg = |row: Option<&DiffRow>| -> Option<(Hsla, Pixels)> {
+            match row? {
+                DiffRow::Line(i) => match lines[*i].kind {
+                    DiffLineKind::Added => Some((add_bg, px(LINE_H))),
+                    DiffLineKind::Removed => Some((del_bg, px(LINE_H))),
+                    DiffLineKind::Context => None,
+                },
+                DiffRow::Fold { .. } | DiffRow::Skipped { .. } => {
+                    Some((s.surface_container, px(LINE_H + 4.)))
+                }
+            }
+        };
+        let top_bg = (self.bordered && self.path.is_none())
+            .then(|| corner_bg(rows.first()))
+            .flatten();
+        let bottom_bg = (self.bordered && !more_shown && shown > 0)
+            .then(|| corner_bg(rows.get(shown - 1)))
+            .flatten();
+        let inner = px(INNER_RADIUS);
+        let single = shown == 1;
+        let corner_layers = [
+            top_bg.map(|(bg, h)| {
+                let layer = div().absolute().top_0().left_0().right_0().h(h).bg(bg);
+                if single {
+                    layer.rounded(inner)
+                } else {
+                    layer.rounded_tl(inner).rounded_tr(inner)
+                }
+            }),
+            bottom_bg.filter(|_| !single).map(|(bg, h)| {
+                div()
+                    .absolute()
+                    .bottom_0()
+                    .left_0()
+                    .right_0()
+                    .h(h)
+                    .bg(bg)
+                    .rounded_bl(inner)
+                    .rounded_br(inner)
+            }),
+        ];
+        let last = shown.saturating_sub(1);
         let mut body = div().flex().flex_col().flex_none().min_w_full();
-        for row in rows.into_iter().take(shown) {
+        for (n, row) in rows.into_iter().take(shown).enumerate() {
+            let layered = (n == 0 && top_bg.is_some()) || (n == last && bottom_bg.is_some());
             body = body.child(match row {
                 DiffRow::Line(i) => {
                     let line = &lines[i];
@@ -495,6 +549,7 @@ impl RenderOnce for DiffView {
                         DiffLineKind::Removed => (Some(del_bg), "−", s.error),
                         DiffLineKind::Context => (None, " ", s.on_surface_variant),
                     };
+                    let bg = bg.filter(|_| !layered);
                     div()
                         .flex()
                         .w_full()
@@ -520,7 +575,7 @@ impl RenderOnce for DiffView {
                         .w_full()
                         .px(px(12.))
                         .py(px(2.))
-                        .bg(s.surface_container)
+                        .when(!layered, |d| d.bg(s.surface_container))
                         .text_color(s.on_surface_variant)
                         .whitespace_nowrap()
                         .cursor_pointer()
@@ -538,7 +593,7 @@ impl RenderOnce for DiffView {
                     .w_full()
                     .px(px(12.))
                     .py(px(2.))
-                    .bg(s.surface_container)
+                    .when(!layered, |d| d.bg(s.surface_container))
                     .text_color(s.outline)
                     .whitespace_nowrap()
                     .child(format!("⋯ {lines} unchanged lines"))
@@ -604,6 +659,7 @@ impl RenderOnce for DiffView {
                 .text_center()
                 .text_color(s.primary)
                 .cursor_pointer()
+                .when(self.bordered, |d| d.rounded_bl(inner).rounded_br(inner))
                 .hover(|d| d.bg(s.surface_container_high))
                 .on_click(move |_, _, cx| {
                     all.update(cx, |a, cx| {
@@ -618,13 +674,14 @@ impl RenderOnce for DiffView {
         });
 
         div()
+            .relative()
             .flex()
             .flex_col()
             .min_w_0()
             .overflow_hidden()
             .font_family(MONO_FONT_FAMILY)
             .text_size(px(12.))
-            .line_height(relative(1.5))
+            .line_height(px(LINE_H))
             .text_color(s.on_surface)
             .bg(s.surface)
             .when(self.bordered, |d| {
@@ -632,6 +689,7 @@ impl RenderOnce for DiffView {
                     .border_color(s.outline_variant)
                     .rounded(px(16.))
             })
+            .children(corner_layers.into_iter().flatten())
             .children(header)
             .child(
                 div()
