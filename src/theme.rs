@@ -493,6 +493,31 @@ impl Theme {
         cx.set_global(Theme::new(dark, seed));
         cx.refresh_windows();
     }
+
+    /// Uses `scheme` for the components of one window while it draws, without changing the
+    /// app's theme for the others (the theme is a single global). Call it at the start of the
+    /// root view's `render` and add the returned element as the root's last child: it puts the
+    /// previous theme back after the window has painted.
+    ///
+    /// ```ignore
+    /// fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    ///     let restore = Theme::scoped(Scheme::baseline_dark(), true, cx);
+    ///     div().child(Button::new("ok", "OK")).child(restore)
+    /// }
+    /// ```
+    pub fn scoped(scheme: Scheme, dark: bool, cx: &mut App) -> gpui::AnyElement {
+        use gpui::IntoElement as _;
+        let previous = Theme::get(cx);
+        cx.set_global(Theme {
+            scheme,
+            dark,
+            seed: None,
+        });
+        let restore = gpui::canvas(|_, _, _| {}, move |_, _, _, cx| cx.set_global(previous));
+        gpui::deferred(restore)
+            .with_priority(usize::MAX)
+            .into_any_element()
+    }
 }
 
 /// The M3 elevation levels. Higher levels cast a larger, softer shadow.

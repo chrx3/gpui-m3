@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui::{App, ElementId, EntityId, Global, Hsla, Pixels, Rgba, Window, WindowId, px};
+use gpui::{App, ElementId, EntityId, Global, Hsla, Pixels, Rgba, Styled, Window, WindowId, px};
 
 /// Unit-mass spring: stiffness and damping ratio.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -111,6 +111,22 @@ impl MotionSettings {
         cx.try_global::<MotionSettings>()
             .copied()
             .unwrap_or_default()
+    }
+
+    /// Follows the system's reduced motion setting: stores `reduced` and redraws every window,
+    /// but only when it changed (call it when a window activates, not every frame). Returns
+    /// whether it changed.
+    pub fn sync(reduced: bool, cx: &mut App) -> bool {
+        let current = Self::get(cx);
+        if current.reduced == reduced && cx.has_global::<MotionSettings>() {
+            return false;
+        }
+        cx.set_global(MotionSettings {
+            reduced,
+            ..current
+        });
+        cx.refresh_windows();
+        true
     }
 }
 
@@ -825,6 +841,129 @@ pub fn expand(
     result
 }
 
+/// Axis of a [`Enter::shared_axis`] transition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum SharedAxis {
+    /// Sideways: tabs, steps of a flow (forward comes from the right).
+    #[default]
+    X,
+    /// Up and down: a list that pages, a stepper (forward comes from below).
+    Y,
+    /// In depth: parent and child (GPUI cannot scale, so it only fades in).
+    Z,
+}
+
+/// An entrance for any element: it slides in from an offset and fades in with a spring,
+/// optionally after a delay (to stagger a list, see [`stagger`]). Approximates M3's enter
+/// transitions with offset and opacity (GPUI does not scale elements).
+///
+/// ```ignore
+/// let row = div().child(..);
+/// let row = Enter::new(("row-in", i)).delay(stagger(i, 0.03, 6)).apply(row, window, cx);
+/// ```
+///
+/// Its state lives while the element is drawn: shown again after being removed, it enters
+/// again. With [`Enter::on_change`] it plays each time a generation changes instead (new
+/// content in the same place). Nothing animates with reduced motion, and a finished entrance
+/// returns the element untouched and requests no frames.
+#[derive(Clone)]
+pub struct Enter {
+    id: ElementId,
+    delay: f32,
+    dx: f32,
+    dy: f32,
+    spring: Spring,
+    generation: Option<u64>,
+}
+
+impl Enter {
+    /// Rises 12 px with the spatial spring. `id` must be unique within the view; a new one
+    /// makes the element enter again.
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            delay: 0.,
+            dx: 0.,
+            dy: 12.,
+            spring: Spring::SPATIAL,
+            generation: None,
+        }
+    }
+
+    /// The incoming half of an M3 shared axis transition: 30 px along `axis`, from the
+    /// leading side when `forward` (right or below) and from the trailing side when going
+    /// back. Use it with [`Enter::on_change`] keyed by the page shown.
+    pub fn shared_axis(mut self, axis: SharedAxis, forward: bool) -> Self {
+        let distance = if forward { 30. } else { -30. };
+        (self.dx, self.dy) = match axis {
+            SharedAxis::X => (distance, 0.),
+            SharedAxis::Y => (0., distance),
+            SharedAxis::Z => (0., 0.),
+        };
+        self
+    }
+
+    /// Seconds to wait before starting.
+    pub fn delay(mut self, delay: f32) -> Self {
+        self.delay = delay.max(0.);
+        self
+    }
+
+    /// Where it comes from, in pixels (`dx` > 0: from the right; `dy` > 0: from below).
+    pub fn from(mut self, dx: f32, dy: f32) -> Self {
+        self.dx = dx;
+        self.dy = dy;
+        self
+    }
+
+    pub fn spring(mut self, spring: Spring) -> Self {
+        self.spring = spring;
+        self
+    }
+
+    /// Enters each time `generation` changes instead of when it appears.
+    pub fn on_change(mut self, generation: u64) -> Self {
+        self.generation = Some(generation);
+        self
+    }
+
+    /// Progress from 0 to 1 (with the spring's bounce); exactly 1 once finished.
+    #[track_caller]
+    pub fn progress(self, window: &mut Window, cx: &mut App) -> f32 {
+        match self.generation {
+            None => entrance(self.id, self.spring, self.delay, window, cx),
+            Some(generation) => {
+                let duration = self.spring.settle_time().as_secs_f32() + self.delay;
+                match replay(self.id, generation, duration, window, cx) {
+                    Some(t) => self.spring.step((t - self.delay).max(0.)),
+                    None => 1.,
+                }
+            }
+        }
+    }
+
+    /// Applies the entrance to `el` (offset and opacity); a finished one returns it untouched.
+    #[track_caller]
+    pub fn apply<E: Styled>(self, el: E, window: &mut Window, cx: &mut App) -> E {
+        let (dx, dy) = (self.dx, self.dy);
+        let p = self.progress(window, cx);
+        if p == 1. {
+            return el;
+        }
+        el.relative()
+            .left(px((1. - p) * dx))
+            .top(px((1. - p) * dy))
+            .opacity(p.clamp(0., 1.))
+    }
+}
+
+/// Delay of row `index` of a staggered list: `step` seconds between rows, up to `max` rows so
+/// a long list does not take long to finish entering.
+pub fn stagger(index: usize, step: f32, max: usize) -> f32 {
+    index.min(max) as f32 * step
+}
+
 pub fn key(id: &ElementId, name: &'static str) -> ElementId {
     ElementId::NamedChild(Box::new(id.clone()), name.into())
 }
@@ -855,6 +994,25 @@ mod tests {
             let delay = delay_to_tick(now, 30.);
             assert!(delay > 0. && delay <= 1. / 30. + 1. / 60. + 1e-3);
         }
+    }
+
+    #[test]
+    fn stagger_has_a_cap() {
+        assert_eq!(stagger(0, 0.03, 6), 0.);
+        assert!((stagger(2, 0.03, 6) - 0.06).abs() < 1e-6);
+        assert!((stagger(40, 0.03, 6) - 0.18).abs() < 1e-6);
+    }
+
+    #[test]
+    fn shared_axis_comes_from_the_leading_side() {
+        let enter = |axis, forward| {
+            let e = Enter::new("e").shared_axis(axis, forward);
+            (e.dx, e.dy)
+        };
+        assert_eq!(enter(SharedAxis::X, true), (30., 0.));
+        assert_eq!(enter(SharedAxis::X, false), (-30., 0.));
+        assert_eq!(enter(SharedAxis::Y, true), (0., 30.));
+        assert_eq!(enter(SharedAxis::Z, false), (0., 0.));
     }
 
     #[test]
