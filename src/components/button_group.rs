@@ -39,6 +39,8 @@ pub struct ButtonGroupItem {
     icon: Option<SharedString>,
     tooltip: Option<SharedString>,
     disabled: bool,
+    variant: Option<ButtonVariant>,
+    autofocus: bool,
 }
 
 impl ButtonGroupItem {
@@ -48,6 +50,8 @@ impl ButtonGroupItem {
             icon: None,
             tooltip: None,
             disabled: false,
+            variant: None,
+            autofocus: false,
         }
     }
 
@@ -57,6 +61,8 @@ impl ButtonGroupItem {
             icon: Some(icon.into()),
             tooltip: None,
             disabled: false,
+            variant: None,
+            autofocus: false,
         }
     }
 
@@ -74,6 +80,19 @@ impl ButtonGroupItem {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Overrides the group's [`ButtonGroup::variant`] for this button (a filled primary action
+    /// among tonal ones).
+    pub fn variant(mut self, variant: ButtonVariant) -> Self {
+        self.variant = Some(variant);
+        self
+    }
+
+    /// Takes the keyboard focus the first time the group appears, never again after that.
+    pub fn autofocus(mut self, autofocus: bool) -> Self {
+        self.autofocus = autofocus;
         self
     }
 }
@@ -418,7 +437,8 @@ impl RenderOnce for ButtonGroup {
                 ); 4]
             };
             let radii = animate(key(&id, "radius"), Spring::SPATIAL_FAST, target, window, cx);
-            let (bg, fg, border) = item_colors(&s, self.variant, selected, enabled);
+            let variant = item.variant.unwrap_or(self.variant);
+            let (bg, fg, border) = item_colors(&s, variant, selected, enabled);
             let bg = animate_color(key(&id, "bg"), Spring::EFFECTS, bg, window, cx);
             let fg = animate_color(key(&id, "fg"), Spring::EFFECTS, fg, window, cx);
             let border =
@@ -464,7 +484,7 @@ impl RenderOnce for ButtonGroup {
             }
             let mut el = interactive(el, &states[i], enabled, true);
             if enabled {
-                el = keyboard_focus(el, &id, corners(radii), false, window, cx);
+                el = keyboard_focus(el, &id, corners(radii), item.autofocus, window, cx);
                 let on_click = self.on_click.clone();
                 let on_change = self.on_change.clone();
                 let on_change_many = self.on_change_many.clone();

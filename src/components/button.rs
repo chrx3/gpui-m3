@@ -18,11 +18,13 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
 use crate::interaction::{interactive, keyboard_focus, state_layer, use_interaction};
 use crate::motion::{
-    Spring, animate_color, animate_f32, animate_on_activate, cubic_bezier, key, replay,
+    Spring, animate_color, animate_f32, animate_on_activate, cubic_bezier, element_state, key,
+    replay,
 };
 use crate::theme::type_scale::{
     HEADLINE_LARGE, HEADLINE_SMALL, LABEL_LARGE, TITLE_LARGE, TITLE_MEDIUM, TypeStyle,
 };
+use crate::shapes::Tone;
 use crate::theme::{Theme, alpha, corner, font_family};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -246,6 +248,7 @@ pub struct Button {
     truncate: bool,
     full_width: bool,
     autofocus: bool,
+    busy: bool,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
@@ -271,9 +274,19 @@ impl Button {
             truncate: false,
             full_width: false,
             autofocus: false,
+            busy: false,
             tooltip: None,
             on_click: None,
         }
+    }
+
+    /// Working on its action: a [`LoadingIndicator`](super::LoadingIndicator) in the content
+    /// color takes the icon's place (or goes before the label) and clicks are ignored; the
+    /// button keeps its colors and its focus. The indicator is continuous (15 fps), so keep
+    /// it short or draw the button in a view of its own.
+    pub fn busy(mut self, busy: bool) -> Self {
+        self.busy = busy;
+        self
     }
 
     /// Fills its container's width like a [`NavItem`](super::NavItem) row: content starts on
@@ -420,10 +433,11 @@ impl RenderOnce for Button {
             None => self.size.metrics(),
         };
         let enabled = !self.disabled;
+        let clickable = enabled && !self.busy;
         let state = use_interaction(&self.id, window, cx);
         let (hovered, pressed) = {
             let st = state.read(cx);
-            (st.hovered && enabled, st.pressed && enabled)
+            (st.hovered && clickable, st.pressed && clickable)
         };
         let confirmed_at = self
             .confirm
@@ -553,15 +567,17 @@ impl RenderOnce for Button {
         } else {
             self.icon
         };
-        if let Some(icon) = icon {
-            let size = if let Some(m) = &m3 {
-                m.icon
-            } else if self.size == ButtonSize::Tiny {
-                14.
-            } else {
-                font + 4.
-            };
-            el = el.child(Icon::new(icon).size(px(size)).color(fg));
+        let icon_size = if let Some(m) = &m3 {
+            m.icon
+        } else if self.size == ButtonSize::Tiny {
+            14.
+        } else {
+            font + 4.
+        };
+        if self.busy {
+            el = el.child(super::LoadingIndicator::new().size(px(icon_size)).color(fg));
+        } else if let Some(icon) = icon {
+            el = el.child(Icon::new(icon).size(px(icon_size)).color(fg));
         }
         let label = match (&self.confirm, confirming) {
             (Some((label, _)), true) => Some(label.clone()),
@@ -618,11 +634,11 @@ impl RenderOnce for Button {
         if let Some(tooltip) = tooltip {
             el = el.tooltip(super::Tooltip::text(tooltip));
         }
-        let mut el = interactive(el, &state, enabled, true);
+        let mut el = interactive(el, &state, clickable, true);
         if enabled {
             el = keyboard_focus(el, &self.id, all(radius), self.autofocus, window, cx);
         }
-        if enabled && (self.on_click.is_some() || confirmed_at.is_some()) {
+        if clickable && (self.on_click.is_some() || confirmed_at.is_some()) {
             let f = self.on_click;
             let duration = self.confirm.as_ref().map(|(_, d)| *d);
             el = el.on_click(move |e, w, cx| {
@@ -675,6 +691,7 @@ pub struct IconButton {
     disabled: bool,
     tooltip: Option<SharedString>,
     launch: Option<u64>,
+    icon_swap: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -693,8 +710,18 @@ impl IconButton {
             disabled: false,
             tooltip: None,
             launch: None,
+            icon_swap: false,
             on_click: None,
         }
+    }
+
+    /// Animates a change of icon (play ↔ pause, copy → check): the old icon turns away and
+    /// shrinks out while the new one turns in and grows with the fast spatial spring, once per
+    /// change, then it settles. Nothing plays when the button first appears or with reduced
+    /// motion.
+    pub fn icon_swap(mut self, swap: bool) -> Self {
+        self.icon_swap = swap;
+        self
     }
 
     /// Plays the "launch" feedback (send) each time `generation` changes: the button squeezes
@@ -878,6 +905,49 @@ impl RenderOnce for IconButton {
 
         let (inner_w, inner_h) = (width * scale, height * scale);
         let layer = state_layer(&self.id, &state, all(radius), fg, window, cx);
+        let icon_px = icon_size * scale;
+        let swap = self
+            .icon_swap
+            .then(|| {
+                let icon = self.icon.clone();
+                let (previous, generation) =
+                    element_state(key(&self.id, "icon-swap"), window, |state, _| {
+                        let state = next_icon(state, &icon);
+                        ((state.1.clone(), state.2), state)
+                    });
+                let duration = Spring::SPATIAL_FAST.settle_time().as_secs_f32();
+                let t = replay(key(&self.id, "swap"), generation, duration, window, cx)?;
+                Some((previous?, swap_frame(t)))
+            })
+            .flatten();
+        let mut glyph = Icon::new(self.icon).size(px(icon_px));
+        let mut leaving = None;
+        match swap {
+            Some((previous, frame)) => {
+                glyph = glyph
+                    .color(alpha(fg, frame.enter_opacity))
+                    .rotate(frame.enter_turn)
+                    .scale(frame.enter_scale);
+                leaving = Some(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            Icon::new(previous)
+                                .size(px(icon_px))
+                                .color(alpha(fg, frame.exit_opacity))
+                                .rotate(frame.exit_turn)
+                                .scale(frame.exit_scale),
+                        ),
+                );
+            }
+            None => glyph = glyph.color(fg),
+        }
         let mut face = div()
             .absolute()
             .top(px((height - inner_h) / 2.))
@@ -895,7 +965,11 @@ impl RenderOnce for IconButton {
                     .relative()
                     .top(px(launch.map_or(0., |frame| frame.icon_y)))
                     .opacity(launch.map_or(1., |frame| frame.icon_opacity))
-                    .child(Icon::new(self.icon).size(px(icon_size * scale)).color(fg)),
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(glyph)
+                    .children(leaving),
             );
         if let Some(border) = border {
             face = if outline == 1. {
@@ -920,6 +994,44 @@ impl RenderOnce for IconButton {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
         }
         el
+    }
+}
+
+/// What an [`IconButton`] with `icon_swap` remembers: the icon it shows, the one before it and
+/// how many times it changed.
+type IconSwapState = (SharedString, Option<SharedString>, u64);
+
+fn next_icon(state: Option<IconSwapState>, icon: &SharedString) -> IconSwapState {
+    match state {
+        Some(state) if &state.0 == icon => state,
+        Some((current, _, generation)) => (icon.clone(), Some(current), generation + 1),
+        None => (icon.clone(), None, 0),
+    }
+}
+
+/// One frame of an icon swap, `t` seconds after the change.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SwapFrame {
+    exit_turn: f32,
+    exit_scale: f32,
+    exit_opacity: f32,
+    enter_turn: f32,
+    enter_scale: f32,
+    enter_opacity: f32,
+}
+
+/// The old icon turns 90° away and shrinks out in the first 150 ms; the new one turns in from
+/// −90° and grows from 40 % with the fast spatial spring (it may overshoot a little).
+fn swap_frame(t: f32) -> SwapFrame {
+    let exit = smoothstep(t / 0.15);
+    let enter = Spring::SPATIAL_FAST.step(t.max(0.));
+    SwapFrame {
+        exit_turn: std::f32::consts::FRAC_PI_2 * exit,
+        exit_scale: 1. - 0.6 * exit,
+        exit_opacity: 1. - exit,
+        enter_turn: -std::f32::consts::FRAC_PI_2 * (1. - enter),
+        enter_scale: (0.4 + 0.6 * enter).max(0.),
+        enter_opacity: enter.clamp(0., 1.),
     }
 }
 
@@ -1004,6 +1116,10 @@ pub struct Fab {
     /// What a [`FabMenu`](super::FabMenu) changes while it opens: colors (the shadow stays),
     /// whether it rests as a circle and the icon's turn in radians.
     menu_look: Option<(Hsla, Hsla, bool, f32)>,
+    colors: Option<(Hsla, Hsla)>,
+    tone: Option<Tone>,
+    busy: bool,
+    disabled: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -1017,8 +1133,39 @@ impl Fab {
             hover_radius: None,
             in_toolbar: None,
             menu_look: None,
+            colors: None,
+            tone: None,
+            busy: false,
+            disabled: false,
             on_click: None,
         }
+    }
+
+    /// Container color family: the tone's container with its content color (primary by
+    /// default).
+    pub fn color(mut self, tone: Tone) -> Self {
+        self.tone = Some(tone);
+        self
+    }
+
+    /// Custom container and content colors.
+    pub fn colors(mut self, container: Hsla, content: Hsla) -> Self {
+        self.colors = Some((container, content));
+        self
+    }
+
+    /// Working on its action: the icon becomes a [`LoadingIndicator`](super::LoadingIndicator)
+    /// in the content color and clicks are ignored. The indicator is continuous (15 fps), so
+    /// keep it short or draw the FAB in a view of its own.
+    pub fn busy(mut self, busy: bool) -> Self {
+        self.busy = busy;
+        self
+    }
+
+    /// Disabled: on-surface colors at low opacity, no shadow and no clicks.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
     }
 
     pub fn size(mut self, size: FabSize) -> Self {
@@ -1081,9 +1228,10 @@ impl RenderOnce for Fab {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let state = use_interaction(&self.id, window, cx);
+        let enabled = !self.disabled && !self.busy;
         let (hovered, pressed) = {
             let st = state.read(cx);
-            (st.hovered, st.pressed)
+            (st.hovered && enabled, st.pressed && enabled)
         };
         let extended = self.label.is_some();
         let (size, mut rest_radius, icon_size) = self.size.metrics();
@@ -1122,9 +1270,26 @@ impl RenderOnce for Fab {
         );
         let (container, content) = match self.menu_look {
             Some((container, content, _, _)) => (container, content),
-            None => self
-                .in_toolbar
-                .unwrap_or((s.primary_container, s.on_primary_container)),
+            None => self.in_toolbar.or(self.colors).unwrap_or_else(|| {
+                self.tone
+                    .unwrap_or(Tone::Primary)
+                    .colors(&s)
+            }),
+        };
+        let (container, content) = if self.disabled {
+            (alpha(s.on_surface, 0.12), alpha(s.on_surface, 0.38))
+        } else {
+            (container, content)
+        };
+        // A FAB menu animates its own colors; the rest change with the effects spring (when
+        // disabled or recolored).
+        let (container, content) = if self.menu_look.is_some() {
+            (container, content)
+        } else {
+            (
+                animate_color(key(&self.id, "bg"), Spring::EFFECTS, container, window, cx),
+                animate_color(key(&self.id, "fg"), Spring::EFFECTS, content, window, cx),
+            )
         };
         let icon_turn = self.menu_look.map_or(0., |look| look.3);
         let layer = state_layer(&self.id, &state, all(radius), content, window, cx);
@@ -1155,16 +1320,21 @@ impl RenderOnce for Fab {
             .corners(all(radius))
             .bg(container)
             .text_color(content)
-            .when(self.in_toolbar.is_none(), |d| {
+            .when(self.in_toolbar.is_none() && !self.disabled, |d| {
                 d.shadow(vec![shadow, shadow_far])
             })
-            .child(layer)
-            .child(
+            .child(layer);
+        let glyph_size = px(if compact { 19. } else { icon_size });
+        face = if self.busy {
+            face.child(super::LoadingIndicator::new().size(glyph_size).color(content))
+        } else {
+            face.child(
                 Icon::new(self.icon)
-                    .size(px(if compact { 19. } else { icon_size }))
+                    .size(glyph_size)
                     .color(content)
                     .rotate(icon_turn),
-            );
+            )
+        };
         face = if let Some(label) = self.label {
             // Side padding and label size of the extended FAB.
             let (pad, text) = match self.size {
@@ -1194,8 +1364,8 @@ impl RenderOnce for Fab {
             .h(px(height))
             .when(!extended, |d| d.w(px(height)))
             .child(face);
-        let mut el = interactive(el, &state, true, true);
-        if let Some(f) = self.on_click {
+        let mut el = interactive(el, &state, enabled, true);
+        if let (Some(f), true) = (self.on_click, enabled) {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
         }
         el
@@ -1323,5 +1493,34 @@ impl RenderOnce for FavStar {
             });
         }
         el
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_icon_change_counts_a_new_generation_once() {
+        let play = SharedString::from("play");
+        let pause = SharedString::from("pause");
+        let state = next_icon(None, &play);
+        assert_eq!(state, (play.clone(), None, 0));
+        let state = next_icon(Some(state), &pause);
+        assert_eq!(state, (pause.clone(), Some(play.clone()), 1));
+        // Drawing the same icon again changes nothing.
+        assert_eq!(next_icon(Some(state.clone()), &pause), state);
+    }
+
+    #[test]
+    fn a_swap_starts_on_the_old_icon_and_settles_on_the_new_one() {
+        let start = swap_frame(0.);
+        assert_eq!((start.exit_opacity, start.exit_scale), (1., 1.));
+        assert_eq!(start.enter_opacity, 0.);
+        let end = swap_frame(Spring::SPATIAL_FAST.settle_time().as_secs_f32());
+        assert_eq!(end.exit_opacity, 0.);
+        assert!((end.enter_scale - 1.).abs() < 0.01);
+        assert!(end.enter_turn.abs() < 0.01);
+        assert!((end.enter_opacity - 1.).abs() < 0.01);
     }
 }

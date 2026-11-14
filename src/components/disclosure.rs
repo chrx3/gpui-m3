@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    AnyElement, App, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     StatefulInteractiveElement, Styled, Window, canvas, div, px,
 };
 
@@ -32,6 +32,8 @@ pub struct ExpandableCard {
     fixed: bool,
     plain: bool,
     tone: Option<Tone>,
+    error: bool,
+    container: Option<(Hsla, Hsla)>,
     header: Option<AnyElement>,
     preview: Option<AnyElement>,
     under: Option<AnyElement>,
@@ -47,6 +49,8 @@ impl ExpandableCard {
             fixed: false,
             plain: false,
             tone: None,
+            error: false,
+            container: None,
             header: None,
             preview: None,
             under: None,
@@ -75,6 +79,20 @@ impl ExpandableCard {
     /// Tonal container instead of `surface_container_high` (subagent, plan and task cards).
     pub fn tone(mut self, tone: Tone) -> Self {
         self.tone = Some(tone);
+        self
+    }
+
+    /// A failed card (a tool call that errored): the error container with its content color.
+    /// Takes precedence over [`ExpandableCard::tone`].
+    pub fn error(mut self, error: bool) -> Self {
+        self.error = error;
+        self
+    }
+
+    /// Custom container and content colors. Takes precedence over [`ExpandableCard::tone`]
+    /// and [`ExpandableCard::error`].
+    pub fn container(mut self, background: Hsla, content: Hsla) -> Self {
+        self.container = Some((background, content));
         self
     }
 
@@ -118,9 +136,11 @@ impl RenderOnce for ExpandableCard {
         let head_id = child_id(&self.id, "head");
         let state = use_interaction(&head_id, window, cx);
         let pressed = state.read(cx).pressed && expandable;
-        let (bg, fg) = match self.tone {
-            Some(tone) => tone.colors(&s),
-            None => (s.surface_container_high, s.on_surface),
+        let (bg, fg) = match (self.container, self.error, self.tone) {
+            (Some(colors), _, _) => colors,
+            (None, true, _) => (s.error_container, s.on_error_container),
+            (None, false, Some(tone)) => tone.colors(&s),
+            (None, false, None) => (s.surface_container_high, s.on_surface),
         };
         let card_radius = if self.plain { 0. } else { 16. };
         // Only a closed card tightens its corners on press (an open one keeps its shape).
@@ -140,6 +160,8 @@ impl RenderOnce for ExpandableCard {
         );
         let chevron_color = if self.plain {
             s.on_surface_variant
+        } else if self.error || self.container.is_some() {
+            fg
         } else {
             s.outline
         };

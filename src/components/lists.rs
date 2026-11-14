@@ -220,14 +220,22 @@ impl RenderOnce for TreeRow {
 
 /// Two-line list row (the change list): a square badge whose corners open on hover, a title,
 /// a subtitle and trailing content; the row's corners tighten from 20 to 12 px on hover.
+///
+/// [`ListItem::selected`] fills it with the secondary container and squares its corners, both
+/// with springs; [`ListItem::overline`] and [`ListItem::supporting`] add the M3 three-line
+/// texts, and [`ListItem::hover_actions`] shows actions only while the row is hovered.
 #[derive(IntoElement)]
 pub struct ListItem {
     id: ElementId,
     title: SharedString,
     subtitle: Option<SharedString>,
+    overline: Option<SharedString>,
+    supporting: Option<SharedString>,
     badge: Option<(SharedString, Hsla, Hsla)>,
     leading: Option<AnyElement>,
     trailing: Option<AnyElement>,
+    hover_actions: Vec<AnyElement>,
+    selected: bool,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
 }
@@ -238,12 +246,45 @@ impl ListItem {
             id: id.into(),
             title: title.into(),
             subtitle: None,
+            overline: None,
+            supporting: None,
             badge: None,
             leading: None,
             trailing: None,
+            hover_actions: Vec::new(),
+            selected: false,
             tooltip: None,
             on_click: None,
         }
+    }
+
+    /// Selected row (the open file, the current chat): the secondary container and its content
+    /// color, and tighter corners (12 px, 8 px while pressed). Color and shape change with
+    /// springs that settle.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// Small label above the title (a category, a date), in `on_surface_variant`.
+    pub fn overline(mut self, overline: impl Into<SharedString>) -> Self {
+        self.overline = Some(overline.into());
+        self
+    }
+
+    /// Supporting text under the title (and subtitle), wrapped up to two lines.
+    pub fn supporting(mut self, text: impl Into<SharedString>) -> Self {
+        self.supporting = Some(text.into());
+        self
+    }
+
+    /// Actions (small icon buttons) shown at the end of the row only while it is hovered.
+    /// They are not reachable with Tab while hidden, so keep them shortcuts of actions that
+    /// exist elsewhere.
+    pub fn hover_actions(mut self, actions: impl IntoIterator<Item = impl IntoElement>) -> Self {
+        self.hover_actions
+            .extend(actions.into_iter().map(IntoElement::into_any_element));
+        self
     }
 
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
@@ -289,17 +330,20 @@ impl RenderOnce for ListItem {
             (st.hovered, st.pressed)
         };
         let active = hovered || pressed;
+        let selected = self.selected;
         let [radius, badge_radius] = crate::motion::animate(
             key(&self.id, "shape"),
             Spring::SPATIAL_FAST,
-            if active { [12., 13.] } else { [20., 9.] },
+            list_item_shape(selected, active, pressed),
             window,
             cx,
         );
         let bg = animate_color(
             key(&self.id, "bg"),
             Spring::EFFECTS,
-            if active {
+            if selected {
+                s.secondary_container
+            } else if active {
                 s.surface_container_highest
             } else {
                 alpha(s.surface_container_highest, 0.)
@@ -307,7 +351,19 @@ impl RenderOnce for ListItem {
             window,
             cx,
         );
-        let layer = state_layer(&self.id, &state, all(px(radius)), s.on_surface, window, cx);
+        let fg = if selected {
+            s.on_secondary_container
+        } else {
+            s.on_surface
+        };
+        // Only animated when it changes: selection changes rarely.
+        let fg = animate_color(key(&self.id, "fg"), Spring::EFFECTS, fg, window, cx);
+        let muted = if selected {
+            s.on_secondary_container
+        } else {
+            s.on_surface_variant
+        };
+        let layer = state_layer(&self.id, &state, all(px(radius)), fg, window, cx);
         let mut row = div()
             .id(self.id.clone())
             .relative()
@@ -319,7 +375,7 @@ impl RenderOnce for ListItem {
             .py(px(4.))
             .rounded(px(radius))
             .bg(bg)
-            .text_color(s.on_surface)
+            .text_color(fg)
             .font_family(font_family())
             .text_size(px(13.))
             .child(layer);
@@ -348,6 +404,18 @@ impl RenderOnce for ListItem {
             .flex_1()
             .min_w_0()
             .line_height(gpui::relative(1.3))
+            .when_some(self.overline, |d, overline| {
+                d.child(
+                    div()
+                        .text_size(px(11.))
+                        .font_weight(FontWeight(500.))
+                        .text_color(muted)
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(overline),
+                )
+            })
             .child(
                 div()
                     .font_weight(FontWeight(500.))
@@ -360,14 +428,31 @@ impl RenderOnce for ListItem {
             text = text.child(
                 div()
                     .text_size(px(11.5))
-                    .text_color(s.outline)
+                    .text_color(if selected { muted } else { s.outline })
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
                     .child(subtitle),
             );
         }
-        row = row.child(text).children(self.trailing);
+        if let Some(supporting) = self.supporting {
+            text = text.child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(muted)
+                    .line_clamp(2)
+                    .child(supporting),
+            );
+        }
+        let actions = (hovered && !self.hover_actions.is_empty()).then(|| {
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(2.))
+                .children(self.hover_actions)
+        });
+        row = row.child(text).children(actions).children(self.trailing);
         if let Some(text) = self.tooltip {
             row = row.tooltip(Tooltip::text(text));
         }
@@ -376,6 +461,16 @@ impl RenderOnce for ListItem {
             row = row.on_click(move |e, w, cx| f(e, w, cx));
         }
         row
+    }
+}
+
+/// Row and badge corner radii of a [`ListItem`].
+fn list_item_shape(selected: bool, active: bool, pressed: bool) -> [f32; 2] {
+    match (selected, active) {
+        (true, _) if pressed => [8., 13.],
+        (true, _) => [12., 13.],
+        (false, true) => [12., 13.],
+        (false, false) => [20., 9.],
     }
 }
 
@@ -643,5 +738,20 @@ impl RenderOnce for TabStrip {
             .children(self.leading)
             .child(list)
             .children(self.trailing)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_selected_row_keeps_its_tighter_corners() {
+        assert_eq!(list_item_shape(false, false, false), [20., 9.]);
+        assert_eq!(list_item_shape(false, true, false), [12., 13.]);
+        assert_eq!(list_item_shape(true, false, false), [12., 13.]);
+        assert_eq!(list_item_shape(true, true, false), [12., 13.]);
+        // Pressing a selected row tightens it further.
+        assert_eq!(list_item_shape(true, true, true), [8., 13.]);
     }
 }

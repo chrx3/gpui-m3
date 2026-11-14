@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder as _;
 
 use gpui::{
-    App, ClickEvent, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    AnyElement, App, ClickEvent, ElementId, Hsla, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
@@ -27,6 +27,21 @@ const FLOATING_PADDING: f32 = (THICKNESS - ITEM_SIZE) / 2.;
 /// Corner radius of a toolbar button while pressed.
 const PRESSED_RADIUS: f32 = 12.;
 
+/// Thickness of a [`Toolbar::dense`] toolbar.
+const DENSE_THICKNESS: f32 = 48.;
+
+/// Side of an icon button of a dense toolbar.
+const DENSE_ITEM_SIZE: f32 = 32.;
+
+/// Button side, icon size and pressed radius of a toolbar button.
+fn item_metrics(dense: bool) -> (f32, f32, f32) {
+    if dense {
+        (DENSE_ITEM_SIZE, 20., 8.)
+    } else {
+        (ITEM_SIZE, 24., PRESSED_RADIUS)
+    }
+}
+
 /// An icon button of a [`Toolbar`].
 #[derive(IntoElement)]
 pub struct ToolbarItem {
@@ -38,6 +53,9 @@ pub struct ToolbarItem {
     on_click: Option<ClickHandler>,
     /// Set by the toolbar that holds it.
     vibrant: bool,
+    /// Set by the toolbar that holds it.
+    dense: bool,
+    custom: Option<AnyElement>,
 }
 
 impl ToolbarItem {
@@ -50,6 +68,19 @@ impl ToolbarItem {
             tooltip: None,
             on_click: None,
             vibrant: false,
+            dense: false,
+            custom: None,
+        }
+    }
+
+    /// Any element in the toolbar's row instead of an icon button (a [`super::Chip`], a
+    /// counter, a small [`super::Slider`]). It is drawn as it is, centered across the bar;
+    /// match the toolbar's colors yourself (`on_surface_variant`, or `on_primary_container` in
+    /// a vibrant one).
+    pub fn custom(el: impl IntoElement) -> Self {
+        Self {
+            custom: Some(el.into_any_element()),
+            ..Self::new("toolbar-custom", "")
         }
     }
 
@@ -107,18 +138,23 @@ fn item_colors(s: &Scheme, vibrant: bool, selected: bool, enabled: bool) -> (Hsl
 
 impl RenderOnce for ToolbarItem {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if let Some(custom) = self.custom {
+            return div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .child(custom)
+                .into_any_element();
+        }
         let s = *Theme::of(cx);
+        let (size, icon, pressed_radius) = item_metrics(self.dense);
         let enabled = !self.disabled;
         let state = use_interaction(&self.id, window, cx);
         let pressed = state.read(cx).pressed && enabled;
         let radius = px(animate_f32(
             key(&self.id, "radius"),
             Spring::SPATIAL_FAST,
-            if pressed {
-                PRESSED_RADIUS
-            } else {
-                ITEM_SIZE / 2.
-            },
+            if pressed { pressed_radius } else { size / 2. },
             window,
             cx,
         ));
@@ -134,11 +170,11 @@ impl RenderOnce for ToolbarItem {
             .flex_none()
             .items_center()
             .justify_center()
-            .size(px(ITEM_SIZE))
+            .size(px(size))
             .corners(all(radius))
             .bg(bg)
             .child(layer)
-            .child(Icon::new(self.icon).size(px(24.)).color(fg));
+            .child(Icon::new(self.icon).size(px(icon)).color(fg));
         if let Some(text) = self.tooltip {
             el = el.tooltip(super::Tooltip::text(text));
         }
@@ -149,7 +185,7 @@ impl RenderOnce for ToolbarItem {
         if let (Some(f), true) = (self.on_click, enabled) {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
         }
-        el
+        el.into_any_element()
     }
 }
 
@@ -162,6 +198,7 @@ pub struct Toolbar {
     docked: bool,
     vertical: bool,
     vibrant: bool,
+    dense: bool,
     items: Vec<ToolbarItem>,
     fab: Option<Fab>,
 }
@@ -173,6 +210,7 @@ impl Toolbar {
             docked: false,
             vertical: false,
             vibrant: false,
+            dense: false,
             items: Vec::new(),
             fab: None,
         }
@@ -198,6 +236,13 @@ impl Toolbar {
         self
     }
 
+    /// A compact toolbar for dense desktop views: 48 px thick with 32 px buttons and 20 px
+    /// icons (a FAB keeps its small 40 px size).
+    pub fn dense(mut self) -> Self {
+        self.dense = true;
+        self
+    }
+
     pub fn item(mut self, item: ToolbarItem) -> Self {
         self.items.push(item);
         self
@@ -219,10 +264,17 @@ impl RenderOnce for Toolbar {
             let fab = fab.in_toolbar(fab_container, fab_content);
             if self.docked { fab } else { fab.small() }
         });
+        let dense = self.dense;
         let items = self.items.into_iter().map(|mut item| {
             item.vibrant = vibrant;
+            item.dense = dense;
             item
         });
+        let (thickness, padding) = if dense {
+            (DENSE_THICKNESS, (DENSE_THICKNESS - DENSE_ITEM_SIZE) / 2.)
+        } else {
+            (THICKNESS, FLOATING_PADDING)
+        };
         let bar = div()
             .flex()
             .flex_none()
@@ -231,8 +283,8 @@ impl RenderOnce for Toolbar {
         if self.docked {
             return bar
                 .w_full()
-                .h(px(THICKNESS))
-                .px(px(16.))
+                .h(px(thickness))
+                .px(px(if dense { 12. } else { 16. }))
                 .gap(px(12.))
                 .child(
                     div()
@@ -245,9 +297,9 @@ impl RenderOnce for Toolbar {
                 .children(fab);
         }
         bar.when(self.vertical, |d| d.flex_col())
-            .gap(px(4.))
-            .p(px(FLOATING_PADDING))
-            .rounded(px(THICKNESS / 2.))
+            .gap(px(if dense { 2. } else { 4. }))
+            .p(px(padding))
+            .rounded(px(thickness / 2.))
             .shadow(Elevation::Level3.shadow(&s))
             .children(items)
             .children(fab)
@@ -261,6 +313,14 @@ mod tests {
     #[test]
     fn floating_padding_makes_a_64_px_toolbar() {
         assert_eq!(FLOATING_PADDING * 2. + ITEM_SIZE, THICKNESS);
+    }
+
+    #[test]
+    fn dense_toolbars_are_48_px_with_32_px_buttons() {
+        let (size, icon, pressed) = item_metrics(true);
+        assert_eq!((size, icon, pressed), (32., 20., 8.));
+        assert_eq!(item_metrics(false), (ITEM_SIZE, 24., PRESSED_RADIUS));
+        assert!(DENSE_THICKNESS > size);
     }
 
     #[test]

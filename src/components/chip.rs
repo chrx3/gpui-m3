@@ -4,16 +4,16 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder as _;
 
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
+    AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
     MouseButton, ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement,
     Styled, Window, div, px,
 };
 
-use super::{ClickHandler, Icon, RoundedExt, all};
-use crate::interaction::{interactive, state_layer, use_interaction};
+use super::{ButtonVariant, ClickHandler, Icon, RoundedExt, all};
+use crate::interaction::{interactive, keyboard_focus, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, continuous_at, entrance, key};
 use crate::shapes::Tone;
-use crate::theme::{MONO_FONT_FAMILY, Theme, alpha, font_family};
+use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ChipKind {
@@ -56,6 +56,7 @@ pub struct Chip {
     mono: bool,
     inert: bool,
     pulse_icon: bool,
+    danger: bool,
     max_width: Option<Pixels>,
     on_click: Option<ClickHandler>,
     on_remove: Option<ClickHandler>,
@@ -80,6 +81,7 @@ impl Chip {
             mono: false,
             inert: false,
             pulse_icon: false,
+            danger: false,
             max_width: None,
             on_click: None,
             on_remove: None,
@@ -177,6 +179,13 @@ impl Chip {
         self
     }
 
+    /// Destructive or failed: the error container with its content color, without a border
+    /// (a selected filter chip keeps its selected look).
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
+        self
+    }
+
     /// Maximum width; the label is truncated with an ellipsis.
     pub fn max_w(mut self, max_width: Pixels) -> Self {
         self.max_width = Some(max_width);
@@ -236,6 +245,13 @@ impl RenderOnce for Chip {
                 s.on_primary_container,
                 600.,
             ),
+            _ if self.danger => (
+                s.error_container,
+                s.on_error_container,
+                alpha(s.error_container, 0.),
+                s.on_error_container,
+                600.,
+            ),
             (_, Some(tone)) => {
                 let (bg, fg) = tone.colors(&s);
                 (bg, fg, alpha(bg, 0.), fg, 500.)
@@ -262,7 +278,7 @@ impl RenderOnce for Chip {
                 500.,
             ),
         };
-        let (fg, icon_color) = if self.muted && !on {
+        let (fg, icon_color) = if self.muted && !on && !self.danger {
             (s.on_surface_variant, s.on_surface_variant)
         } else {
             (fg, icon_color)
@@ -400,15 +416,25 @@ impl RenderOnce for Chip {
 }
 
 /// Split button (the model picker in the reference design): a main action and a trailing button
-/// that, when open, becomes a primary-colored circle and rotates its arrow.
+/// that, when open, becomes a circle in a stronger color and rotates its arrow.
+///
+/// Tonal by default; [`SplitButton::filled`], [`SplitButton::outlined`] and
+/// [`SplitButton::variant`] change the colors. [`SplitButton::menu`] draws its menu under it
+/// while [`open`](SplitButton::open); the open state stays yours.
 #[derive(IntoElement)]
 pub struct SplitButton {
     id: ElementId,
     label: SharedString,
     sublabel: Option<SharedString>,
+    icon: Option<SharedString>,
+    variant: ButtonVariant,
     open: bool,
+    autofocus: bool,
+    menu: Option<Vec<AnyElement>>,
+    menu_width: f32,
     on_click: Option<ClickHandler>,
     on_toggle: Option<ClickHandler>,
+    on_dismiss: Option<ClickHandler>,
 }
 
 impl SplitButton {
@@ -417,9 +443,15 @@ impl SplitButton {
             id: id.into(),
             label: label.into(),
             sublabel: None,
+            icon: None,
+            variant: ButtonVariant::Tonal,
             open: false,
+            autofocus: false,
+            menu: None,
+            menu_width: 240.,
             on_click: None,
             on_toggle: None,
+            on_dismiss: None,
         }
     }
 
@@ -429,8 +461,51 @@ impl SplitButton {
         self
     }
 
+    /// Icon before the label.
+    pub fn icon(mut self, icon: impl Into<SharedString>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    /// Filled, tonal (the default) or outlined. Text and ghost are drawn as text buttons.
+    pub fn variant(mut self, variant: ButtonVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+
+    /// The primary color, for the main action of a view.
+    pub fn filled(self) -> Self {
+        self.variant(ButtonVariant::Filled)
+    }
+
+    pub fn outlined(self) -> Self {
+        self.variant(ButtonVariant::Outlined)
+    }
+
     pub fn open(mut self, open: bool) -> Self {
         self.open = open;
+        self
+    }
+
+    /// Makes both halves Tab stops with a focus ring, and the main action takes the keyboard
+    /// focus the first time it appears (never again after that). Without it the halves are
+    /// not Tab stops, as before 0.2.1.
+    pub fn autofocus(mut self, autofocus: bool) -> Self {
+        self.autofocus = autofocus;
+        self
+    }
+
+    /// The items of its menu (usually [`super::MenuItem`]s), drawn under the button over the
+    /// rest of the window while it is [`open`](SplitButton::open). A press outside the menu and
+    /// the button calls [`SplitButton::on_dismiss`].
+    pub fn menu(mut self, items: impl IntoIterator<Item = impl IntoElement>) -> Self {
+        self.menu = Some(items.into_iter().map(IntoElement::into_any_element).collect());
+        self
+    }
+
+    /// Width of the [`menu`](SplitButton::menu) (240 px by default).
+    pub fn menu_width(mut self, width: f32) -> Self {
+        self.menu_width = width;
         self
     }
 
@@ -443,11 +518,56 @@ impl SplitButton {
         self.on_toggle = Some(Rc::new(f));
         self
     }
+
+    /// Called on a press outside the open menu and outside the button (to close it).
+    pub fn on_dismiss(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_dismiss = Some(Rc::new(f));
+        self
+    }
+}
+
+/// Colors of a split button: main container and content, the trailing button's container and
+/// content (closed and open), and the outline.
+struct SplitColors {
+    main: (Hsla, Hsla),
+    trail: (Hsla, Hsla),
+    trail_open: (Hsla, Hsla),
+    border: Option<Hsla>,
+}
+
+fn split_colors(s: &Scheme, variant: ButtonVariant) -> SplitColors {
+    match variant {
+        ButtonVariant::Filled => SplitColors {
+            main: (s.primary, s.on_primary),
+            trail: (s.primary, s.on_primary),
+            trail_open: (s.primary_container, s.on_primary_container),
+            border: None,
+        },
+        ButtonVariant::Outlined => SplitColors {
+            main: (alpha(s.surface, 0.), s.on_surface_variant),
+            trail: (alpha(s.surface, 0.), s.on_surface_variant),
+            trail_open: (s.secondary_container, s.on_secondary_container),
+            border: Some(s.outline_variant),
+        },
+        ButtonVariant::Text | ButtonVariant::Ghost => SplitColors {
+            main: (alpha(s.surface, 0.), s.primary),
+            trail: (alpha(s.surface, 0.), s.primary),
+            trail_open: (s.secondary_container, s.on_secondary_container),
+            border: None,
+        },
+        ButtonVariant::Tonal => SplitColors {
+            main: (s.secondary_container, s.on_secondary_container),
+            trail: (s.secondary_container, s.on_secondary_container),
+            trail_open: (s.primary, s.on_primary),
+            border: None,
+        },
+    }
 }
 
 impl RenderOnce for SplitButton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        let colors = split_colors(&s, self.variant);
         let main_id = super::child_id(&self.id, "main");
         let trail_id = super::child_id(&self.id, "trail");
         let main_state = use_interaction(&main_id, window, cx);
@@ -485,18 +605,19 @@ impl RenderOnce for SplitButton {
             cx,
         );
         let (trail_bg, trail_fg) = if self.open {
-            (s.primary, s.on_primary)
+            colors.trail_open
         } else {
-            (s.secondary_container, s.on_secondary_container)
+            colors.trail
         };
         let trail_bg = animate_color(key(&trail_id, "bg"), Spring::EFFECTS, trail_bg, window, cx);
         let trail_fg = animate_color(key(&trail_id, "fg"), Spring::EFFECTS, trail_fg, window, cx);
+        let (main_bg, main_fg) = colors.main;
 
         let main_layer = state_layer(
             &main_id,
             &main_state,
             super::corners(main_r),
-            s.on_secondary_container,
+            main_fg,
             window,
             cx,
         );
@@ -516,23 +637,33 @@ impl RenderOnce for SplitButton {
             .items_center()
             .gap(px(6.))
             .h(px(32.))
-            .pl(px(14.))
+            .pl(px(if self.icon.is_some() { 10. } else { 14. }))
             .pr(px(10.))
             .corners(super::corners(main_r))
-            .bg(s.secondary_container)
-            .text_color(s.on_secondary_container)
+            .bg(main_bg)
+            .text_color(main_fg)
             .font_weight(FontWeight(600.))
             .child(main_layer)
+            .children(
+                self.icon
+                    .map(|icon| Icon::new(icon).size(px(16.)).color(main_fg)),
+            )
             .child(self.label);
         if let Some(sub) = self.sublabel {
             main = main.child(div().font_weight(FontWeight(500.)).opacity(0.75).child(sub));
         }
+        if let Some(border) = colors.border {
+            main = main.border_1().border_color(border);
+        }
         let mut main = interactive(main, &main_state, true, true);
+        if self.autofocus {
+            main = keyboard_focus(main, &main_id, super::corners(main_r), true, window, cx);
+        }
         if let Some(f) = self.on_click {
             main = main.on_click(move |e, w, cx| f(e, w, cx));
         }
 
-        let trail = div()
+        let mut trail = div()
             .id(trail_id.clone())
             .relative()
             .flex()
@@ -548,12 +679,64 @@ impl RenderOnce for SplitButton {
                     .color(trail_fg)
                     .rotate(rotation),
             );
+        if let (Some(border), false) = (colors.border, self.open) {
+            trail = trail.border_1().border_color(border);
+        }
         let mut trail = interactive(trail, &trail_state, true, true);
+        if self.autofocus {
+            trail = keyboard_focus(trail, &trail_id, super::corners(trail_r), false, window, cx);
+        }
         if let Some(f) = self.on_toggle {
             trail = trail.on_click(move |e, w, cx| f(e, w, cx));
         }
 
+        // Where the button is, so a press on it does not count as outside the menu (the toggle
+        // closes it on its own).
+        let bounds = window
+            .use_keyed_state(key(&self.id, "bounds"), cx, |_, _| {
+                Rc::new(std::cell::Cell::new(gpui::Bounds::<Pixels>::default()))
+            })
+            .read(cx)
+            .clone();
+        let menu = self.menu.filter(|_| self.open).map(|items| {
+            let mut menu = super::Menu::new(super::child_id(&self.id, "menu"))
+                .width(self.menu_width)
+                .direction(super::PopDirection::Down);
+            for item in items {
+                menu = menu.item(item);
+            }
+            let mut wrap = div().id(super::child_id(&self.id, "menu-wrap")).pt(px(4.)).child(menu);
+            if let Some(f) = self.on_dismiss {
+                let bounds = bounds.clone();
+                wrap = wrap.on_mouse_down_out(move |event, w, cx| {
+                    if bounds.get().contains(&event.position) {
+                        return;
+                    }
+                    let click = ClickEvent::Mouse(gpui::MouseClickEvent {
+                        down: event.clone(),
+                        up: gpui::MouseUpEvent {
+                            button: event.button,
+                            position: event.position,
+                            modifiers: event.modifiers,
+                            click_count: event.click_count,
+                        },
+                    });
+                    f(&click, w, cx)
+                });
+            }
+            div().absolute().top(gpui::relative(1.)).left_0().child(
+                gpui::deferred(
+                    gpui::anchored()
+                        .anchor(gpui::Corner::TopLeft)
+                        .snap_to_window_with_margin(px(8.))
+                        .child(wrap),
+                )
+                .with_priority(1),
+            )
+        });
+
         div()
+            .relative()
             .flex()
             .flex_none()
             .items_center()
@@ -562,6 +745,15 @@ impl RenderOnce for SplitButton {
             .text_size(px(12.5))
             .child(main)
             .child(trail)
+            .children(menu.map(|menu| {
+                let measure = gpui::canvas(
+                    move |b, _, _| bounds.set(b),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full();
+                div().absolute().top_0().left_0().size_full().child(measure).child(menu)
+            }))
     }
 }
 
