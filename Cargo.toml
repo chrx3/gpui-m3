@@ -1,6 +1,6 @@
 [package]
 name = "gpui-m3"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.88"
 description = "Material 3 Expressive components for GPUI: shape morphing, spring motion and dynamic color"
@@ -23,6 +23,9 @@ pulldown-cmark = { version = "0.13", default-features = false }
 # Only with the `mermaid` feature: diagrams as SVG (no browser), rasterized with the resvg that
 # GPUI already uses (same 0.45, so there is a single copy).
 mermaid-rs-renderer = { version = "0.3", default-features = false, optional = true }
+# Only with the `json` feature: `JsonView`, a foldable tree of a `serde_json::Value` (GPUI already
+# depends on serde_json, so it adds no new crate to the tree).
+serde_json = { version = "1", optional = true }
 resvg = { version = "0.45", default-features = false, features = ["text", "system-fonts"], optional = true }
 usvg = { version = "0.45", default-features = false, features = ["text"], optional = true }
 similar = { version = "2", default-features = false, features = ["text"] }
@@ -41,6 +44,8 @@ frame-stats = []
 # Draws ```mermaid blocks of `Markdown` as diagrams (flowchart, sequence, class, state, ER, pie…)
 # with a pure-Rust renderer; a block that cannot be read stays a code block.
 mermaid = ["dep:mermaid-rs-renderer", "dep:resvg", "dep:usvg"]
+# `JsonView`: a foldable view of a `serde_json::Value`.
+json = ["dep:serde_json"]
 
 # Read the gallery's "What's new" section from changelog/changelog.json (already in GPUI's tree).
 [dev-dependencies]

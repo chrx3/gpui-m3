@@ -32,6 +32,8 @@ use gpui_m3::{
     theme_reveal,
 };
 
+#[path = "gallery/additions.rs"]
+mod additions;
 #[path = "gallery/button_group.rs"]
 mod button_group;
 #[path = "gallery/carousel.rs"]
@@ -53,7 +55,7 @@ mod sheets;
 #[path = "gallery/slider.rs"]
 mod slider;
 
-const SECTIONS: [(&str, &str); 25] = [
+const SECTIONS: [(&str, &str); 26] = [
     ("Buttons", "bolt"),
     ("Selection", "check"),
     ("Navigation", "panel-left"),
@@ -79,6 +81,7 @@ const SECTIONS: [(&str, &str); 25] = [
     ("Text field states", "pen"),
     ("Date and time", "history"),
     ("Carousel and FAB menu", "layers"),
+    ("New in 0.2.1", "spark"),
 ];
 
 /// The dynamic color the toolbar and the Appearance section share.
@@ -182,6 +185,7 @@ struct Demos {
     button_groups: Entity<button_group::ButtonGroupDemos>,
     search_demos: Entity<search::SearchDemos>,
     sheet_demos: Entity<sheets::SheetDemos>,
+    addition_demos: Entity<additions::AdditionDemos>,
     slider_demos: Entity<slider::SliderDemos>,
     selection_demos: Entity<selection::SelectionDemos>,
     field_demos: Entity<field::FieldDemos>,
@@ -632,6 +636,7 @@ impl Demos {
             button_groups: cx.new(button_group::ButtonGroupDemos::new),
             search_demos: cx.new(search::SearchDemos::new),
             sheet_demos: cx.new(sheets::SheetDemos::new),
+            addition_demos: cx.new(additions::AdditionDemos::new),
             slider_demos: cx.new(slider::SliderDemos::new),
             selection_demos: cx.new(selection::SelectionDemos::new),
             field_demos: cx.new(field::FieldDemos::new),
@@ -825,7 +830,8 @@ impl Render for Demos {
             21 => self.selection_demos.clone().into_any_element(),
             22 => self.field_demos.clone().into_any_element(),
             23 => self.picker_demos.clone().into_any_element(),
-            _ => self.carousel_demos.clone().into_any_element(),
+            24 => self.carousel_demos.clone().into_any_element(),
+            _ => self.addition_demos.clone().into_any_element(),
         };
         div()
             .id(("content", self.section))

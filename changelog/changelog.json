@@ -1,6 +1,99 @@
 {
   "versions": [
     {
+      "version": "0.2.1",
+      "date": "2026-11-14",
+      "title": {
+        "es": "Estados, marcas y salida de herramientas",
+        "en": "States, marks and tool output"
+      },
+      "items": [
+        {
+          "kind": "new",
+          "es": "StatusMark: una marca de estado (pendiente, corriendo, hecho, fallido, esperando) que cambia de forma una sola vez con el resorte espacial rápido y se queda quieta; mientras corre deja el hueco para el indicador de carga o lo dibuja con spinner(true)",
+          "en": "StatusMark: a status mark (pending, running, done, failed, waiting) that morphs once with the fast spatial spring and then holds still; while running it leaves room for a loading indicator, or draws one with spinner(true)",
+          "section": 25
+        },
+        {
+          "kind": "new",
+          "es": "EmptyState: estado vacío con una forma héroe quieta (o que cambia al pasar el mouse con breathe_on_hover), ícono, título, texto y acciones",
+          "en": "EmptyState: an empty state with a still hero shape (or one that morphs on hover with breathe_on_hover), an icon, a title, text and actions",
+          "section": 25
+        },
+        {
+          "kind": "new",
+          "es": "WavyProgress::still y WavyCircularProgress::still: onda quieta que no pide cuadros continuos, más color y track_color; Ring::color, track_color y warn_at, y LoadingIndicator::color",
+          "en": "WavyProgress::still and WavyCircularProgress::still: a still wave that requests no continuous frames, plus color and track_color; Ring::color, track_color and warn_at, and LoadingIndicator::color",
+          "section": 25
+        },
+        {
+          "kind": "new",
+          "es": "ShimmerText (texto con brillo a 15 fps, quieto con movimiento reducido), PageIndicator y motion::Enter con shared_axis y stagger",
+          "en": "ShimmerText (shimmering text at 15 fps, still with reduced motion), PageIndicator, and motion::Enter with shared_axis and stagger",
+          "section": 25
+        },
+        {
+          "kind": "new",
+          "es": "CodeOutput::json (ordena e indenta un JSON), max_chars y show_all_label (también en DiffView) para traducir «Show all»; JsonView, un árbol plegable de un serde_json::Value con la feature json",
+          "en": "CodeOutput::json (pretty prints JSON), max_chars and show_all_label (also on DiffView) to translate \"Show all\"; JsonView, a foldable tree of a serde_json::Value with the json feature",
+          "section": 25
+        },
+        {
+          "kind": "new",
+          "es": "Botones: Button::busy, Fab::busy, disabled, color y colors, IconButton::icon_swap (el ícono viejo sale girando y el nuevo entra con resorte), ButtonGroupItem::variant y autofocus, y SplitButton::filled, outlined, icon, autofocus y menu",
+          "en": "Buttons: Button::busy, Fab::busy, disabled, color and colors, IconButton::icon_swap (the old icon spins out and the new one springs in), ButtonGroupItem::variant and autofocus, and SplitButton::filled, outlined, icon, autofocus and menu",
+          "section": 25
+        },
+        {
+          "kind": "new",
+          "es": "ListItem::selected (contenedor secundario y esquinas con resorte), overline, supporting y hover_actions; Toolbar::dense y ToolbarItem::custom; ExpandableCard::error y container; Chip::danger",
+          "en": "ListItem::selected (secondary container and corners with springs), overline, supporting and hover_actions; Toolbar::dense and ToolbarItem::custom; ExpandableCard::error and container; Chip::danger",
+          "section": 25
+        },
+        {
+          "kind": "new",
+          "es": "Theme::scoped (otro esquema solo para una ventana mientras se dibuja) y MotionSettings::sync (sigue el movimiento reducido del sistema y redibuja solo si cambió)",
+          "en": "Theme::scoped (another scheme for one window while it draws) and MotionSettings::sync (follows the system's reduced motion and redraws only when it changed)",
+          "section": 25
+        },
+        {
+          "kind": "fixed",
+          "es": "Un botón con autofocus ya no le quita el foco a un campo de texto en el que estás escribiendo, y la selección se ve sobre el código en línea",
+          "en": "A button with autofocus no longer steals the focus from a text field you are typing in, and the selection shows over inline code"
+        },
+        {
+          "kind": "improved",
+          "es": "LoadingIndicator a 15 fps y las animaciones continuas a 4 fps con la ventana atrás: se ven igual y gastan mucha menos batería",
+          "en": "LoadingIndicator at 15 fps and continuous animations at 4 fps with the window in the background: they look the same and cost far less battery"
+        },
+        {
+          "kind": "new",
+          "es": "Button::full_width: un botón del ancho de su contenedor, alineado con las filas de NavItem (para «Nuevo chat» arriba de una lista)",
+          "en": "Button::full_width: a button as wide as its container, aligned with the NavItem rows (for \"New chat\" above a list)"
+        },
+        {
+          "kind": "fixed",
+          "es": "Una onda (ripple) cuyo soltar se perdía (el clic abrió otra ventana o movió el foco) pedía cuadros para siempre y la ventana se redibujaba sin parar (~58 % de un núcleo en reposo). Ahora solo se piden cuadros mientras la onda crece o se desvanece, y pasar el mouse sin botón apretado la suelta",
+          "en": "A ripple whose release got lost (the press opened another window or moved focus) requested frames forever and the window kept redrawing (~58 % of a core at rest). Frames are now requested only while the ripple grows or fades, and moving the pointer over the component with no button held releases it"
+        },
+        {
+          "kind": "new",
+          "es": "Menu::footer: contenido fijo bajo los ítems. En un menú que abre hacia arriba, un buscador o pestañas ahí no se mueven mientras la lista crece o se achica",
+          "en": "Menu::footer: fixed content below the items. In a menu that opens upward, a filter field or tabs there stay put while the list grows or shrinks"
+        },
+        {
+          "kind": "fixed",
+          "es": "El carrusel multi-browse terminaba con el último ítem en el puesto chico, donde no se lee; ahora llega hasta dejarlo en el puesto mediano",
+          "en": "The multi-browse carousel ended with the last item in the small slot, where it cannot be read; it now scrolls until the last item sits in the medium slot"
+        },
+        {
+          "kind": "new",
+          "es": "Ícono `smartphone`",
+          "en": "`smartphone` icon"
+        }
+      ]
+    },
+    {
       "version": "0.2.0",
       "date": "2026-11-06",
       "title": {
