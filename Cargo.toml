@@ -1,6 +1,6 @@
 [package]
 name = "gpui-m3"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 rust-version = "1.88"
 description = "Material 3 Expressive components for GPUI: shape morphing, spring motion and dynamic color"

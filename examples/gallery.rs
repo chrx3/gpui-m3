@@ -3206,20 +3206,34 @@ impl Demos {
                     .child(avatars),
             ))
             .child(demo(
-                "Staggered menu items",
-                "Menu items enter one by one, 25 ms apart (Menu::stagger, on by default).",
+                "Menus grow from their anchor",
+                "Menus and popovers grow out of what opened them: a clip that springs open from the anchor corner (Menu::origin, Popover::anchor) while the surface fades in and the items fade in 25 ms apart (Menu::stagger). The content keeps its final layout. The left one opens downward from its top left corner; the right one upward from its bottom right corner.",
                 column()
                     .items_start()
                     .child(Button::new("stagger-again", "Replay").icon("refresh").on_click(click(cx, |this: &mut Demos, _| this.stagger_key += 1)))
                     .child(
-                        Menu::new(("stagger-menu", stagger))
-                            .width(240.)
-                            .item(MenuItem::new(("st", 0usize), "Rename").icon("pen"))
-                            .item(MenuItem::new(("st", 1usize), "Duplicate").icon("copy"))
-                            .item(MenuItem::new(("st", 2usize), "Export").icon("export"))
-                            .item(MenuItem::new(("st", 3usize), "Pin").icon("star"))
-                            .separator()
-                            .item(MenuItem::new(("st", 4usize), "Delete").icon("trash").danger(true)),
+                        row()
+                            .items_start()
+                            .gap(px(24.))
+                            .child(
+                                Menu::new(("stagger-menu", stagger))
+                                    .width(240.)
+                                    .origin(gpui::Corner::TopLeft)
+                                    .item(MenuItem::new(("st", 0usize), "Rename").icon("pen"))
+                                    .item(MenuItem::new(("st", 1usize), "Duplicate").icon("copy"))
+                                    .item(MenuItem::new(("st", 2usize), "Export").icon("export"))
+                                    .item(MenuItem::new(("st", 3usize), "Pin").icon("star"))
+                                    .separator()
+                                    .item(MenuItem::new(("st", 4usize), "Delete").icon("trash").danger(true)),
+                            )
+                            .child(
+                                Menu::new(("reveal-up-menu", stagger))
+                                    .width(220.)
+                                    .origin(gpui::Corner::BottomRight)
+                                    .item(MenuItem::new(("ru", 0usize), "Attach file").icon("clip"))
+                                    .item(MenuItem::new(("ru", 1usize), "Paste image").icon("copy"))
+                                    .item(MenuItem::new(("ru", 2usize), "Mention").icon("chat")),
+                            ),
                     ),
             ))
             .child(demo(

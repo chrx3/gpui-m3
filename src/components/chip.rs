@@ -701,7 +701,7 @@ impl RenderOnce for SplitButton {
         let menu = self.menu.filter(|_| self.open).map(|items| {
             let mut menu = super::Menu::new(super::child_id(&self.id, "menu"))
                 .width(self.menu_width)
-                .direction(super::PopDirection::Down);
+                .origin(gpui::Corner::TopLeft);
             for item in items {
                 menu = menu.item(item);
             }

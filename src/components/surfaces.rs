@@ -1,17 +1,22 @@
 //! Surfaces: menus, tonal cards, segmented lists and message bubbles.
 
 use std::rc::Rc;
+use std::time::Instant;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, BoxShadow, ClickEvent, Corner, Div, ElementId, FontWeight, Hsla,
-    InteractiveElement, IntoElement, Length, ParentElement, Pixels, RenderOnce, SharedString,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, ContentMask, Corner, Div, Element, ElementId,
+    FontWeight, GlobalElementId, Hsla, InspectorElementId, InteractiveElement, IntoElement,
+    LayoutId, Length, ParentElement, Pixels, RenderOnce, SharedString,
     StatefulInteractiveElement, Styled, Window, anchored, deferred, div, point, px, relative,
 };
 
 use super::{ClickHandler, Icon, Radio, RoundedExt, all, child_id, corners};
 use crate::interaction::{interactive, state_layer, use_interaction};
-use crate::motion::{Spring, animate_color, animate_f32, entrance, key, replay};
+use crate::motion::{
+    MotionSettings, Spring, animate_color, animate_f32, elapsed, element_state, entrance, key,
+    replay, request_frame,
+};
 use crate::shapes::Tone;
 use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family, mix};
 
@@ -68,6 +73,207 @@ pub fn pop_in_toward(
         .opacity(p.clamp(0., 1.))
 }
 
+/// Where a [`reveal`] grows from: the side of the surface next to what opened it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RevealOrigin {
+    /// The whole edge on the anchor side, at full width: [`PopDirection::Up`] grows upward
+    /// from the bottom edge, [`PopDirection::Down`] downward from the top edge.
+    Edge(PopDirection),
+    /// The surface corner that sits on the anchor (as in [`Popover::anchor`]): grows outward
+    /// from it, down or up and sideways (`BottomLeft` grows up and to the right).
+    Corner(Corner),
+}
+
+impl From<PopDirection> for RevealOrigin {
+    fn from(direction: PopDirection) -> Self {
+        RevealOrigin::Edge(direction)
+    }
+}
+
+impl From<Corner> for RevealOrigin {
+    fn from(corner: Corner) -> Self {
+        RevealOrigin::Corner(corner)
+    }
+}
+
+/// Room left around a revealed surface for its pop shadow (blur 28 + offset 10).
+const REVEAL_SHADOW: f32 = 40.;
+/// Width a corner reveal starts at, as a fraction of the surface.
+const REVEAL_WIDTH_FROM: f32 = 0.5;
+
+/// The visible part of a surface laid out at `bounds`, `progress` (0 → 1) into its reveal from
+/// `origin`. At 1 it covers the surface and its shadow.
+fn reveal_mask(bounds: Bounds<Pixels>, origin: RevealOrigin, progress: f32) -> Bounds<Pixels> {
+    let p = progress.clamp(0., 1.);
+    let m = REVEAL_SHADOW;
+    let (left, top) = (f32::from(bounds.left()), f32::from(bounds.top()));
+    let (right, bottom) = (f32::from(bounds.right()), f32::from(bounds.bottom()));
+    let (w, h) = (right - left, bottom - top);
+    let (from_top, from_left) = match origin {
+        RevealOrigin::Edge(direction) => (direction == PopDirection::Down, None),
+        RevealOrigin::Corner(corner) => (
+            matches!(corner, Corner::TopLeft | Corner::TopRight),
+            Some(matches!(corner, Corner::TopLeft | Corner::BottomLeft)),
+        ),
+    };
+    let reach_y = p * (h + m);
+    let (y0, y1) = if from_top {
+        (top - m, top + reach_y)
+    } else {
+        (bottom - reach_y, bottom + m)
+    };
+    let reach_x = (REVEAL_WIDTH_FROM + (1. - REVEAL_WIDTH_FROM) * p) * (w + m);
+    let (x0, x1) = match from_left {
+        None => (left - m, right + m),
+        Some(true) => (left - m, left + reach_x),
+        Some(false) => (right - reach_x, right + m),
+    };
+    Bounds::from_corners(point(px(x0), px(y0)), point(px(x1), px(y1.max(y0))))
+}
+
+struct RevealState {
+    start: Instant,
+    /// The size spring already reached the full surface (its bounce past it is not visible).
+    opened: bool,
+}
+
+/// M3 Expressive menu and popover entrance: the surface grows out of what opened it.
+///
+/// GPUI cannot scale elements, so the surface is laid out at its final size and clipped to a
+/// rectangle that grows from `origin` with the fast spatial spring while it fades in with the
+/// effects spring: the content never reflows. It settles in about 0.25 s and then requests no
+/// more frames; with reduced motion it appears at once. `id` keeps the entrance across frames
+/// (unique within the view).
+#[track_caller]
+pub fn reveal<E: Styled + IntoElement>(
+    el: E,
+    id: &ElementId,
+    origin: impl Into<RevealOrigin>,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let (size, fade) = reveal_progress(id, window, cx);
+    reveal_with(el, origin.into(), size, fade)
+}
+
+/// [`reveal`] at a given `progress` (1 = shown, 0 = gone), for exits driven by
+/// [`crate::motion::presence`]: the surface shrinks back toward `origin` while it fades out.
+pub fn reveal_at<E: Styled + IntoElement>(
+    el: E,
+    origin: impl Into<RevealOrigin>,
+    progress: f32,
+) -> AnyElement {
+    let progress = progress.clamp(0., 1.);
+    reveal_with(el, origin.into(), progress, progress)
+}
+
+fn reveal_with<E: Styled + IntoElement>(
+    el: E,
+    origin: RevealOrigin,
+    size: f32,
+    fade: f32,
+) -> AnyElement {
+    if size >= 1. && fade >= 1. {
+        return el.into_any_element();
+    }
+    RevealMask {
+        origin,
+        progress: size,
+        child: Some(el.opacity(fade.clamp(0., 1.)).into_any_element()),
+    }
+    .into_any_element()
+}
+
+/// Size and opacity progress of a [`reveal`] entrance this frame.
+#[track_caller]
+fn reveal_progress(id: &ElementId, window: &mut Window, cx: &mut App) -> (f32, f32) {
+    if MotionSettings::get(cx).reduced {
+        return (1., 1.);
+    }
+    let (t, opened) = element_state(key(id, "reveal"), window, |state: Option<RevealState>, _| {
+        let mut s = state.unwrap_or(RevealState { start: Instant::now(), opened: false });
+        let t = elapsed(s.start, cx);
+        s.opened |= Spring::SPATIAL_FAST.step(t) >= 1.;
+        ((t, s.opened), s)
+    });
+    let size = if opened { 1. } else { Spring::SPATIAL_FAST.step(t) };
+    let faded = t >= Spring::EFFECTS.settle_time().as_secs_f32();
+    let fade = if faded { 1. } else { Spring::EFFECTS.step(t) };
+    if !(opened && faded) {
+        request_frame(window);
+    }
+    (size, fade)
+}
+
+/// Lays out its child as is and draws it clipped to [`reveal_mask`].
+struct RevealMask {
+    origin: RevealOrigin,
+    progress: f32,
+    child: Option<AnyElement>,
+}
+
+impl IntoElement for RevealMask {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for RevealMask {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, AnyElement) {
+        let mut child = self.child.take().expect("laid out once");
+        let id = child.request_layout(window, cx);
+        (id, child)
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        child: &mut AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        // The hidden part takes no hover or clicks either.
+        let mask = ContentMask { bounds: reveal_mask(bounds, self.origin, self.progress) };
+        window.with_content_mask(Some(mask), |window| child.prepaint(window, cx));
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        child: &mut AnyElement,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let mask = ContentMask { bounds: reveal_mask(bounds, self.origin, self.progress) };
+        window.with_content_mask(Some(mask), |window| child.paint(window, cx));
+    }
+}
+
 /// Content that fades in and rises 6 px each time `generation` changes (a menu tab switch).
 fn content_switch(
     el: Div,
@@ -86,7 +292,7 @@ fn content_switch(
 }
 
 /// Popover surface ("Account and usage", mentions…): surface container, pop shadow, the
-/// pop entrance and an optional maximum height with scrolling.
+/// [`reveal`] entrance from its anchor and an optional maximum height with scrolling.
 ///
 /// Without [`Popover::anchor`] it is laid out in place (wrap it in an absolute `div`). With an
 /// anchor it floats over the window from where it is placed, kept inside the window.
@@ -100,6 +306,7 @@ pub struct Popover {
     max_height: Option<Pixels>,
     direction: PopDirection,
     anchor: Option<Corner>,
+    origin: Option<Corner>,
     on_dismiss: Option<ClickHandler>,
     children: Vec<AnyElement>,
 }
@@ -115,6 +322,7 @@ impl Popover {
             max_height: None,
             direction: PopDirection::Up,
             anchor: None,
+            origin: None,
             on_dismiss: None,
             children: Vec::new(),
         }
@@ -169,6 +377,18 @@ impl Popover {
         self.direction = direction;
         self
     }
+
+    /// For a popover placed by the app: the corner next to what opened it, which the entrance
+    /// grows from (an anchored popover already grows from its [`Popover::anchor`] corner).
+    /// Also sets the direction to match.
+    pub fn origin(mut self, corner: Corner) -> Self {
+        self.origin = Some(corner);
+        self.direction = match corner {
+            Corner::TopLeft | Corner::TopRight => PopDirection::Down,
+            Corner::BottomLeft | Corner::BottomRight => PopDirection::Up,
+        };
+        self
+    }
 }
 
 impl ParentElement for Popover {
@@ -208,8 +428,7 @@ impl RenderOnce for Popover {
             ),
             None => surface.child(content),
         };
-        let mut surface = pop_in_toward(surface, &self.id, 0., self.direction, window, cx)
-            .id(child_id(&self.id, "surface"));
+        let mut surface = surface.id(child_id(&self.id, "surface"));
         if let Some(f) = self.on_dismiss {
             surface = surface.on_mouse_down_out(move |event, w, cx| {
                 let click = ClickEvent::Mouse(gpui::MouseClickEvent {
@@ -224,6 +443,11 @@ impl RenderOnce for Popover {
                 f(&click, w, cx)
             });
         }
+        let origin = match self.origin.or(self.anchor) {
+            Some(corner) => RevealOrigin::Corner(corner),
+            None => RevealOrigin::Edge(self.direction),
+        };
+        let surface = reveal(surface, &self.id, origin, window, cx);
         match self.anchor {
             Some(corner) => deferred(
                 anchored()
@@ -249,6 +473,7 @@ pub struct Menu {
     padding: Pixels,
     radius: Pixels,
     direction: PopDirection,
+    origin: Option<Corner>,
     header: Option<AnyElement>,
     footer: Option<AnyElement>,
     back: Option<(SharedString, ClickHandler)>,
@@ -270,6 +495,7 @@ impl Menu {
             padding: px(6.),
             radius: px(24.),
             direction: PopDirection::Up,
+            origin: None,
             header: None,
             footer: None,
             back: None,
@@ -278,9 +504,9 @@ impl Menu {
         }
     }
 
-    /// Items enter one by one, 25 ms apart, dropping 6 px and fading in behind the surface (on
-    /// by default; the fifth and later items share the last delay). Ignored by
-    /// [`Menu::grouped`] menus, whose groups stagger instead.
+    /// Items fade in one by one, 25 ms apart, while the surface grows (on by default; the
+    /// fifth and later items share the last delay). Ignored by [`Menu::grouped`] menus, whose
+    /// groups stagger instead.
     pub fn stagger(mut self, stagger: bool) -> Self {
         self.stagger = stagger;
         self
@@ -304,8 +530,21 @@ impl Menu {
     }
 
     /// Entrance direction: [`PopDirection::Down`] for menus that open below their anchor.
+    /// The menu grows out of its edge on the anchor side, at full width.
     pub fn direction(mut self, direction: PopDirection) -> Self {
         self.direction = direction;
+        self
+    }
+
+    /// The menu corner that sits next to what opened it (the corner given to `anchored`):
+    /// the menu grows out of that corner, sideways as well (see [`reveal`]). Also sets the
+    /// direction to match.
+    pub fn origin(mut self, corner: Corner) -> Self {
+        self.origin = Some(corner);
+        self.direction = match corner {
+            Corner::TopLeft | Corner::TopRight => PopDirection::Down,
+            Corner::BottomLeft | Corner::BottomRight => PopDirection::Up,
+        };
         self
     }
 
@@ -388,6 +627,10 @@ impl RenderOnce for MenuSection {
 impl RenderOnce for Menu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        let origin = match self.origin {
+            Some(corner) => RevealOrigin::Corner(corner),
+            None => RevealOrigin::Edge(self.direction),
+        };
         let base = div()
             .flex()
             .flex_col()
@@ -408,9 +651,10 @@ impl RenderOnce for Menu {
                     .bg(s.surface_container)
                     .shadow(shadow_pop(&s))
                     .children(group);
-                col = col.child(pop_in(card, &gid, i as f32 * 0.035, window, cx));
+                let p = entrance(key(&gid, "fade"), Spring::EFFECTS, i as f32 * 0.035, window, cx);
+                col = col.child(card.opacity(p.clamp(0., 1.)));
             }
-            match self.max_height {
+            let menu = match self.max_height {
                 Some(max_height) => div().child(
                     div()
                         .id(child_id(&self.id, "scroll"))
@@ -419,7 +663,8 @@ impl RenderOnce for Menu {
                         .child(col.flex_none()),
                 ),
                 None => col,
-            }
+            };
+            reveal(menu, &self.id, origin, window, cx)
         } else {
             let has_header = self.header.is_some() || self.back.is_some();
             let mut content = div().flex().flex_col().p(self.padding);
@@ -445,15 +690,9 @@ impl RenderOnce for Menu {
                         format!("item-{n}").into(),
                     );
                     let delay = n.min(4) as f32 * ITEM_STAGGER;
-                    let p = entrance(id, Spring::SPATIAL, delay, window, cx);
+                    let p = entrance(id, Spring::EFFECTS, delay, window, cx);
                     n += 1;
-                    content = content.child(
-                        div()
-                            .relative()
-                            .top(px(-6. * (1. - p)))
-                            .opacity(p.clamp(0., 1.))
-                            .child(item),
-                    );
+                    content = content.child(div().opacity(p.clamp(0., 1.)).child(item));
                 }
             }
             if let Some(generation) = self.content_key {
@@ -501,7 +740,7 @@ impl RenderOnce for Menu {
                 ),
                 None => card,
             };
-            pop_in_toward(card, &self.id, 0., self.direction, window, cx)
+            reveal(card, &self.id, origin, window, cx)
         }
     }
 }
@@ -1295,5 +1534,44 @@ impl RenderOnce for Bubble {
             .font_family(font_family())
             .text_size(px(13.5))
             .children(self.children)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::size;
+
+    fn card() -> Bounds<Pixels> {
+        Bounds::new(point(px(100.), px(200.)), size(px(200.), px(300.)))
+    }
+
+    #[test]
+    fn an_upward_reveal_grows_from_the_bottom_edge() {
+        let half = reveal_mask(card(), PopDirection::Up.into(), 0.5);
+        assert_eq!(half.bottom(), px(500. + REVEAL_SHADOW));
+        assert_eq!(half.top(), px(500. - 0.5 * (300. + REVEAL_SHADOW)));
+        assert_eq!(half.left(), px(100. - REVEAL_SHADOW));
+        assert_eq!(half.right(), px(300. + REVEAL_SHADOW));
+        let closed = reveal_mask(card(), PopDirection::Up.into(), 0.);
+        assert_eq!(closed.size.height, px(REVEAL_SHADOW));
+        assert!(closed.top() >= card().bottom());
+    }
+
+    #[test]
+    fn a_corner_reveal_grows_away_from_its_corner() {
+        let start = reveal_mask(card(), Corner::TopRight.into(), 0.);
+        assert_eq!(start.top(), px(200. - REVEAL_SHADOW));
+        assert_eq!(start.right(), px(300. + REVEAL_SHADOW));
+        assert!(start.left() > card().left());
+        let open = reveal_mask(card(), Corner::TopRight.into(), 1.);
+        assert!(open.left() <= card().left() - px(REVEAL_SHADOW) + px(0.01));
+        assert!(open.bottom() >= card().bottom() + px(REVEAL_SHADOW) - px(0.01));
+    }
+
+    #[test]
+    fn the_bounce_past_the_end_is_not_drawn() {
+        let open = reveal_mask(card(), Corner::BottomLeft.into(), 1.);
+        assert_eq!(reveal_mask(card(), Corner::BottomLeft.into(), 1.1), open);
     }
 }

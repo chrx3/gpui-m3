@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.3 — 2026-11-14
+
+Menús que crecen desde su origen / Menus that grow from where they open
+
+### Español
+
+- **Mejorado:** Menu y Popover entran creciendo desde lo que los abrió: un recorte que se abre con el resorte espacial rápido desde el borde o la esquina del ancla, con fundido; el contenido no se reacomoda y se asienta en ~0,25 s. Los ítems escalonados ahora solo se funden
+- **Nuevo:** Menu::origin y Popover::origin (la esquina junto al ancla), y reveal / reveal_at con RevealOrigin para revelar cualquier superficie, también al cerrarse (encoge hacia el ancla con la salida de motion::presence)
+
+### English
+
+- **Improved:** Menu and Popover now enter growing out of what opened them: a clip that springs open from the anchor's edge or corner with the fast spatial spring, with a fade; the content never reflows and it settles in ~0.25 s. Staggered items now only fade in
+- **New:** Menu::origin and Popover::origin (the corner next to the anchor), and reveal / reveal_at with RevealOrigin to reveal any surface, also when it closes (it shrinks back toward the anchor with motion::presence's exit)
+
 ## 0.2.2 — 2026-11-14
 
 Indicador que se desliza, texto que entra y esquinas limpias / A sliding indicator, fading-in text and clean corners
