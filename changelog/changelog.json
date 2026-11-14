@@ -1,6 +1,31 @@
 {
   "versions": [
     {
+      "version": "0.2.4",
+      "date": "2026-11-14",
+      "title": {
+        "es": "Movimiento que se asienta",
+        "en": "Motion that settles"
+      },
+      "items": [
+        {
+          "kind": "new",
+          "es": "Shape::ambient(false): la respiración, el giro y la deriva se quedan en su pose y no piden cuadros, como con la ventana atrás; con true siguen desde esa pose, sin salto. Para que una pantalla en reposo deje de redibujarse",
+          "en": "Shape::ambient(false): breathing, spin and drift hold their pose and request no frames, as with the window in the background; with true they resume from that pose without a jump. Lets a screen at rest stop redrawing"
+        },
+        {
+          "kind": "new",
+          "es": "motion::entrance_since: una entrada con el reloj de quien llama (cuándo llegó un mensaje), que no se repite al volver a dibujar el elemento (una fila de una lista que vuelve a la vista) y pide cuadros solo hasta asentarse",
+          "en": "motion::entrance_since: an entrance on the caller's clock (when a message arrived) that does not replay when the element is drawn again (a list row scrolled back into view) and requests frames only until it settles"
+        },
+        {
+          "kind": "improved",
+          "es": "Con frame-stats, take_frame_requests también dice qué elemento pidió más cuadros desde cada línea (`archivo:línea [id ×n]`): una línea sirve a todas las filas de una lista y lo que hay que encontrar es la fila. motion::request_animation_frame pide un cuadro y lo cuenta ahí, para las animaciones propias de una app",
+          "en": "With frame-stats, take_frame_requests also names the element that requested the most frames from each call site (`file:line [id ×n]`): one call site serves every row of a list, and the row is what you need to find. motion::request_animation_frame requests a frame and counts it there, for an app's own animations"
+        }
+      ]
+    },
+    {
       "version": "0.2.3",
       "date": "2026-11-14",
       "title": {

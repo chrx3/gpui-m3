@@ -154,6 +154,76 @@ pub(crate) fn request_frame(window: &mut Window) {
     window.request_animation_frame();
 }
 
+/// `window.request_animation_frame()`, counted by [`take_frame_requests`] at the caller's
+/// line like the frames of the motion helpers. For an app's own frame-by-frame animation, so
+/// a window that keeps redrawing shows who asked.
+#[track_caller]
+pub fn request_animation_frame(window: &mut Window) {
+    request_frame(window);
+}
+
+/// [`request_frame`] for the element `id`: with `frame-stats`, [`take_frame_requests`] also
+/// says which element asked most from each call site (one call site serves every row of a
+/// list, and the row is what you need to find).
+#[track_caller]
+pub(crate) fn request_frame_for(window: &mut Window, label: &FrameLabel) {
+    #[cfg(feature = "frame-stats")]
+    note_frame_id(std::panic::Location::caller(), label);
+    #[cfg(not(feature = "frame-stats"))]
+    let _ = label;
+    request_frame(window);
+}
+
+/// The id [`request_frame_for`] reports: kept only with `frame-stats` (nothing to clone
+/// otherwise).
+#[cfg(feature = "frame-stats")]
+pub(crate) type FrameLabel = ElementId;
+#[cfg(not(feature = "frame-stats"))]
+pub(crate) type FrameLabel = ();
+
+pub(crate) fn frame_label(id: &ElementId) -> FrameLabel {
+    #[cfg(feature = "frame-stats")]
+    {
+        id.clone()
+    }
+    #[cfg(not(feature = "frame-stats"))]
+    {
+        let _ = id;
+    }
+}
+
+/// Distinct elements remembered per call site between two [`take_frame_requests`].
+#[cfg(feature = "frame-stats")]
+const FRAME_IDS_MAX: usize = 16;
+
+#[cfg(feature = "frame-stats")]
+type FrameIds = Vec<(&'static std::panic::Location<'static>, Vec<(ElementId, u32)>)>;
+
+#[cfg(feature = "frame-stats")]
+thread_local! {
+    /// Per call site, the elements that requested frames from it (see [`request_frame_for`]).
+    static FRAME_IDS: RefCell<FrameIds> = const { RefCell::new(Vec::new()) };
+}
+
+#[cfg(feature = "frame-stats")]
+fn note_frame_id(at: &'static std::panic::Location<'static>, id: &ElementId) {
+    FRAME_IDS.with(|sites| {
+        let mut sites = sites.borrow_mut();
+        let ids = match sites.iter_mut().position(|(loc, _)| std::ptr::eq(*loc, at)) {
+            Some(i) => &mut sites[i].1,
+            None => {
+                sites.push((at, Vec::new()));
+                &mut sites.last_mut().expect("just pushed").1
+            }
+        };
+        if let Some((_, n)) = ids.iter_mut().find(|(seen, _)| seen == id) {
+            *n += 1;
+        } else if ids.len() < FRAME_IDS_MAX {
+            ids.push((id.clone(), 1));
+        }
+    });
+}
+
 /// Counts a frame request from the caller's call site (see [`take_frame_requests`]). The
 /// timed redraws of [`continuous_at`] count too: they are frames as much as an animation
 /// frame, and without them a window kept busy by spinners showed no culprit.
@@ -208,16 +278,29 @@ fn delay_to_tick(now: f64, fps: f64) -> f64 {
 }
 
 /// The frame requests since the last call, as `file:line` and count, most frequent first.
-/// Always empty without the `frame-stats` feature.
+/// When the call site animates elements by id, the one that asked most follows in brackets
+/// with its own count (`file:line [row-12 ×40]`). Always empty without the `frame-stats`
+/// feature.
 pub fn take_frame_requests() -> Vec<(String, u32)> {
     #[cfg(feature = "frame-stats")]
     {
         let Ok(mut list) = FRAME_REQUESTS.lock() else {
             return Vec::new();
         };
+        let ids = FRAME_IDS.with(|sites| std::mem::take(&mut *sites.borrow_mut()));
         let mut out: Vec<(String, u32)> = list
             .drain(..)
-            .map(|(at, n)| (format!("{}:{}", at.file(), at.line()), n))
+            .map(|(at, n)| {
+                let top = ids
+                    .iter()
+                    .find(|(loc, _)| std::ptr::eq(*loc, at))
+                    .and_then(|(_, ids)| ids.iter().max_by_key(|(_, n)| *n));
+                let site = match top {
+                    Some((id, k)) => format!("{}:{} [{id} ×{k}]", at.file(), at.line()),
+                    None => format!("{}:{}", at.file(), at.line()),
+                };
+                (site, n)
+            })
             .collect();
         out.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         out
@@ -251,33 +334,58 @@ struct Ambient {
     real: f32,
     shown: f32,
     active: bool,
+    held: bool,
+}
+
+impl Ambient {
+    fn new(now: f32, active: bool) -> Self {
+        Ambient {
+            real: now,
+            shown: now,
+            active,
+            held: false,
+        }
+    }
+
+    /// Moves the clock to `now` and returns the time to show. It advances only while the window
+    /// stays active and nothing holds it, and the first call after a hold does not advance, so
+    /// the shapes resume from the pose they held instead of jumping ahead.
+    fn advance(&mut self, now: f32, active: bool, held: bool) -> f32 {
+        // A long gap (nothing was drawing it) is not time the shapes should catch up on.
+        if active && self.active && !held && !self.held {
+            self.shown += (now - self.real).clamp(0., 0.5);
+        }
+        self.real = now;
+        self.active = active;
+        self.held = held;
+        self.shown
+    }
 }
 
 /// Clock for slow ambient motion that stops while the window is in the background and
 /// resumes from where it was, so the shapes neither jump to their first pose when focus
 /// changes nor leap ahead when it returns. 0 with reduced motion.
 pub fn ambient_clock(window: &Window, cx: &App) -> f32 {
+    ambient_tick(window, cx, false)
+}
+
+/// [`ambient_clock`] held still: returns the pose it was at and keeps it there (see
+/// [`crate::Shape::ambient`]).
+pub(crate) fn held_ambient_clock(window: &Window, cx: &App) -> f32 {
+    ambient_tick(window, cx, true)
+}
+
+fn ambient_tick(window: &Window, cx: &App, held: bool) -> f32 {
     if MotionSettings::get(cx).reduced {
         return 0.;
     }
     let now = clock(cx);
     let active = window.is_window_active();
     AMBIENT.with(|map| {
-        let mut map = map.borrow_mut();
-        let state = map
+        map.borrow_mut()
             .entry(window.window_handle().window_id())
-            .or_insert(Ambient {
-                real: now,
-                shown: now,
-                active,
-            });
-        // A long gap (nothing was drawing it) is not time the shapes should catch up on.
-        if active && state.active {
-            state.shown += (now - state.real).clamp(0., 0.5);
-        }
-        state.real = now;
-        state.active = active;
-        state.shown
+            .or_insert_with(|| Ambient::new(now, active))
+            .advance(now, active, held)
     })
 }
 
@@ -433,8 +541,7 @@ fn animate_inner<const N: usize>(
     cx: &mut App,
 ) -> [f32; N] {
     let settings = MotionSettings::get(cx);
-    #[cfg(feature = "frame-stats")]
-    let label = id.clone();
+    let label = frame_label(&id);
     let (value, moving) = element_state(id, window, |state: Option<SpringValue<N>>, _| {
         let mut s = state.unwrap_or_else(|| {
             let mut value = SpringValue::new(spring, target);
@@ -461,7 +568,7 @@ fn animate_inner<const N: usize>(
         (s.update(target, spring, t, now), s)
     });
     if moving {
-        request_frame(window);
+        request_frame_for(window, &label);
     }
     value
 }
@@ -496,7 +603,9 @@ pub fn animate_on_activate<const N: usize>(
     cx: &mut App,
 ) -> [f32; N] {
     let settings = MotionSettings::get(cx);
-    let (value, moving) = element_state(id.into(), window, |state: Option<Triggered<N>>, _| {
+    let id = id.into();
+    let label = frame_label(&id);
+    let (value, moving) = element_state(id, window, |state: Option<Triggered<N>>, _| {
         let mut s = state.unwrap_or_else(|| {
             let mut value = SpringValue::new(spring, rest);
             // Anything already active when it appears also animates its entrance.
@@ -520,7 +629,7 @@ pub fn animate_on_activate<const N: usize>(
         (s.value.update(rest, spring, t, now), s)
     });
     if moving {
-        request_frame(window);
+        request_frame_for(window, &label);
     }
     value
 }
@@ -536,20 +645,53 @@ pub fn entrance(
     cx: &mut App,
 ) -> f32 {
     let settings = MotionSettings::get(cx);
-    let start = element_state(id.into(), window, |start: Option<Instant>, _| {
+    let id = id.into();
+    let label = frame_label(&id);
+    let start = element_state(id, window, |start: Option<Instant>, _| {
         let start = start.unwrap_or_else(Instant::now);
         (start, start)
     });
     if settings.reduced {
         return 1.;
     }
-    let t = elapsed(start, cx) - delay;
-    if t < spring.settle_time().as_secs_f32() {
-        request_frame(window);
-        spring.step(t.max(0.))
-    } else {
-        1.
+    match entrance_progress(spring, elapsed(start, cx) - delay) {
+        Some(p) => {
+            request_frame_for(window, &label);
+            p
+        }
+        None => 1.,
     }
+}
+
+/// Like [`entrance`], but from `start`, an instant the caller keeps (when a message arrived,
+/// when an event happened) instead of when the element was first drawn. Drawing the element
+/// again later (a list row that scrolls back into view, a view that is rebuilt) does not play
+/// the entrance again, and showing it halfway through shows it halfway. Requests frames only
+/// until it settles; 1 with reduced motion.
+#[track_caller]
+pub fn entrance_since(
+    start: Instant,
+    spring: Spring,
+    delay: f32,
+    window: &mut Window,
+    cx: &App,
+) -> f32 {
+    if MotionSettings::get(cx).reduced {
+        return 1.;
+    }
+    match entrance_progress(spring, elapsed(start, cx) - delay) {
+        Some(p) => {
+            request_frame(window);
+            p
+        }
+        None => 1.,
+    }
+}
+
+/// Progress of an entrance `t` seconds after it starts (negative: still waiting for its
+/// delay), or `None` once it has settled and needs no more frames.
+fn entrance_progress(spring: Spring, t: f32) -> Option<f32> {
+    (t < spring.settle_time().as_secs_f32()).then(|| spring.step(t.max(0.)))
 }
 
 /// Shortcut for animating a single number.
@@ -650,8 +792,10 @@ pub fn replay(
     cx: &mut App,
 ) -> Option<f32> {
     let settings = MotionSettings::get(cx);
+    let id = id.into();
+    let label = frame_label(&id);
     let start = element_state(
-        id.into(),
+        id,
         window,
         |state: Option<(u64, Option<Instant>)>, _| {
             let state = match state {
@@ -667,7 +811,7 @@ pub fn replay(
     }
     let t = elapsed(start?, cx);
     (t < duration).then(|| {
-        request_frame(window);
+        request_frame_for(window, &label);
         t
     })
 }
@@ -684,8 +828,10 @@ pub fn play_on_rise(
     cx: &mut App,
 ) -> Option<f32> {
     let settings = MotionSettings::get(cx);
+    let id = id.into();
+    let label = frame_label(&id);
     let start = element_state(
-        id.into(),
+        id,
         window,
         |state: Option<(bool, Option<Instant>)>, _| {
             let state = match state {
@@ -701,7 +847,7 @@ pub fn play_on_rise(
     }
     let t = elapsed(start?, cx);
     (t < duration).then(|| {
-        request_frame(window);
+        request_frame_for(window, &label);
         t
     })
 }
@@ -729,7 +875,9 @@ pub fn presence(
 ) -> Option<f32> {
     let settings = MotionSettings::get(cx);
     let spring = Spring::EFFECTS_FAST;
-    let (value, moving) = element_state(id.into(), window, |state: Option<Presence>, _| {
+    let id = id.into();
+    let label = frame_label(&id);
+    let (value, moving) = element_state(id, window, |state: Option<Presence>, _| {
         let mut s = state.unwrap_or(Presence {
             value: SpringValue::new(spring, [if show { 1. } else { 0. }]),
             mounted: show,
@@ -756,7 +904,7 @@ pub fn presence(
         ((Some(value.clamp(0., 1.)), true), s)
     });
     if moving {
-        request_frame(window);
+        request_frame_for(window, &label);
     }
     value
 }
@@ -799,7 +947,9 @@ pub fn expand(
 ) -> Expand {
     let settings = MotionSettings::get(cx);
     let measured = f32::from(measured).max(0.);
-    let (result, moving) = element_state(id.into(), window, |state: Option<ExpandState>, _| {
+    let id = id.into();
+    let label = frame_label(&id);
+    let (result, moving) = element_state(id, window, |state: Option<ExpandState>, _| {
         let mut s = state.unwrap_or(ExpandState { open, value: None });
         let rest = if open {
             Expand::Natural
@@ -836,7 +986,7 @@ pub fn expand(
         ((Expand::Clipped(px(h.max(0.))), true), s)
     });
     if moving {
-        request_frame(window);
+        request_frame_for(window, &label);
     }
     result
 }
@@ -1063,5 +1213,60 @@ mod tests {
         let (after, moving) = value.update([0.], Spring::SPATIAL, 0.1, now);
         assert!(moving);
         assert!((after[0] - mid[0]).abs() < 1e-4);
+    }
+
+    /// Frames `update` asks for (calls that return `moving`) when sampled at 120 fps for
+    /// `seconds` toward `target`.
+    fn moving_frames(value: &mut SpringValue<1>, target: f32, seconds: f32) -> usize {
+        let now = Instant::now();
+        (0..(seconds * 120.) as usize)
+            .filter(|&i| value.update([target], value.spring, i as f32 / 120., now).1)
+            .count()
+    }
+
+    #[test]
+    fn a_settled_spring_asks_for_no_more_frames() {
+        for spring in [Spring::SPATIAL_FAST, Spring::SPATIAL, Spring::EFFECTS] {
+            // A hover layer (0 → 1) and a size in pixels (0 → 600 px).
+            for target in [1., 600.] {
+                let mut value = SpringValue::new(spring, [0.]);
+                let busy = moving_frames(&mut value, target, 2.);
+                // It moves for a while and then rests within about twice its settle time.
+                let limit = (spring.settle_time().as_secs_f32() * 2. * 120.) as usize;
+                assert!(busy > 0 && busy < limit, "{spring:?} → {target}: {busy} frames");
+                // At rest with the same target: nothing, however late it is drawn again.
+                assert_eq!(moving_frames(&mut value, target, 1.), 0);
+                let (rest, moving) = value.update([target], spring, 60., Instant::now());
+                assert!(!moving && rest == [target]);
+            }
+        }
+    }
+
+    #[test]
+    fn entrances_stop_asking_for_frames_once_settled() {
+        for spring in [Spring::SPATIAL, Spring::EFFECTS] {
+            let settle = spring.settle_time().as_secs_f32();
+            // Waiting for its delay: drawn at the start, still asking for frames.
+            assert_eq!(entrance_progress(spring, -0.1), Some(0.));
+            assert!(entrance_progress(spring, settle * 0.5).is_some());
+            // Settled: no frames, at any later time (an event's clock keeps running).
+            assert_eq!(entrance_progress(spring, settle), None);
+            assert_eq!(entrance_progress(spring, 3600.), None);
+        }
+    }
+
+    #[test]
+    fn a_held_ambient_clock_keeps_its_pose_and_resumes_without_a_jump() {
+        let mut clock = Ambient::new(10., true);
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
+        assert!(close(clock.advance(10.5, true, false), 10.5));
+        // Held: the pose stays put while time goes by.
+        assert!(close(clock.advance(11., true, true), 10.5));
+        assert!(close(clock.advance(40., true, true), 10.5));
+        // Resumed: the first frame shows the held pose, then it moves on at the normal pace.
+        assert!(close(clock.advance(60., true, false), 10.5));
+        assert!(close(clock.advance(60.1, true, false), 10.6));
+        // In the background it does not move either.
+        assert!(close(clock.advance(61., false, false), 10.6));
     }
 }

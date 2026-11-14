@@ -12,7 +12,8 @@ use super::photo::{self, PhotoSource};
 
 use crate::interaction::rounded_rect;
 use crate::motion::{
-    Spring, ambient_clock, animate, animate_color, animate_f32, continuous_at, cubic_bezier, key,
+    Spring, ambient_clock, animate, animate_color, animate_f32, continuous_at, cubic_bezier,
+    held_ambient_clock, key,
 };
 use crate::shapes::{LOADING_SEQUENCE, Morph, ShapeName, Tone, avatar_for};
 use crate::theme::{Theme, font_family};
@@ -36,6 +37,7 @@ pub struct Shape {
     child: Option<AnyElement>,
     turn: f32,
     grow: f32,
+    ambient: bool,
 }
 
 impl Shape {
@@ -53,7 +55,18 @@ impl Shape {
             child: None,
             turn: 0.,
             grow: 1.,
+            ambient: true,
         }
+    }
+
+    /// With `false`, the ambient motion ([`Shape::breathe`], [`Shape::spin`],
+    /// [`Shape::drift`]) holds its current pose and requests no frames, as it does while the
+    /// window is in the background; with `true` (the default) it resumes from that pose, without
+    /// a jump. Lets an app stop decorative motion once the screen is at rest. Holding pauses the
+    /// window's ambient clock, so give every animated shape of a window the same value.
+    pub fn ambient(mut self, ambient: bool) -> Self {
+        self.ambient = ambient;
+        self
     }
 
     /// Rotates the shape (not its child) by `radians`. Photos are not rotated.
@@ -143,11 +156,13 @@ impl RenderOnce for Shape {
         let animated = self.morph.is_some() || self.spin.is_some() || self.drift.is_some();
         // Ambient motion: it is slow, so 30 fps is enough. In the background it holds its pose
         // (instead of snapping back to the first one) and asks for no frames.
-        let t = if animated {
+        let t = if animated && self.ambient {
             if window.is_window_active() {
                 continuous_at(30., window, cx);
             }
             ambient_clock(window, cx)
+        } else if animated {
+            held_ambient_clock(window, cx)
         } else {
             0.
         };
