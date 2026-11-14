@@ -391,6 +391,7 @@ pub struct DiffView {
     context: usize,
     max_rows: usize,
     bordered: bool,
+    show_all_label: Option<super::ShowAllLabel>,
 }
 
 impl DiffView {
@@ -406,7 +407,19 @@ impl DiffView {
             context: 3,
             max_rows: 400,
             bordered: true,
+            show_all_label: None,
         }
+    }
+
+    /// The text of the "Show all" row, from the hidden lines (always
+    /// [`HiddenContent::Lines`](super::HiddenContent::Lines)); "Show all (N more lines)" by
+    /// default. See [`super::CodeOutput::show_all_label`].
+    pub fn show_all_label(
+        mut self,
+        label: impl Fn(super::HiddenContent) -> SharedString + 'static,
+    ) -> Self {
+        self.show_all_label = Some(Rc::new(label));
+        self
     }
 
     /// Shows a header with the file name (from the path) and the `+N −M` counts.
@@ -598,7 +611,10 @@ impl RenderOnce for DiffView {
                         cx.notify();
                     })
                 })
-                .child(format!("Show all ({hidden} more lines)"))
+                .child(super::code::show_all_text(
+                    super::HiddenContent::Lines(hidden),
+                    self.show_all_label.as_ref(),
+                ))
         });
 
         div()

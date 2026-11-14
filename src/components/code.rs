@@ -1,5 +1,6 @@
 //! Monospace blocks: tool output ([`CodeOutput`]) and highlighted code ([`CodeBlock`]).
 
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
@@ -18,14 +19,45 @@ use crate::theme::{MONO_FONT_FAMILY, Theme, alpha, font_family};
 /// How long "Copied" stays after copying a code block.
 pub const COPIED_FOR: Duration = Duration::from_millis(1400);
 
+/// What a "Show all" row reveals, for [`CodeOutput::show_all_label`] and
+/// [`super::DiffView::show_all_label`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum HiddenContent {
+    /// This many lines are not shown.
+    Lines(usize),
+    /// The text was cut by length: this many characters are not shown.
+    Chars(usize),
+}
+
+/// Builds the text of a "Show all" row (in your language) from what it reveals.
+pub type ShowAllLabel = Rc<dyn Fn(HiddenContent) -> SharedString>;
+
+/// The default English text of a "Show all" row.
+pub(crate) fn show_all_text(hidden: HiddenContent, label: Option<&ShowAllLabel>) -> SharedString {
+    if let Some(label) = label {
+        return label(hidden);
+    }
+    match hidden {
+        HiddenContent::Lines(n) => format!("Show all ({n} more lines)").into(),
+        HiddenContent::Chars(n) => format!("Show all ({n} more characters)").into(),
+    }
+}
+
 /// A monospace block for command output that shows its first `max_lines` lines and a
 /// "Show all (N more lines)" row. Wraps long lines and scrolls past 420 px; `error` paints the
 /// text in the error color and `prefix` adds a prompt such as `$` in the primary color.
+///
+/// [`CodeOutput::max_chars`] also cuts long text that has few line breaks (a minified JSON),
+/// and [`CodeOutput::json`] pretty prints JSON before it is cut.
 #[derive(IntoElement)]
 pub struct CodeOutput {
     id: ElementId,
     text: SharedString,
     max_lines: usize,
+    max_chars: Option<usize>,
+    json: bool,
+    show_all_label: Option<ShowAllLabel>,
     prefix: Option<SharedString>,
     error: bool,
     max_height: Pixels,
@@ -37,10 +69,41 @@ impl CodeOutput {
             id: id.into(),
             text: text.into(),
             max_lines: 12,
+            max_chars: None,
+            json: false,
+            show_all_label: None,
             prefix: None,
             error: false,
             max_height: px(420.),
         }
+    }
+
+    /// Characters shown before "Show all", after [`CodeOutput::max_lines`] (no limit by
+    /// default). For output with very long lines, which `max_lines` alone does not shorten.
+    pub fn max_chars(mut self, chars: usize) -> Self {
+        self.max_chars = Some(chars.max(1));
+        self
+    }
+
+    /// Pretty prints the text as JSON (two-space indent) before cutting it, so `max_lines`
+    /// folds a one-line JSON too. Text that does not look like a JSON object or array is shown
+    /// as it is. "Copy all" still copies the original text.
+    pub fn json(mut self, json: bool) -> Self {
+        self.json = json;
+        self
+    }
+
+    /// The text of the "Show all" row, from what it reveals (English by default):
+    ///
+    /// ```ignore
+    /// CodeOutput::new("out", text).show_all_label(|hidden| match hidden {
+    ///     HiddenContent::Lines(n) => format!("Ver todo ({n} líneas más)").into(),
+    ///     _ => "Ver todo".into(),
+    /// })
+    /// ```
+    pub fn show_all_label(mut self, label: impl Fn(HiddenContent) -> SharedString + 'static) -> Self {
+        self.show_all_label = Some(Rc::new(label));
+        self
     }
 
     /// Lines shown before "Show all" (12 by default).
@@ -82,20 +145,117 @@ pub fn clip_lines(text: &str, max: usize) -> (&str, usize) {
     (&text[..end], total - max)
 }
 
+/// The first `max` characters of `text` (cut on a character boundary) and how many were left
+/// out.
+pub fn clip_chars(text: &str, max: usize) -> (&str, usize) {
+    match text.char_indices().nth(max) {
+        Some((end, _)) => (&text[..end], text[end..].chars().count()),
+        None => (text, 0),
+    }
+}
+
+/// `text` pretty printed as JSON with a two-space indent, or `None` when it is not a single
+/// JSON object or array (unbalanced brackets, an open string, text after the end). Strings are
+/// kept as they are; nothing else is validated.
+pub fn pretty_json(text: &str) -> Option<String> {
+    let text = text.trim();
+    if !text.starts_with(['{', '[']) {
+        return None;
+    }
+    fn newline(out: &mut String, depth: usize) {
+        out.push('\n');
+        for _ in 0..depth {
+            out.push_str("  ");
+        }
+    }
+    let mut out = String::with_capacity(text.len() * 2);
+    let mut stack: Vec<char> = Vec::new();
+    let (mut in_string, mut escaped, mut ended) = (false, false, false);
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if c.is_whitespace() {
+            continue;
+        }
+        if ended {
+            return None;
+        }
+        match c {
+            '"' => {
+                in_string = true;
+                out.push(c);
+            }
+            '{' | '[' => {
+                let close = if c == '{' { '}' } else { ']' };
+                while chars.next_if(|c| c.is_whitespace()).is_some() {}
+                out.push(c);
+                if chars.next_if_eq(&close).is_some() {
+                    out.push(close);
+                    ended = stack.is_empty();
+                } else {
+                    stack.push(close);
+                    newline(&mut out, stack.len());
+                }
+            }
+            '}' | ']' => {
+                if stack.pop() != Some(c) {
+                    return None;
+                }
+                newline(&mut out, stack.len());
+                out.push(c);
+                ended = stack.is_empty();
+            }
+            ',' => {
+                out.push(',');
+                newline(&mut out, stack.len());
+            }
+            ':' => out.push_str(": "),
+            c => out.push(c),
+        }
+    }
+    (stack.is_empty() && !in_string && ended).then_some(out)
+}
+
 impl RenderOnce for CodeOutput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         let all_state = window.use_keyed_state(key(&self.id, "all"), cx, |_, _| false);
         let show_all = *all_state.read(cx);
-        let (clipped, hidden) = clip_lines(&self.text, self.max_lines);
+        let source: SharedString = match self.json.then(|| pretty_json(&self.text)).flatten() {
+            Some(pretty) => pretty.into(),
+            None => self.text.clone(),
+        };
+        let (clipped, hidden_lines) = clip_lines(&source, self.max_lines);
+        let (clipped, hidden_chars) = match self.max_chars {
+            Some(max) => clip_chars(clipped, max),
+            None => (clipped, 0),
+        };
+        let hidden = if hidden_chars > 0 {
+            let whole = source.strip_suffix('\n').unwrap_or(&source);
+            Some(HiddenContent::Chars(
+                whole.chars().count() - clipped.chars().count(),
+            ))
+        } else {
+            (hidden_lines > 0).then_some(HiddenContent::Lines(hidden_lines))
+        };
         let shown: SharedString = if show_all {
-            self.text
+            source
                 .strip_suffix('\n')
-                .unwrap_or(&self.text)
+                .unwrap_or(&source)
                 .to_string()
                 .into()
-        } else if hidden == 0 && clipped.len() == self.text.len() {
-            self.text.clone()
+        } else if hidden.is_none() && clipped.len() == source.len() {
+            source.clone()
         } else {
             clipped.to_string().into()
         };
@@ -142,7 +302,7 @@ impl RenderOnce for CodeOutput {
                     })
                     .child(div().flex_1().min_w_0().child(shown)),
             )
-            .when(hidden > 0 && !show_all, |d| {
+            .when_some(hidden.filter(|_| !show_all), |d, hidden| {
                 d.child(
                     div()
                         .id(child_id(&self.id, "more"))
@@ -161,7 +321,7 @@ impl RenderOnce for CodeOutput {
                                 cx.notify();
                             })
                         })
-                        .child(format!("Show all ({hidden} more lines)")),
+                        .child(show_all_text(hidden, self.show_all_label.as_ref())),
                 )
             })
     }
@@ -383,6 +543,53 @@ mod tests {
         assert_eq!(clip_lines("a\nb\nc\n", 5), ("a\nb\nc", 0));
         assert_eq!(clip_lines("a\nb\nc\nd", 2), ("a\nb", 2));
         assert_eq!(clip_lines("", 1), ("", 0));
+    }
+
+    #[test]
+    fn clips_to_whole_characters() {
+        assert_eq!(clip_chars("abcdef", 4), ("abcd", 2));
+        assert_eq!(clip_chars("abc", 4), ("abc", 0));
+        assert_eq!(clip_chars("añob", 2), ("añ", 2));
+    }
+
+    #[test]
+    fn pretty_prints_json() {
+        assert_eq!(
+            pretty_json(r#"{"a":1,"b":[true,null],"c":{}}"#).as_deref(),
+            Some("{\n  \"a\": 1,\n  \"b\": [\n    true,\n    null\n  ],\n  \"c\": {}\n}")
+        );
+        assert_eq!(pretty_json(" [ ] ").as_deref(), Some("[]"));
+        // Brackets, commas and colons inside strings are left alone, escaped quotes too.
+        assert_eq!(
+            pretty_json(r#"{"k":"a,{b}:\"c\""}"#).as_deref(),
+            Some("{\n  \"k\": \"a,{b}:\\\"c\\\"\"\n}")
+        );
+    }
+
+    #[test]
+    fn leaves_what_is_not_json() {
+        assert_eq!(pretty_json("hello"), None);
+        assert_eq!(pretty_json("{\"a\": 1"), None);
+        assert_eq!(pretty_json("[1}"), None);
+        assert_eq!(pretty_json("{} {}"), None);
+        assert_eq!(pretty_json("{\"a\": \"open}"), None);
+    }
+
+    #[test]
+    fn show_all_text_defaults_to_english() {
+        assert_eq!(show_all_text(HiddenContent::Lines(3), None), "Show all (3 more lines)");
+        assert_eq!(
+            show_all_text(HiddenContent::Chars(9), None),
+            "Show all (9 more characters)"
+        );
+        let label: ShowAllLabel = Rc::new(|hidden| match hidden {
+            HiddenContent::Lines(n) => format!("Ver todo ({n} líneas más)").into(),
+            _ => "Ver todo".into(),
+        });
+        assert_eq!(
+            show_all_text(HiddenContent::Lines(2), Some(&label)),
+            "Ver todo (2 líneas más)"
+        );
     }
 
     #[test]
