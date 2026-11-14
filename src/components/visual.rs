@@ -456,6 +456,7 @@ impl RenderOnce for Avatar {
 pub struct LoadingIndicator {
     size: Pixels,
     contained: bool,
+    color: Option<Hsla>,
 }
 
 impl LoadingIndicator {
@@ -463,7 +464,15 @@ impl LoadingIndicator {
         Self {
             size: px(24.),
             contained: false,
+            color: None,
         }
+    }
+
+    /// Color of the shape (`primary`, or `on_primary_container` when contained), for an
+    /// indicator drawn over a colored container such as a filled button.
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
+        self
     }
 
     pub fn size(mut self, size: Pixels) -> Self {
@@ -509,11 +518,11 @@ impl RenderOnce for LoadingIndicator {
             rotation: ((index % 4) as f32 + progress) * (PI / 2.) + (t / SPIN_PERIOD).fract() * TAU,
             toward: None,
         };
-        let color = if self.contained {
+        let color = self.color.unwrap_or(if self.contained {
             s.on_primary_container
         } else {
             s.primary
-        };
+        });
         // The shape takes 38 of the 48 px container.
         let scale = 38. / 48.;
         let size = f32::from(self.size);
@@ -544,10 +553,16 @@ impl RenderOnce for LoadingIndicator {
 }
 
 /// Wavy progress indicator (M3 Expressive). `value` between 0 and 1; `None` = indeterminate.
+///
+/// The wave travels continuously (30 fps) even when the value does not change: put it in a view
+/// of its own, or use [`WavyProgress::still`] for a wave that only moves when the value does.
 #[derive(IntoElement)]
 pub struct WavyProgress {
     id: ElementId,
     value: Option<f32>,
+    still: bool,
+    color: Option<Hsla>,
+    track_color: Option<Hsla>,
 }
 
 impl WavyProgress {
@@ -555,7 +570,31 @@ impl WavyProgress {
         Self {
             id: id.into(),
             value,
+            still: false,
+            color: None,
+            track_color: None,
         }
+    }
+
+    /// A still wave: it requests no continuous frames, and the fill only moves (with the spatial
+    /// spring) when the value changes. For progress that is measurable but should not keep the
+    /// view redrawing (a transcription, a long download in a dense list). An indeterminate
+    /// still bar shows only its track, as with reduced motion.
+    pub fn still(mut self, still: bool) -> Self {
+        self.still = still;
+        self
+    }
+
+    /// Color of the wave and the end point (`primary` by default).
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    /// Color of the track (`secondary_container` by default).
+    pub fn track_color(mut self, color: Hsla) -> Self {
+        self.track_color = Some(color);
+        self
     }
 }
 
@@ -563,7 +602,7 @@ impl RenderOnce for WavyProgress {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
         // 30 fps: it looks just as smooth and each frame redraws the view that holds it.
-        let t = continuous_at(30., window, cx);
+        let t = wave_clock(self.still, window, cx);
         let indeterminate = self.value.is_none();
         let value = animate_f32(
             key(&self.id, "value"),
@@ -572,7 +611,8 @@ impl RenderOnce for WavyProgress {
             window,
             cx,
         );
-        let (active, track) = (s.primary, s.secondary_container);
+        let active = self.color.unwrap_or(s.primary);
+        let track = self.track_color.unwrap_or(s.secondary_container);
 
         canvas(
             |_, _, _| {},
@@ -648,13 +688,17 @@ impl RenderOnce for WavyProgress {
     }
 }
 
-/// Progress ring (a context indicator).
+/// Progress ring (a context indicator). The arc is `primary` over a `secondary_container`
+/// track; [`Ring::warn_at`] turns it to the `warning` color past a threshold.
 #[derive(IntoElement)]
 pub struct Ring {
     id: ElementId,
     value: f32,
     size: Pixels,
     stroke: f32,
+    color: Option<Hsla>,
+    track_color: Option<Hsla>,
+    warn_at: Option<f32>,
 }
 
 impl Ring {
@@ -664,7 +708,29 @@ impl Ring {
             value,
             size: px(16.),
             stroke: 2.5,
+            color: None,
+            track_color: None,
+            warn_at: None,
         }
+    }
+
+    /// Color of the arc (`primary` by default).
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    /// Color of the track (`secondary_container` by default).
+    pub fn track_color(mut self, color: Hsla) -> Self {
+        self.track_color = Some(color);
+        self
+    }
+
+    /// From `threshold` (0 to 1) up, the arc takes the scheme's `warning` color (a context
+    /// window that is almost full). The color changes with the effects spring, once per crossing.
+    pub fn warn_at(mut self, threshold: f32) -> Self {
+        self.warn_at = Some(threshold.clamp(0., 1.));
+        self
     }
 
     pub fn size(mut self, size: Pixels) -> Self {
@@ -689,7 +755,13 @@ impl RenderOnce for Ring {
             cx,
         );
         let stroke = self.stroke;
-        let (track, active) = (s.secondary_container, s.primary);
+        let track = self.track_color.unwrap_or(s.secondary_container);
+        let active = if ring_warns(self.value, self.warn_at) {
+            s.warning
+        } else {
+            self.color.unwrap_or(s.primary)
+        };
+        let active = animate_color(key(&self.id, "color"), Spring::EFFECTS, active, window, cx);
         canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {
@@ -726,12 +798,18 @@ impl RenderOnce for Ring {
 /// Wavy circular progress indicator (M3 Expressive). `value` between 0 and 1; `None` =
 /// indeterminate. 48 px with a 4 px stroke by default; the wave has a 1.6 px amplitude and a
 /// 15 px wavelength, and the track stays 4 px clear of the indicator.
+///
+/// Like [`WavyProgress`], the wave moves continuously (30 fps) unless it is
+/// [`still`](WavyCircularProgress::still).
 #[derive(IntoElement)]
 pub struct WavyCircularProgress {
     id: ElementId,
     value: Option<f32>,
     size: Pixels,
     stroke: f32,
+    still: bool,
+    color: Option<Hsla>,
+    track_color: Option<Hsla>,
 }
 
 impl WavyCircularProgress {
@@ -741,7 +819,28 @@ impl WavyCircularProgress {
             value,
             size: px(48.),
             stroke: 4.,
+            still: false,
+            color: None,
+            track_color: None,
         }
+    }
+
+    /// A still wave that requests no continuous frames; see [`WavyProgress::still`].
+    pub fn still(mut self, still: bool) -> Self {
+        self.still = still;
+        self
+    }
+
+    /// Color of the indicator (`primary` by default).
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    /// Color of the track (`secondary_container` by default).
+    pub fn track_color(mut self, color: Hsla) -> Self {
+        self.track_color = Some(color);
+        self
     }
 
     pub fn size(mut self, size: Pixels) -> Self {
@@ -758,8 +857,7 @@ impl WavyCircularProgress {
 impl RenderOnce for WavyCircularProgress {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        // 30 fps: it looks just as smooth and each frame redraws the view that holds it.
-        let t = continuous_at(30., window, cx);
+        let t = wave_clock(self.still, window, cx);
         let indeterminate = self.value.is_none();
         let value = animate_f32(
             key(&self.id, "value"),
@@ -769,7 +867,8 @@ impl RenderOnce for WavyCircularProgress {
             cx,
         );
         let stroke = self.stroke;
-        let (active, track) = (s.primary, s.secondary_container);
+        let active = self.color.unwrap_or(s.primary);
+        let track = self.track_color.unwrap_or(s.secondary_container);
         canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {
@@ -852,6 +951,18 @@ impl RenderOnce for WavyCircularProgress {
         .flex_none()
         .size(self.size)
     }
+}
+
+/// Clock of the wavy indicators: continuous at 30 fps (it looks just as smooth as 60 and each
+/// frame redraws the view that holds it), or fixed at 0 and requesting nothing when `still`.
+#[track_caller]
+fn wave_clock(still: bool, window: &mut Window, cx: &mut App) -> f32 {
+    if still { 0. } else { continuous_at(30., window, cx) }
+}
+
+/// Whether a [`Ring`] at `value` shows its warning color.
+fn ring_warns(value: f32, warn_at: Option<f32>) -> bool {
+    warn_at.is_some_and(|threshold| value.clamp(0., 1.) >= threshold)
 }
 
 /// Line with rounded ends.
@@ -993,5 +1104,20 @@ impl RenderOnce for MorphDot {
             )
             .size_full(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ring_warns_from_the_threshold_up() {
+        assert!(!ring_warns(0.9, None));
+        assert!(!ring_warns(0.79, Some(0.8)));
+        assert!(ring_warns(0.8, Some(0.8)));
+        // Values out of range are clamped before comparing.
+        assert!(ring_warns(1.4, Some(1.)));
+        assert!(ring_warns(-1., Some(0.)));
     }
 }

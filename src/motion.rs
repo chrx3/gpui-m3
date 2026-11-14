@@ -452,7 +452,7 @@ fn animate_inner<const N: usize>(
 
 /// Plain state tied to `id` that lives as long as the element is drawn in consecutive frames.
 /// Lighter than `use_keyed_state` (creates no entity or observer).
-fn element_state<S: 'static, R>(
+pub(crate) fn element_state<S: 'static, R>(
     id: ElementId,
     window: &mut Window,
     f: impl FnOnce(Option<S>, &mut Window) -> (R, S),
