@@ -6,8 +6,8 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, AnyView, App, ClickEvent, ElementId, Entity, FontWeight, Hsla, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement,
-    Styled, Window, div, px,
+    IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, Tooltip, all, child_id};
@@ -535,7 +535,20 @@ pub struct TabStrip {
     on_select: Option<ChangeHandler<SharedString>>,
     on_close: Option<ChangeHandler<SharedString>>,
     on_rename: Option<ChangeHandler<SharedString>>,
+    on_context: Option<ContextHandler>,
 }
+
+/// What a [`TabStrip`] keeps between frames: its scroll, the selected tab it last brought
+/// into view and for how many more frames it keeps doing so.
+#[derive(Default)]
+struct StripScroll {
+    handle: ScrollHandle,
+    shown: Option<SharedString>,
+    frames: u8,
+}
+
+/// A right click on a tab: its key and where the pointer is (window coordinates).
+type ContextHandler = Rc<dyn Fn(SharedString, Point<Pixels>, &mut Window, &mut App)>;
 
 impl TabStrip {
     pub fn new(id: impl Into<ElementId>) -> Self {
@@ -549,6 +562,7 @@ impl TabStrip {
             on_select: None,
             on_close: None,
             on_rename: None,
+            on_context: None,
         }
     }
 
@@ -604,11 +618,38 @@ impl TabStrip {
         self.on_rename = Some(Rc::new(f));
         self
     }
+
+    /// Called on a right click on a tab, with where the pointer is: show a context menu.
+    pub fn on_context(mut self, f: impl Fn(SharedString, Point<Pixels>, &mut Window, &mut App) + 'static) -> Self {
+        self.on_context = Some(Rc::new(f));
+        self
+    }
 }
 
 impl RenderOnce for TabStrip {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
+        // A newly selected tab (a file just opened, a click on a half-hidden one) scrolls into
+        // view; otherwise the strip keeps the user's scroll. GPUI scrolls with the strip's
+        // bounds from the frame before, so it is asked again on the next frame: the controls
+        // around the strip may have changed with the selection.
+        let scroll = window.use_keyed_state(key(&self.id, "scroll"), cx, |_, _| StripScroll::default());
+        let handle = scroll.read(cx).handle.clone();
+        if scroll.read(cx).shown != self.selected {
+            let selected = self.selected.clone();
+            scroll.update(cx, |scroll, _| {
+                scroll.shown = selected;
+                scroll.frames = 2;
+            });
+        }
+        if scroll.read(cx).frames > 0 {
+            let index = self.tabs.iter().position(|tab| Some(&tab.key) == self.selected.as_ref());
+            if let Some(index) = index {
+                handle.scroll_to_item(index);
+            }
+            scroll.update(cx, |scroll, _| scroll.frames -= 1);
+            crate::motion::request_animation_frame(window);
+        }
         let mut list = div()
             .id(child_id(&self.id, "list"))
             .flex()
@@ -616,7 +657,8 @@ impl RenderOnce for TabStrip {
             .min_w_0()
             .items_center()
             .gap(px(2.))
-            .overflow_x_scroll();
+            .overflow_x_scroll()
+            .track_scroll(&handle);
         for (i, tab) in self.tabs.into_iter().enumerate() {
             let id = ElementId::NamedInteger(format!("{}-tab", self.id).into(), i as u64);
             let state = use_interaction(&id, window, cx);
@@ -713,6 +755,21 @@ impl RenderOnce for TabStrip {
                 el = el.tooltip(Tooltip::text(text));
             }
             let mut el = interactive(el, &state, true, false);
+            // A middle click closes a closable tab, as in browsers and editors.
+            if let (true, Some(f)) = (tab.closable, self.on_close.clone()) {
+                let key = tab.key.clone();
+                el = el.on_mouse_down(MouseButton::Middle, move |_, w, cx| {
+                    cx.stop_propagation();
+                    f(key.clone(), w, cx)
+                });
+            }
+            if let Some(f) = self.on_context.clone() {
+                let key = tab.key.clone();
+                el = el.on_mouse_down(MouseButton::Right, move |e, w, cx| {
+                    cx.stop_propagation();
+                    f(key.clone(), e.position, w, cx)
+                });
+            }
             let (select, rename) = (self.on_select.clone(), self.on_rename.clone());
             let key = tab.key.clone();
             el = el.on_click(move |e, w, cx| {
