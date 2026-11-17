@@ -112,7 +112,36 @@ pub fn interactive(
         })
 }
 
-/// State layer: hover (8 % of the content color) and ripples (14 %).
+/// M3 state layer opacities over the content color. The strongest active state replaces the
+/// others instead of adding up: hovering a pressed button still shows 10 %, not 18 %.
+pub const HOVER_OPACITY: f32 = 0.08;
+/// Keyboard focus (see [`keyboard_focus`]), together with the focus ring.
+pub const FOCUS_OPACITY: f32 = 0.10;
+/// Pressed: the ripple. Where it covers the component the layer reaches this, never more.
+pub const PRESSED_OPACITY: f32 = 0.10;
+/// Dragged (for components that track a drag of their own).
+pub const DRAGGED_OPACITY: f32 = 0.16;
+
+/// Opacity of a ripple painted over a base layer of opacity `base` so that the two together
+/// reach `target` (source-over compositing), or 0 when the base already reaches it.
+fn ripple_opacity(base: f32, target: f32) -> f32 {
+    if target <= base || base >= 1. {
+        return 0.;
+    }
+    1. - (1. - target) / (1. - base)
+}
+
+/// Progress (0–1) of the keyboard focus of component `id`, written by [`keyboard_focus`] and
+/// read by [`state_layer`] while painting, whichever of the two the component calls first.
+fn focus_layer(id: &ElementId, window: &mut Window, cx: &mut App) -> Rc<Cell<f32>> {
+    window
+        .use_keyed_state(key(id, "focus-layer"), cx, |_, _| Rc::new(Cell::new(0.)))
+        .read(cx)
+        .clone()
+}
+
+/// State layer: hover (8 %), keyboard focus (10 %, with [`keyboard_focus`] on the same `id`)
+/// and ripples that bring the pressed area to 10 %. The strongest state wins; they do not add.
 /// Must be the component's first child so it sits beneath text and icons.
 pub fn state_layer(
     id: &ElementId,
@@ -130,6 +159,7 @@ pub fn state_layer(
         window,
         cx,
     );
+    let focus = focus_layer(id, window, cx);
     let scale = motion::MotionSettings::get(cx).time_scale.max(0.01);
     let now = Instant::now();
 
@@ -155,8 +185,12 @@ pub fn state_layer(
     canvas(
         move |bounds, _, _| bounds_cell.set(bounds),
         move |bounds, _, window, _| {
-            if hover > 0.001 {
-                window.paint_quad(fill(bounds, alpha(content, 0.08 * hover)).corner_radii(radii));
+            // Taken while painting: keyboard_focus may run after this function, and it writes
+            // the value again every frame it is called (not while the component is disabled).
+            let focus = focus.replace(0.).clamp(0., 1.);
+            let base = (HOVER_OPACITY * hover).max(FOCUS_OPACITY * focus);
+            if base > 0.001 {
+                window.paint_quad(fill(bounds, alpha(content, base)).corner_radii(radii));
             }
             if ripples.is_empty() {
                 return;
@@ -175,6 +209,12 @@ pub fn state_layer(
                 if radius < 0.5 || fade <= 0. {
                     continue;
                 }
+                // Inside the ripple the layer goes from the base to 10 %, back as it fades.
+                let target = base + (PRESSED_OPACITY - base).max(0.) * fade;
+                let opacity = ripple_opacity(base, target);
+                if opacity <= 0.001 {
+                    continue;
+                }
                 let center = bounds.origin + r.origin;
                 let circle = circle_points(center, radius);
                 let clipped = clip_convex(&circle, &outline);
@@ -184,7 +224,7 @@ pub fn state_layer(
                 let mut builder = PathBuilder::fill();
                 builder.add_polygon(&clipped, true);
                 if let Ok(path) = builder.build() {
-                    window.paint_path(path, alpha(content, 0.14 * fade));
+                    window.paint_path(path, alpha(content, opacity));
                 }
             }
         },
@@ -253,8 +293,8 @@ pub fn focusable(
         })
 }
 
-/// M3 focus indicator: a 2 px ring in the primary color, 2 px outside the component's corners.
-/// Fades in with the effects spring; it is drawn only while `visible` or fading out.
+/// M3 focus indicator: a 3 px ring in the secondary color, 2 px outside the component's
+/// corners. Fades in with the effects spring; it is drawn only while `visible` or fading out.
 pub fn focus_ring(
     id: &ElementId,
     visible: bool,
@@ -262,26 +302,39 @@ pub fn focus_ring(
     window: &mut Window,
     cx: &mut App,
 ) -> Option<impl IntoElement + use<>> {
-    let p = animate_f32(
+    let p = focus_progress(id, visible, window, cx);
+    ring_element(p, radii, cx)
+}
+
+fn focus_progress(id: &ElementId, visible: bool, window: &mut Window, cx: &mut App) -> f32 {
+    animate_f32(
         key(id, "focus-ring"),
         Spring::EFFECTS,
         if visible { 1. } else { 0. },
         window,
         cx,
-    );
+    )
+}
+
+/// Ring thickness and gap to the component's edge (M3: 3 dp and 2 dp).
+const RING_WIDTH: f32 = 3.;
+const RING_GAP: f32 = 2.;
+
+fn ring_element(p: f32, radii: Corners<Pixels>, cx: &App) -> Option<Div> {
     if p <= 0.001 {
         return None;
     }
-    let color = alpha(crate::theme::Theme::of(cx).primary, p.clamp(0., 1.));
-    let grow = |r: Pixels| r + px(3.);
+    let color = alpha(crate::theme::Theme::of(cx).secondary, p.clamp(0., 1.));
+    let outset = px(RING_WIDTH + RING_GAP);
+    let grow = |r: Pixels| r + outset;
     Some(
         div()
             .absolute()
-            .top(px(-3.))
-            .left(px(-3.))
-            .right(px(-3.))
-            .bottom(px(-3.))
-            .border_2()
+            .top(-outset)
+            .left(-outset)
+            .right(-outset)
+            .bottom(-outset)
+            .border(px(RING_WIDTH))
             .border_color(color)
             .rounded_tl(grow(radii.top_left))
             .rounded_tr(grow(radii.top_right))
@@ -290,9 +343,10 @@ pub fn focus_ring(
     )
 }
 
-/// Wires keyboard focus to an interactive element: a Tab stop with the M3 focus ring. With
-/// `autofocus`, the element takes the focus the first time it appears (e.g. the primary
-/// button of a permission card), never again after that.
+/// Wires keyboard focus to an interactive element: a Tab stop with the M3 focus ring and, in
+/// the [`state_layer`] of the same `id`, the 10 % focus layer. With `autofocus`, the element
+/// takes the focus the first time it appears (e.g. the primary button of a permission card),
+/// never again after that.
 pub fn keyboard_focus(
     el: Stateful<Div>,
     id: &ElementId,
@@ -312,8 +366,10 @@ pub fn keyboard_focus(
             window.focus(&handle);
         }
     }
-    let ring = focus_ring(id, ring_visible, radii, window, cx);
-    focusable(el, &state, &handle).children(ring)
+    let p = focus_progress(id, ring_visible, window, cx);
+    // The state layer of the same `id` adds the 10 % focus layer under the content.
+    focus_layer(id, window, cx).set(p);
+    focusable(el, &state, &handle).children(ring_element(p, radii, cx))
 }
 
 /// Absolute container that fills its parent (for indicators and layers).
@@ -429,4 +485,26 @@ fn clip_convex(subject: &[Point<Pixels>], clip: &[Point<Pixels>]) -> Vec<Point<P
         .into_iter()
         .map(|(x, y)| point(px(x), px(y)))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Source-over: what a ripple of opacity `a` over a base of opacity `b` adds up to.
+    fn composite(b: f32, a: f32) -> f32 {
+        1. - (1. - b) * (1. - a)
+    }
+
+    #[test]
+    fn the_strongest_state_replaces_the_others() {
+        // Pressed while hovered: 10 % in total, not 8 % + 14 %.
+        let a = ripple_opacity(HOVER_OPACITY, PRESSED_OPACITY);
+        assert!((composite(HOVER_OPACITY, a) - PRESSED_OPACITY).abs() < 1e-5);
+        // Without hover the ripple alone is the 10 %.
+        assert!((ripple_opacity(0., PRESSED_OPACITY) - PRESSED_OPACITY).abs() < 1e-6);
+        // A base already as strong as the target gets no ripple on top.
+        assert_eq!(ripple_opacity(FOCUS_OPACITY, PRESSED_OPACITY), 0.);
+        assert_eq!(ripple_opacity(DRAGGED_OPACITY, PRESSED_OPACITY), 0.);
+    }
 }

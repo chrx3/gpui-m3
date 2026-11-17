@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.5 — 2026-11-17
+
+Estados, foco y área de clic según M3 / States, focus and click area by M3
+
+### Español
+
+- **Corregido:** Capa de estado: el estado más fuerte reemplaza al anterior en vez de sumarse. Presionar llega al 10 % (antes la onda al 14 % se sumaba al 8 % del hover); la onda se sigue viendo, pero la capa no pasa del 10 %. Constantes HOVER_OPACITY, FOCUS_OPACITY, PRESSED_OPACITY y DRAGGED_OPACITY en interaction
+- **Nuevo:** Capa de foco del 10 % con el foco de teclado, junto al anillo, en todo componente que usa keyboard_focus y state_layer con el mismo id (botones, chips, grupos de botones, barras de herramientas, menú del FAB, filas de opciones)
+- **Corregido:** Anillo de foco: 3 px de grosor, 2 px de separación y color secondary (antes 2 px, casi pegado y en primary)
+- **Nuevo:** IconButton::target: un área de clic mínima (p. ej. px(40.)) centrada en el botón, que toma el hover, la presión y el clic sin cambiar lo dibujado ni su espacio en el layout. Es opcional: en barras densas el área extra taparía al vecino
+- **Nuevo:** NavItem::height: alto de fila propio; px(40.) le da a una lista lateral (como Ajustes) el área de clic de 40 px de M3 con el texto y el ícono normales
+
+### English
+
+- **Fixed:** State layer: the strongest state replaces the others instead of adding up. Pressing reaches 10 % (the 14 % ripple used to add to the 8 % hover); the ripple still shows, but the layer never goes past 10 %. HOVER_OPACITY, FOCUS_OPACITY, PRESSED_OPACITY and DRAGGED_OPACITY constants in interaction
+- **New:** A 10 % focus layer with keyboard focus, next to the ring, in every component that uses keyboard_focus and state_layer with the same id (buttons, chips, button groups, toolbars, the FAB menu, choice rows)
+- **Fixed:** Focus ring: 3 px thick, 2 px away from the component, in the secondary color (it was 2 px, almost touching, in primary)
+- **New:** IconButton::target: a minimum click area (e.g. px(40.)) centered on the button that takes the hover, the press and the click without changing what is drawn or its room in the layout. It is opt-in: in dense toolbars the extra area would cover the neighbor
+- **New:** NavItem::height: a row height of its own; px(40.) gives a side list (like Settings) the M3 40 px click area with the regular text and icon
+
 ## 0.2.4 — 2026-11-14
 
 Movimiento que se asienta / Motion that settles

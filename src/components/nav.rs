@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
-    relative,
+    ParentElement, Pixels, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
+    div, px, relative,
 };
 
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, all};
@@ -29,6 +29,7 @@ pub struct NavItem {
     muted: bool,
     emphasized: bool,
     large: bool,
+    height: Option<Pixels>,
     tone: Option<Tone>,
     meta: Option<SharedString>,
     group: Option<SharedString>,
@@ -49,6 +50,7 @@ impl NavItem {
             muted: false,
             emphasized: false,
             large: false,
+            height: None,
             tone: None,
             meta: None,
             group: None,
@@ -72,6 +74,14 @@ impl NavItem {
     /// Large row (52 px, 26 px corners), like settings tabs; the icon pops when selected.
     pub fn large(mut self, large: bool) -> Self {
         self.large = large;
+        self
+    }
+
+    /// Row height instead of the one of its size (34 px, 30 px dense, 52 px large); the corners
+    /// stay fully round. `px(40.)` gives a side list (like Settings) the M3 40 px click area
+    /// with the regular text and icon.
+    pub fn height(mut self, height: Pixels) -> Self {
+        self.height = Some(height);
         self
     }
 
@@ -148,6 +158,7 @@ impl RenderOnce for NavItem {
         } else {
             (34., 13.5)
         };
+        let height = self.height.map_or(height, f32::from);
         let (indicator_bg, selected_fg) = match self.tone {
             Some(tone) => tone.colors(&s),
             None => (s.secondary_container, s.on_secondary_container),

@@ -692,6 +692,7 @@ pub struct IconButton {
     tooltip: Option<SharedString>,
     launch: Option<u64>,
     icon_swap: bool,
+    target: Option<Pixels>,
     on_click: Option<ClickHandler>,
 }
 
@@ -711,8 +712,19 @@ impl IconButton {
             tooltip: None,
             launch: None,
             icon_swap: false,
+            target: None,
             on_click: None,
         }
+    }
+
+    /// Minimum click area (M3: 40 px; 48 px for touch). When the button is drawn smaller, a
+    /// transparent area of `size` × `size` centered on it takes the hover, the press and the
+    /// click, without changing what is drawn or the space it takes in the layout. The extra
+    /// area can cover a neighbor drawn before it: leave room between small buttons
+    /// (`(size - drawn) / 2` on each side) or the later one wins where they overlap.
+    pub fn target(mut self, size: Pixels) -> Self {
+        self.target = Some(size);
+        self
     }
 
     /// Animates a change of icon (play ↔ pause, copy → check): the old icon turns away and
@@ -979,13 +991,29 @@ impl RenderOnce for IconButton {
             }
             .border_color(border);
         }
-        let mut el = div()
-            .id(self.id.clone())
-            .relative()
-            .flex_none()
-            .w(px(width))
-            .h(px(height))
-            .child(face);
+        // With a target larger than the button, a transparent hit area centered on it (drawn
+        // over the face) takes the events; the layout box keeps the drawn size.
+        let target = self.target.map(f32::from);
+        let (hit_w, hit_h) = match target {
+            Some(t) => (width.max(t), height.max(t)),
+            None => (width, height),
+        };
+        let expanded = hit_w > width || hit_h > height;
+        let mut face = Some(face);
+        let mut el = div().id(self.id.clone());
+        el = if expanded {
+            el.absolute()
+                .left(px((width - hit_w) / 2.))
+                .top(px((height - hit_h) / 2.))
+                .w(px(hit_w))
+                .h(px(hit_h))
+        } else {
+            el.relative()
+                .flex_none()
+                .w(px(width))
+                .h(px(height))
+                .children(face.take())
+        };
         if let Some(text) = self.tooltip {
             el = el.tooltip(super::Tooltip::text(text));
         }
@@ -993,7 +1021,18 @@ impl RenderOnce for IconButton {
         if let (Some(f), true) = (self.on_click, enabled) {
             el = el.on_click(move |e, w, cx| f(e, w, cx));
         }
-        el
+        if !expanded {
+            return el.into_any_element();
+        }
+        // Stateless wrapper with no id: the stateful element above keeps the button's id.
+        div()
+            .relative()
+            .flex_none()
+            .w(px(width))
+            .h(px(height))
+            .children(face)
+            .child(el)
+            .into_any_element()
     }
 }
 
