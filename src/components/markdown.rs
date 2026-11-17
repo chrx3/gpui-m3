@@ -11,14 +11,16 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ElementId, Font, FontFeatures, FontStyle, FontWeight, Hsla,
+    AnyElement, App, Bounds, ElementId, Font, FontFeatures, FontStyle, FontWeight, Hsla,
     InteractiveElement, InteractiveText, IntoElement, ParentElement, Pixels, RenderOnce,
-    SharedString, StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, TextRun,
-    Window, canvas, div, px, relative,
+    SharedString, StatefulInteractiveElement, StrikethroughStyle, Styled, StyledText, TextLayout,
+    TextRun, Window, canvas, div, point, px, relative,
 };
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 
-use super::{CodeBlock, Icon, Selection, group_for, selectable_block, selection_root};
+use super::{
+    CodeBlock, Icon, PaintUnder, Selection, group_for, selectable_block_under, selection_root,
+};
 use crate::cache::{Lru, content_key};
 use crate::motion::key;
 use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family, text};
@@ -986,7 +988,8 @@ impl Render<'_> {
                         },
                     },
                     color,
-                    background_color: style.code.then_some(s.surface_container_high),
+                    // Inline code gets a rounded container under the selection (`code_chips`).
+                    background_color: None,
                     underline: None,
                     strikethrough: style.strike.then_some(StrikethroughStyle {
                         thickness: px(1.),
@@ -995,16 +998,18 @@ impl Render<'_> {
                 }
             })
             .collect();
-        let runs = if self.fade.is_empty() {
+        let fades = std::mem::take(&mut self.fade);
+        let runs = if fades.is_empty() {
             runs
         } else {
-            fade_runs(runs, &rich.text, &std::mem::take(&mut self.fade))
+            fade_runs(runs, &rich.text, &fades)
         };
         let styled = StyledText::new(rich.text.clone()).with_runs(runs);
         let layout = styled.layout().clone();
         let joint: SharedString = self.joint.take().unwrap_or_else(|| "\n\n".into()).into();
+        let chips = code_chips(rich, &s, &fades);
         let select = |inner: AnyElement, this: &Self| {
-            selectable_block(
+            selectable_block_under(
                 &this.group,
                 layout,
                 rich.text.clone().into(),
@@ -1012,6 +1017,7 @@ impl Render<'_> {
                 Some(this.whole.clone()),
                 inner,
                 alpha(s.primary, 0.3),
+                chips,
             )
         };
 
@@ -1404,6 +1410,104 @@ fn task_box(done: bool, size: f32, s: &Scheme) -> impl IntoElement {
         })
 }
 
+/// Inline code containers: `surface_container_highest` (the text stays `on_surface`), corner
+/// XS, a few pixels wider than the code. Where that fill barely stands out from `surface`
+/// (light schemes), an `outline_variant` border marks it. `None` without inline code.
+fn code_chips(rich: &RichText, s: &Scheme, fades: &[(usize, f32)]) -> Option<PaintUnder> {
+    let chips: Vec<(Range<usize>, f32)> = rich
+        .code_ranges()
+        .filter(|r| !rich.text[r.clone()].trim().is_empty())
+        .map(|r| {
+            let opacity = fade_at(&rich.text, fades, r.start);
+            (r, opacity)
+        })
+        .collect();
+    if chips.is_empty() {
+        return None;
+    }
+    let text = rich.text.clone();
+    let fill = s.surface_container_highest;
+    let border = (contrast(fill, s.surface) < CHIP_MIN_CONTRAST).then_some(s.outline_variant);
+    Some(Box::new(move |layout, _bounds, window| {
+        let line_height = layout.line_height();
+        // Line height is 1.3: the container leaves a little air above and below.
+        let inset = px((f32::from(line_height) * 0.1).max(1.));
+        for (range, opacity) in &chips {
+            for (x0, x1, y) in line_spans(layout, &text, range.clone()) {
+                let bounds = Bounds::from_corners(
+                    point(x0 - CHIP_PAD_X, y + inset),
+                    point(x1 + CHIP_PAD_X, y + line_height - inset),
+                );
+                let mut quad = gpui::fill(bounds, fill.opacity(*opacity)).corner_radii(px(CHIP_RADIUS));
+                if let Some(border) = border {
+                    quad = quad.border_widths(px(1.)).border_color(border.opacity(*opacity));
+                }
+                window.paint_quad(quad);
+            }
+        }
+    }))
+}
+
+/// Inline code container: horizontal padding and corner (M3 extra small).
+const CHIP_PAD_X: Pixels = px(4.);
+const CHIP_RADIUS: f32 = 4.;
+/// Below this contrast against `surface` the container also gets a border.
+const CHIP_MIN_CONTRAST: f32 = 1.3;
+
+/// `(x0, x1, top)` of each visual line `range` covers in `layout`. A line ends where the
+/// next character wraps; the width of its last character is estimated from the line's
+/// average (inline code is monospaced).
+fn line_spans(layout: &TextLayout, text: &str, range: Range<usize>) -> Vec<(Pixels, Pixels, Pixels)> {
+    let mut spans: Vec<(Pixels, Pixels, Pixels, usize)> = Vec::new();
+    let indices = text[range.clone()]
+        .char_indices()
+        .map(|(i, _)| range.start + i)
+        .chain(std::iter::once(range.end));
+    for index in indices {
+        let Some(p) = layout.position_for_index(index) else {
+            continue;
+        };
+        match spans.last_mut() {
+            Some((_, x1, y, n)) if *y == p.y => {
+                *x1 = p.x;
+                *n += 1;
+            }
+            _ => spans.push((p.x, p.x, p.y, 0)),
+        }
+    }
+    let count = spans.len();
+    spans
+        .into_iter()
+        .enumerate()
+        .map(|(i, (x0, x1, y, n))| {
+            // Every line but the last ends at a wrap: add its last character.
+            let x1 = if i + 1 < count && n > 0 { x1 + (x1 - x0) / n as f32 } else { x1 };
+            (x0, x1, y)
+        })
+        .filter(|(x0, x1, _)| x1 > x0)
+        .collect()
+}
+
+/// WCAG contrast ratio between two colors (alpha ignored).
+fn contrast(a: Hsla, b: Hsla) -> f32 {
+    fn luminance(c: Hsla) -> f32 {
+        let c = c.to_rgb();
+        let lin = |v: f32| if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+        0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+    }
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// The opacity of byte `at` under `fades` (see [`fade_runs`]).
+fn fade_at(text: &str, fades: &[(usize, f32)], at: usize) -> f32 {
+    fades
+        .iter()
+        .filter(|(back, _)| text.len().saturating_sub(*back) <= at)
+        .map(|(_, opacity)| opacity.clamp(0., 1.))
+        .fold(1., f32::min)
+}
+
 /// `runs` with the end of `text` faded: each of `fades` is (bytes from the end, opacity), and
 /// a byte takes the lowest opacity of the chunks that cover it. Runs are split at the chunk
 /// edges (on character boundaries) so only the new text changes color.
@@ -1528,6 +1632,55 @@ impl RenderOnce for Markdown {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `top` at opacity `a` over `bottom`, as the GPU blends it.
+    fn over(bottom: Hsla, top: Hsla, a: f32) -> Hsla {
+        let (b, t) = (bottom.to_rgb(), top.to_rgb());
+        let mix = |x: f32, y: f32| x + (y - x) * a;
+        gpui::Rgba {
+            r: mix(b.r, t.r),
+            g: mix(b.g, t.g),
+            b: mix(b.b, t.b),
+            a: 1.,
+        }
+        .into()
+    }
+
+    #[test]
+    fn inline_code_and_its_selection_read_in_light_and_dark() {
+        let seed: Hsla = gpui::rgb(0x3e8bff).into();
+        let schemes = [
+            Scheme::baseline_light(),
+            Scheme::baseline_dark(),
+            Scheme::from_seed(seed, false),
+            Scheme::from_seed(seed, true),
+        ];
+        for s in schemes {
+            let chip = s.surface_container_highest;
+            assert!(contrast(s.on_surface, chip) >= 4.5, "code text on its container");
+            // The container stands out from the message, by itself or with its border.
+            let edge = if contrast(chip, s.surface) >= CHIP_MIN_CONTRAST {
+                chip
+            } else {
+                s.outline_variant
+            };
+            assert!(contrast(edge, s.surface) >= CHIP_MIN_CONTRAST);
+            // The selection shows on the text and on the code, which stay readable.
+            for bg in [s.surface, chip] {
+                let selected = over(bg, s.primary, 0.3);
+                assert!(contrast(selected, bg) >= 1.4, "selection visible");
+                assert!(contrast(s.on_surface, selected) >= 4.5, "selected text readable");
+            }
+        }
+    }
+
+    #[test]
+    fn a_chip_fades_with_the_chunk_it_arrived_in() {
+        let text = "uno `dos`";
+        assert_eq!(fade_at(text, &[], 4), 1.);
+        assert_eq!(fade_at(text, &[(5, 0.4)], 4), 0.4);
+        assert_eq!(fade_at(text, &[(2, 0.4)], 4), 1., "the chunk starts after it");
+    }
 
     fn para(blocks: &[MarkdownBlock], i: usize) -> &RichText {
         match &blocks[i] {

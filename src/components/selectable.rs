@@ -734,10 +734,13 @@ fn edge_scroll(state: &Entity<TextSelection>, window: &mut Window, cx: &mut App)
     .detach();
 }
 
+/// Paints under the selection of a block, given its text layout and bounds (inline code
+/// containers, see [`selectable_block_under`]).
+pub type PaintUnder = Box<dyn FnOnce(&TextLayout, Bounds<Pixels>, &mut Window)>;
+
 /// A selectable block in `group` (numbered in paint order within its owner): the text of
 /// `layout` (a `StyledText`'s) drawn by `inner` (that `StyledText`, or an `InteractiveText`
-/// around it), with the selection painted behind, plus a lighter wash on top so it also shows
-/// over runs with their own background (inline code). `joint` goes before its text when a copy
+/// around it), with the selection painted behind. `joint` goes before its text when a copy
 /// also takes the block before it; `whole` is what "Copy all" copies over it.
 pub fn selectable_block(
     group: &Selection,
@@ -748,11 +751,25 @@ pub fn selectable_block(
     inner: AnyElement,
     color: Hsla,
 ) -> AnyElement {
+    selectable_block_under(group, layout, source, joint, whole, inner, color, None)
+}
+
+/// [`selectable_block`] with `under` painted first, below the selection and the text: a
+/// background that runs would otherwise paint over the selection (inline code) goes here,
+/// so the selection shows on it and the selected text keeps its own color.
+#[allow(clippy::too_many_arguments)]
+pub fn selectable_block_under(
+    group: &Selection,
+    layout: TextLayout,
+    source: SharedString,
+    joint: SharedString,
+    whole: Option<SharedString>,
+    inner: AnyElement,
+    color: Hsla,
+    under: Option<PaintUnder>,
+) -> AnyElement {
     let state = group.state.clone();
     let owner = group.owner;
-    // What the bottom canvas found selected this frame, for the wash painted over `inner`.
-    let shown: std::rc::Rc<std::cell::RefCell<Option<Range<usize>>>> = Default::default();
-    let (shown_below, wash_layout) = (shown.clone(), layout.clone());
     div()
         .relative()
         .child(
@@ -780,10 +797,12 @@ pub fn selectable_block(
                         );
                         (key, s.block_range(key))
                     });
-                    if let Some(range) = selected.clone() {
+                    if let Some(under) = under {
+                        under(&layout, bounds, window);
+                    }
+                    if let Some(range) = selected {
                         paint_range(&layout, bounds, range, color, window);
                     }
-                    *shown_below.borrow_mut() = selected;
                     press(&state, key, hitbox, window);
                 },
             )
@@ -793,22 +812,6 @@ pub fn selectable_block(
             .size_full(),
         )
         .child(inner)
-        // On top: inline code paints its own background over the selection, which hid it.
-        // Painting only, no hitbox, so links and hovers underneath keep working.
-        .child(
-            canvas(
-                |_, _, _| (),
-                move |bounds, _, window, _| {
-                    if let Some(range) = shown.borrow_mut().take() {
-                        paint_range(&wash_layout, bounds, range, alpha(color, color.a * 0.6), window);
-                    }
-                },
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full(),
-        )
         .into_any_element()
 }
 

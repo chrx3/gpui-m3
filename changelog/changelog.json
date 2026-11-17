@@ -10,6 +10,11 @@
       "items": [
         {
           "kind": "fixed",
+          "es": "Markdown: el código en línea va en un contenedor surface_container_highest con esquinas de 4 px y 4 px de margen a los lados (con borde outline_variant si casi no se distingue de surface); antes era un fondo surface_container_high pegado al texto que en oscuro apenas se veía. La selección se pinta encima del contenedor y bajo el texto, sin el velo que lo teñía. Nuevo selectable_block_under para pintar bajo la selección",
+          "en": "Markdown: inline code sits in a surface_container_highest container with 4 px corners and 4 px of room on each side (with an outline_variant border when it barely stands out from surface); it used to be a surface_container_high background tight around the text that barely showed in dark mode. The selection is painted over the container and under the text, without the wash that tinted it. New selectable_block_under to paint under the selection"
+        },
+        {
+          "kind": "fixed",
           "es": "Capa de estado: el estado más fuerte reemplaza al anterior en vez de sumarse. Presionar llega al 10 % (antes la onda al 14 % se sumaba al 8 % del hover); la onda se sigue viendo, pero la capa no pasa del 10 %. Constantes HOVER_OPACITY, FOCUS_OPACITY, PRESSED_OPACITY y DRAGGED_OPACITY en interaction",
           "en": "State layer: the strongest state replaces the others instead of adding up. Pressing reaches 10 % (the 14 % ripple used to add to the 8 % hover); the ripple still shows, but the layer never goes past 10 %. HOVER_OPACITY, FOCUS_OPACITY, PRESSED_OPACITY and DRAGGED_OPACITY constants in interaction"
         },
