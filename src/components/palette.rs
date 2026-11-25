@@ -1,12 +1,13 @@
 //! Command palette: a filter field over a keyboard-navigable list of commands.
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, KeyBinding, MouseButton, ParentElement, Render, ScrollHandle,
     SharedString, StatefulInteractiveElement, Styled, Window, actions, anchored, deferred, div, px,
 };
 
-use super::{Icon, MenuItem, TextField, TextFieldEvent, pop_in, shadow_pop};
+use super::{Chip, Icon, Kbd, MenuItem, TextField, TextFieldEvent, pop_in, shadow_pop};
 use crate::motion::{Spring, entrance, key};
 use crate::theme::{Theme, alpha, font_family};
 
@@ -29,6 +30,11 @@ pub struct Command {
     pub label: SharedString,
     /// Shortcut or kind shown at the end ("Ctrl+N", "Conversation").
     pub hint: Option<SharedString>,
+    /// Group heading: a title is drawn above the first command of each run of commands that
+    /// share a section.
+    pub section: Option<SharedString>,
+    /// Second line under the label, in the muted color.
+    pub sublabel: Option<SharedString>,
 }
 
 impl Command {
@@ -37,7 +43,21 @@ impl Command {
             icon: icon.into(),
             label: label.into(),
             hint: None,
+            section: None,
+            sublabel: None,
         }
+    }
+
+    /// Group heading shown above this command when it starts a new section.
+    pub fn section(mut self, section: impl Into<SharedString>) -> Self {
+        self.section = Some(section.into());
+        self
+    }
+
+    /// Second line under the label.
+    pub fn sublabel(mut self, sublabel: impl Into<SharedString>) -> Self {
+        self.sublabel = Some(sublabel.into());
+        self
     }
 
     pub fn hint(mut self, hint: impl Into<SharedString>) -> Self {
@@ -68,6 +88,8 @@ pub struct CommandPalette {
     matches: Vec<usize>,
     selected: usize,
     empty_text: SharedString,
+    clear_label: Option<SharedString>,
+    key_hints: Vec<(SharedString, SharedString)>,
     opened: u64,
     scroll: ScrollHandle,
 }
@@ -108,6 +130,8 @@ impl CommandPalette {
             matches: Vec::new(),
             selected: 0,
             empty_text: "No results".into(),
+            clear_label: None,
+            key_hints: Vec::new(),
             opened: 0,
             scroll: ScrollHandle::new(),
         }
@@ -124,6 +148,19 @@ impl CommandPalette {
     /// Text shown when nothing matches ("No results" by default).
     pub fn empty_text(mut self, text: impl Into<SharedString>) -> Self {
         self.empty_text = text.into();
+        self
+    }
+
+    /// Label of a button shown with the empty-result text that clears the filter ("Clear
+    /// filter"). Without it the empty state is only the text.
+    pub fn clear_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.clear_label = Some(label.into());
+        self
+    }
+
+    /// Keyboard hints in a footer row, each a (key, action) pair: `("Enter", "run")`.
+    pub fn key_hints(mut self, hints: impl IntoIterator<Item = (SharedString, SharedString)>) -> Self {
+        self.key_hints = hints.into_iter().collect();
         self
     }
 
@@ -200,18 +237,42 @@ impl Render for CommandPalette {
             .track_scroll(&self.scroll)
             .py(px(6.))
             .px(px(4.));
+        let query = self.field.read(cx).text().clone();
         if self.matches.is_empty() {
+            let clear = self.clear_label.clone().filter(|_| !query.is_empty());
             list = list.child(
                 div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(10.))
                     .p(px(16.))
                     .text_center()
                     .text_color(s.on_surface_variant)
-                    .child(self.empty_text.clone()),
+                    .child(self.empty_text.clone())
+                    .children(clear.map(|label| {
+                        Chip::new("m3-palette-clear", label).on_click(cx.listener(|this, _, _, cx| {
+                            this.field.update(cx, |field, cx| field.set_text("", cx));
+                        }))
+                    })),
             );
         }
-        let query = self.field.read(cx).text().clone();
+        let mut last_section: Option<&SharedString> = None;
         for (row, &index) in self.matches.iter().enumerate() {
             let command = &self.commands[index];
+            if let Some(section) = command.section.as_ref().filter(|section| last_section != Some(*section)) {
+                list = list.child(
+                    div()
+                        .px(px(12.))
+                        .pt(px(8.))
+                        .pb(px(2.))
+                        .text_size(px(12.))
+                        .font_weight(gpui::FontWeight(700.))
+                        .text_color(s.primary)
+                        .child(section.clone()),
+                );
+            }
+            last_section = command.section.as_ref();
             let mut item = MenuItem::new(("m3-palette-item", index), command.label.clone())
                 .icon(command.icon.clone())
                 .highlighted(row == self.selected)
@@ -222,6 +283,9 @@ impl Render for CommandPalette {
                 }));
             if let Some(hint) = &command.hint {
                 item = item.shortcut(hint.clone());
+            }
+            if let Some(sublabel) = &command.sublabel {
+                item = item.sublabel(sublabel.clone());
             }
             list = list.child(
                 div()
@@ -257,6 +321,28 @@ impl Render for CommandPalette {
                     .child(Icon::new("search").size(px(16.)).color(s.outline))
                     .child(div().flex_1().child(self.field.clone())),
             )
+            .when(!self.key_hints.is_empty(), |surface| {
+                surface.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(14.))
+                        .px(px(16.))
+                        .py(px(8.))
+                        .border_b_1()
+                        .border_color(s.outline_variant)
+                        .text_size(px(12.))
+                        .text_color(s.on_surface_variant)
+                        .children(self.key_hints.iter().map(|(key, action)| {
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .child(Kbd::new(key.clone()))
+                                .child(action.clone())
+                        })),
+                )
+            })
             .child(list);
         let surface = pop_in(div().child(surface), &id, 0., window, cx);
 

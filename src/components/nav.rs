@@ -416,6 +416,7 @@ pub struct IconTabs {
     id: ElementId,
     tabs: Vec<IconTab>,
     selected: usize,
+    labeled: bool,
     on_change: Option<ChangeHandler<usize>>,
 }
 
@@ -429,8 +430,16 @@ impl IconTabs {
             id: id.into(),
             tabs: tabs.into_iter().collect(),
             selected,
+            labeled: false,
             on_change: None,
         }
+    }
+
+    /// Every tab shows its name next to the icon and they share the width equally; the
+    /// selected one is told apart by its color. Use it when the tabs fit with their names.
+    pub fn labeled(mut self, labeled: bool) -> Self {
+        self.labeled = labeled;
+        self
     }
 
     pub fn on_change(mut self, f: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
@@ -448,11 +457,12 @@ impl RenderOnce for IconTabs {
             let state = use_interaction(&id, window, cx);
             let hovered = state.read(cx).hovered;
             let on = i == self.selected;
-            // The active one takes the free space (flex-grow 1); the rest stay at 34 px.
+            // The active one takes the free space (flex-grow 1); the rest stay at 34 px,
+            // unless every tab shows its name.
             let grow = animate_f32(
                 key(&id, "grow"),
                 Spring::SPATIAL,
-                if on { 1. } else { 0. },
+                if on || self.labeled { 1. } else { 0. },
                 window,
                 cx,
             );

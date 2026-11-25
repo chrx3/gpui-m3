@@ -688,6 +688,7 @@ pub struct IconButton {
     square: bool,
     selected: Option<bool>,
     hover_morph: bool,
+    danger: bool,
     disabled: bool,
     tooltip: Option<SharedString>,
     launch: Option<u64>,
@@ -708,6 +709,7 @@ impl IconButton {
             square: false,
             selected: None,
             hover_morph: false,
+            danger: false,
             disabled: false,
             tooltip: None,
             launch: None,
@@ -798,6 +800,14 @@ impl IconButton {
 
     pub fn hover_morph(mut self, morph: bool) -> Self {
         self.hover_morph = morph;
+        self
+    }
+
+    /// Error colors for an action that interrupts or destroys something (stop, delete): the
+    /// error container with its content color. Only the tonal variant uses it (see
+    /// [`IconButton::tonal`]); the others keep their own colors.
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
         self
     }
 
@@ -897,6 +907,9 @@ impl RenderOnce for IconButton {
                     (s.surface_container_high, s.primary, None)
                 }
                 IconButtonVariant::Filled => (s.primary, s.on_primary, None),
+                IconButtonVariant::Tonal if self.danger => {
+                    (s.error_container, s.on_error_container, None)
+                }
                 IconButtonVariant::Tonal if selected => {
                     (s.secondary_container, s.on_secondary_container, None)
                 }

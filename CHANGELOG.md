@@ -1,11 +1,40 @@
 # Changelog
 
+## 0.2.6 — 2026-11-25
+
+Esfuerzo que se arrastra, botón de error, filas y paleta con más contexto / A draggable effort control, an error button, and richer rows and palette
+
+### Español
+
+- **Nuevo:** StopSlider::draggable: se presiona en cualquier punto del control y se arrastra para elegir la parada que queda bajo el puntero. Los eventos del mouse se escuchan a nivel de ventana, así que el arrastre sigue si el puntero sale del control y termina al soltar o si ya no hay botón presionado
+- **Nuevo:** StopSlider::fill: las paradas se reparten el ancho y el control mide 40 px de alto, para una fila propia fácil de agarrar
+- **Nuevo:** IconButton::danger: el botón tonal usa el contenedor de error y su color de contenido, para acciones que interrumpen o destruyen algo (detener, borrar). Junto con hover_morph pasa de círculo a cuadrado redondeado al pasar el mouse
+- **Nuevo:** MenuItem::min_h (alto mínimo de la fila), MenuItem::tooltip (texto completo de una fila cortada con elipsis) y MenuItem::risk (medidor de cuatro bloques, el último en color de error)
+- **Nuevo:** LinearProgress::danger: la barra se llena con el color de error, para un medidor que pasó su límite
+- **Nuevo:** CommandPalette: Command::section (cabecera de grupo) y Command::sublabel (segunda línea), CommandPalette::clear_label (botón «Borrar filtro» en el vacío) y CommandPalette::key_hints (pie con atajos)
+- **Nuevo:** Menu::pin_to_anchor: la fila «atrás», la cabecera y el pie quedan del lado del ancla (bajo la lista si el menú abre hacia arriba, sobre ella si abre hacia abajo), así que no cambian de lugar cuando la lista crece o se achica
+- **Nuevo:** Popover y BottomSheet: header y footer fijos fuera del scroll, y pin_to_anchor para dejarlos del lado del ancla (como en Menu)
+- **Nuevo:** IconTabs::labeled: todas las pestañas muestran su nombre junto al ícono y se reparten el ancho por igual
+
+### English
+
+- **New:** StopSlider::draggable: press anywhere on the control and drag to pick the stop under the pointer. Mouse events are listened to at window level, so the drag keeps going if the pointer leaves the control and ends on release or when no button is pressed any more
+- **New:** StopSlider::fill: the stops share the width and the control is 40 px tall, for a row of its own that is easy to grab
+- **New:** IconButton::danger: the tonal button uses the error container and its content color, for actions that interrupt or destroy something (stop, delete). With hover_morph it goes from a circle to a rounded square on hover
+- **New:** MenuItem::min_h (minimum row height), MenuItem::tooltip (the full text of a row cut with an ellipsis) and MenuItem::risk (a four-block meter, the last level in the error color)
+- **New:** LinearProgress::danger: the bar fills with the error color, for a meter that went over its limit
+- **New:** CommandPalette: Command::section (group heading) and Command::sublabel (second line), CommandPalette::clear_label (a «Clear filter» button in the empty state) and CommandPalette::key_hints (a footer with shortcuts)
+- **New:** Menu::pin_to_anchor: the back row, the header and the footer stay on the anchor side (under the list when the menu opens upward, above it when it opens downward), so they do not move when the list grows or shrinks
+- **New:** Popover and BottomSheet: a fixed header and footer outside the scroll, and pin_to_anchor to keep them on the anchor side (as in Menu)
+- **New:** IconTabs::labeled: every tab shows its name next to the icon and they share the width equally
+
 ## 0.2.5 — 2026-11-17
 
 Estados, foco y área de clic según M3 / States, focus and click area by M3
 
 ### Español
 
+- **Corregido:** Markdown: el código en línea va en un contenedor surface_container_highest con esquinas de 4 px y 4 px de margen a los lados (con borde outline_variant si casi no se distingue de surface); antes era un fondo surface_container_high pegado al texto que en oscuro apenas se veía. La selección se pinta encima del contenedor y bajo el texto, sin el velo que lo teñía. Nuevo selectable_block_under para pintar bajo la selección
 - **Corregido:** Capa de estado: el estado más fuerte reemplaza al anterior en vez de sumarse. Presionar llega al 10 % (antes la onda al 14 % se sumaba al 8 % del hover); la onda se sigue viendo, pero la capa no pasa del 10 %. Constantes HOVER_OPACITY, FOCUS_OPACITY, PRESSED_OPACITY y DRAGGED_OPACITY en interaction
 - **Nuevo:** Capa de foco del 10 % con el foco de teclado, junto al anillo, en todo componente que usa keyboard_focus y state_layer con el mismo id (botones, chips, grupos de botones, barras de herramientas, menú del FAB, filas de opciones)
 - **Corregido:** Anillo de foco: 3 px de grosor, 2 px de separación y color secondary (antes 2 px, casi pegado y en primary)
@@ -14,6 +43,7 @@ Estados, foco y área de clic según M3 / States, focus and click area by M3
 
 ### English
 
+- **Fixed:** Markdown: inline code sits in a surface_container_highest container with 4 px corners and 4 px of room on each side (with an outline_variant border when it barely stands out from surface); it used to be a surface_container_high background tight around the text that barely showed in dark mode. The selection is painted over the container and under the text, without the wash that tinted it. New selectable_block_under to paint under the selection
 - **Fixed:** State layer: the strongest state replaces the others instead of adding up. Pressing reaches 10 % (the 14 % ripple used to add to the 8 % hover); the ripple still shows, but the layer never goes past 10 %. HOVER_OPACITY, FOCUS_OPACITY, PRESSED_OPACITY and DRAGGED_OPACITY constants in interaction
 - **New:** A 10 % focus layer with keyboard focus, next to the ring, in every component that uses keyboard_focus and state_layer with the same id (buttons, chips, button groups, toolbars, the FAB menu, choice rows)
 - **Fixed:** Focus ring: 3 px thick, 2 px away from the component, in the secondary color (it was 2 px, almost touching, in primary)

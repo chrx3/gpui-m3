@@ -308,6 +308,9 @@ pub struct Popover {
     anchor: Option<Corner>,
     origin: Option<Corner>,
     on_dismiss: Option<ClickHandler>,
+    header: Option<AnyElement>,
+    footer: Option<AnyElement>,
+    pin_to_anchor: bool,
     children: Vec<AnyElement>,
 }
 
@@ -324,6 +327,9 @@ impl Popover {
             anchor: None,
             origin: None,
             on_dismiss: None,
+            header: None,
+            footer: None,
+            pin_to_anchor: false,
             children: Vec::new(),
         }
     }
@@ -342,6 +348,27 @@ impl Popover {
     /// Called on a click outside the popover.
     pub fn on_dismiss(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_dismiss = Some(Rc::new(f));
+        self
+    }
+
+    /// Fixed content above the scrolling children (tabs, a filter field).
+    pub fn header(mut self, header: impl IntoElement) -> Self {
+        self.header = Some(header.into_any_element());
+        self
+    }
+
+    /// Fixed content below the scrolling children (the actions of the popover).
+    pub fn footer(mut self, footer: impl IntoElement) -> Self {
+        self.footer = Some(footer.into_any_element());
+        self
+    }
+
+    /// Keeps the header and the footer on the side of the anchor, so they do not move when
+    /// the content grows or shrinks: under the content when the popover opens upward (the
+    /// anchor or origin is a bottom corner), above it when it opens downward. Same as
+    /// [`Menu::pin_to_anchor`].
+    pub fn pin_to_anchor(mut self, pin: bool) -> Self {
+        self.pin_to_anchor = pin;
         self
     }
 
@@ -418,6 +445,40 @@ impl RenderOnce for Popover {
             .font_family(font_family())
             .text_size(px(13.))
             .text_color(s.on_surface);
+        // The fixed controls: above or below the content, or both on the anchor side.
+        let up = match self.origin.or(self.anchor) {
+            Some(corner) => matches!(corner, Corner::BottomLeft | Corner::BottomRight),
+            None => self.direction == PopDirection::Up,
+        };
+        let (mut above, mut below): (Vec<AnyElement>, Vec<AnyElement>) = (Vec::new(), Vec::new());
+        match (self.pin_to_anchor, up) {
+            (true, true) => {
+                below.extend(self.footer);
+                below.extend(self.header);
+            }
+            (true, false) => {
+                above.extend(self.header);
+                above.extend(self.footer);
+            }
+            (false, _) => {
+                above.extend(self.header);
+                below.extend(self.footer);
+            }
+        }
+        let fixed = |controls: Vec<AnyElement>| {
+            div()
+                .flex()
+                .flex_col()
+                .flex_none()
+                .gap(self.gap)
+                .px(self.padding)
+                .children(controls)
+        };
+        let surface = if above.is_empty() {
+            surface
+        } else {
+            surface.child(fixed(above).pt(self.padding))
+        };
         let surface = match self.max_height {
             Some(max_height) => surface.child(
                 div()
@@ -427,6 +488,11 @@ impl RenderOnce for Popover {
                     .child(content),
             ),
             None => surface.child(content),
+        };
+        let surface = if below.is_empty() {
+            surface
+        } else {
+            surface.child(fixed(below).pb(self.padding))
         };
         let mut surface = surface.id(child_id(&self.id, "surface"));
         if let Some(f) = self.on_dismiss {
@@ -479,6 +545,7 @@ pub struct Menu {
     back: Option<(SharedString, ClickHandler)>,
     content_key: Option<u64>,
     stagger: bool,
+    pin_to_anchor: bool,
 }
 
 /// Delay between the entrances of consecutive menu items (25 ms, up to the fifth).
@@ -501,7 +568,17 @@ impl Menu {
             back: None,
             content_key: None,
             stagger: true,
+            pin_to_anchor: false,
         }
+    }
+
+    /// Keeps the fixed controls (the back row, the header and the footer) on the side of the
+    /// anchor, so they stay where the pointer found them when the list grows or shrinks. A
+    /// menu that opens upward has them under the list; one that opens downward, above it.
+    /// Set the corner with [`Menu::origin`] or [`Menu::direction`] first.
+    pub fn pin_to_anchor(mut self, pin: bool) -> Self {
+        self.pin_to_anchor = pin;
+        self
     }
 
     /// Items fade in one by one, 25 ms apart, while the surface grows (on by default; the
@@ -666,12 +743,40 @@ impl RenderOnce for Menu {
             };
             reveal(menu, &self.id, origin, window, cx)
         } else {
-            let has_header = self.header.is_some() || self.back.is_some();
+            // The fixed controls, split into what goes above the list and what goes below it.
+            let back = self.back.map(|(title, on_back)| {
+                BackRow {
+                    id: child_id(&self.id, "back"),
+                    title,
+                    on_back,
+                }
+                .into_any_element()
+            });
+            let (mut above, mut below): (Vec<AnyElement>, Vec<AnyElement>) = (Vec::new(), Vec::new());
+            match (self.pin_to_anchor, matches!(self.direction, PopDirection::Up)) {
+                // Opens upward: everything under the list, the back row nearest the anchor.
+                (true, true) => {
+                    below.extend(self.footer);
+                    below.extend(self.header);
+                    below.extend(back);
+                }
+                // Opens downward: everything above the list.
+                (true, false) => {
+                    above.extend(back);
+                    above.extend(self.header);
+                    above.extend(self.footer);
+                }
+                (false, _) => {
+                    above.extend(back);
+                    above.extend(self.header);
+                    below.extend(self.footer);
+                }
+            }
             let mut content = div().flex().flex_col().p(self.padding);
-            if has_header {
+            if !above.is_empty() {
                 content = content.pt(px(2.));
             }
-            if self.footer.is_some() {
+            if !below.is_empty() {
                 content = content.pb(px(2.));
             }
             let mut n = 0usize;
@@ -702,21 +807,16 @@ impl RenderOnce for Menu {
                 .rounded(self.radius)
                 .bg(s.surface_container)
                 .shadow(shadow_pop(&s));
-            if has_header {
-                let mut header = div()
-                    .flex()
-                    .flex_col()
-                    .flex_none()
-                    .px(self.padding)
-                    .pt(self.padding);
-                if let Some((title, on_back)) = self.back {
-                    header = header.child(BackRow {
-                        id: child_id(&self.id, "back"),
-                        title,
-                        on_back,
-                    });
-                }
-                card = card.child(header.children(self.header));
+            if !above.is_empty() {
+                card = card.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_none()
+                        .px(self.padding)
+                        .pt(self.padding)
+                        .children(above),
+                );
             }
             let card = match self.max_height {
                 Some(max_height) => card.child(
@@ -728,17 +828,18 @@ impl RenderOnce for Menu {
                 ),
                 None => card.child(content),
             };
-            let card = match self.footer {
-                Some(footer) => card.child(
+            let card = if below.is_empty() {
+                card
+            } else {
+                card.child(
                     div()
                         .flex()
                         .flex_col()
                         .flex_none()
                         .px(self.padding)
                         .pb(self.padding)
-                        .child(footer),
-                ),
-                None => card,
+                        .children(below),
+                )
             };
             reveal(card, &self.id, origin, window, cx)
         }
@@ -806,6 +907,9 @@ pub struct MenuItem {
     confirm: Option<SharedString>,
     actions: Vec<AnyElement>,
     line_clamp: Option<usize>,
+    min_h: Option<f32>,
+    tooltip: Option<SharedString>,
+    risk: Option<u8>,
     on_click: Option<ClickHandler>,
 }
 
@@ -832,8 +936,31 @@ impl MenuItem {
             confirm: None,
             actions: Vec::new(),
             line_clamp: None,
+            min_h: None,
+            tooltip: None,
+            risk: None,
             on_click: None,
         }
+    }
+
+    /// Minimum row height in px (36, or 30 when dense, by default). A taller row gives a
+    /// leading avatar or a two-line text more room and a bigger click area.
+    pub fn min_h(mut self, height: Pixels) -> Self {
+        self.min_h = Some(f32::from(height));
+        self
+    }
+
+    /// Tooltip with the full text, for a row whose text is cut with an ellipsis.
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
+        self
+    }
+
+    /// Risk meter of four blocks (`level` from 1 to 4) before the trailing content or the
+    /// check: filled blocks use the primary color, and the highest level the error color.
+    pub fn risk(mut self, level: u8) -> Self {
+        self.risk = Some(level.clamp(1, 4));
+        self
     }
 
     /// Adds an action under the text (a small [`super::Chip`] or [`super::Button`]), for
@@ -988,6 +1115,7 @@ impl RenderOnce for MenuItem {
         } else {
             (36., 10., 10., 10., 18., 17., None)
         };
+        let min_h = self.min_h.unwrap_or(min_h);
         let radius = px(animate_f32(
             key(&self.id, "radius"),
             Spring::SPATIAL_FAST,
@@ -1153,6 +1281,23 @@ impl RenderOnce for MenuItem {
             ),
             (None, false) => None,
         };
+        let trailing = match (self.risk, trailing) {
+            (Some(level), trailing) => {
+                let color = if level >= 4 { s.error } else { s.primary };
+                let meter = div().flex().items_center().gap(px(3.)).children((1..=4u8).map(|block| {
+                    div()
+                        .w(px(12.))
+                        .h(px(6.))
+                        .rounded(px(3.))
+                        .bg(if block <= level { color } else { s.outline_variant })
+                }));
+                Some(match trailing {
+                    Some(trailing) => div().flex().items_center().gap(px(8.)).child(meter).child(trailing).into_any_element(),
+                    None => meter.into_any_element(),
+                })
+            }
+            (None, trailing) => trailing,
+        };
         if let Some(trailing) = trailing {
             row = row.child(
                 div()
@@ -1190,6 +1335,9 @@ impl RenderOnce for MenuItem {
                 }
                 f(e, w, cx)
             });
+        }
+        if let Some(tooltip) = self.tooltip {
+            row = row.tooltip(super::Tooltip::text(tooltip));
         }
         row
     }

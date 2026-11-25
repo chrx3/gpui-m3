@@ -1,6 +1,61 @@
 {
   "versions": [
     {
+      "version": "0.2.6",
+      "date": "2026-11-25",
+      "title": {
+        "es": "Esfuerzo que se arrastra, botón de error, filas y paleta con más contexto",
+        "en": "A draggable effort control, an error button, and richer rows and palette"
+      },
+      "items": [
+        {
+          "kind": "new",
+          "es": "StopSlider::draggable: se presiona en cualquier punto del control y se arrastra para elegir la parada que queda bajo el puntero. Los eventos del mouse se escuchan a nivel de ventana, así que el arrastre sigue si el puntero sale del control y termina al soltar o si ya no hay botón presionado",
+          "en": "StopSlider::draggable: press anywhere on the control and drag to pick the stop under the pointer. Mouse events are listened to at window level, so the drag keeps going if the pointer leaves the control and ends on release or when no button is pressed any more"
+        },
+        {
+          "kind": "new",
+          "es": "StopSlider::fill: las paradas se reparten el ancho y el control mide 40 px de alto, para una fila propia fácil de agarrar",
+          "en": "StopSlider::fill: the stops share the width and the control is 40 px tall, for a row of its own that is easy to grab"
+        },
+        {
+          "kind": "new",
+          "es": "IconButton::danger: el botón tonal usa el contenedor de error y su color de contenido, para acciones que interrumpen o destruyen algo (detener, borrar). Junto con hover_morph pasa de círculo a cuadrado redondeado al pasar el mouse",
+          "en": "IconButton::danger: the tonal button uses the error container and its content color, for actions that interrupt or destroy something (stop, delete). With hover_morph it goes from a circle to a rounded square on hover"
+        },
+        {
+          "kind": "new",
+          "es": "MenuItem::min_h (alto mínimo de la fila), MenuItem::tooltip (texto completo de una fila cortada con elipsis) y MenuItem::risk (medidor de cuatro bloques, el último en color de error)",
+          "en": "MenuItem::min_h (minimum row height), MenuItem::tooltip (the full text of a row cut with an ellipsis) and MenuItem::risk (a four-block meter, the last level in the error color)"
+        },
+        {
+          "kind": "new",
+          "es": "LinearProgress::danger: la barra se llena con el color de error, para un medidor que pasó su límite",
+          "en": "LinearProgress::danger: the bar fills with the error color, for a meter that went over its limit"
+        },
+        {
+          "kind": "new",
+          "es": "CommandPalette: Command::section (cabecera de grupo) y Command::sublabel (segunda línea), CommandPalette::clear_label (botón «Borrar filtro» en el vacío) y CommandPalette::key_hints (pie con atajos)",
+          "en": "CommandPalette: Command::section (group heading) and Command::sublabel (second line), CommandPalette::clear_label (a «Clear filter» button in the empty state) and CommandPalette::key_hints (a footer with shortcuts)"
+        },
+        {
+          "kind": "new",
+          "es": "Menu::pin_to_anchor: la fila «atrás», la cabecera y el pie quedan del lado del ancla (bajo la lista si el menú abre hacia arriba, sobre ella si abre hacia abajo), así que no cambian de lugar cuando la lista crece o se achica",
+          "en": "Menu::pin_to_anchor: the back row, the header and the footer stay on the anchor side (under the list when the menu opens upward, above it when it opens downward), so they do not move when the list grows or shrinks"
+        },
+        {
+          "kind": "new",
+          "es": "Popover y BottomSheet: header y footer fijos fuera del scroll, y pin_to_anchor para dejarlos del lado del ancla (como en Menu)",
+          "en": "Popover and BottomSheet: a fixed header and footer outside the scroll, and pin_to_anchor to keep them on the anchor side (as in Menu)"
+        },
+        {
+          "kind": "new",
+          "es": "IconTabs::labeled: todas las pestañas muestran su nombre junto al ícono y se reparten el ancho por igual",
+          "en": "IconTabs::labeled: every tab shows its name next to the icon and they share the width equally"
+        }
+      ]
+    },
+    {
       "version": "0.2.5",
       "date": "2026-11-17",
       "title": {

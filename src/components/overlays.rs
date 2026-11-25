@@ -387,6 +387,7 @@ pub struct LinearProgress {
     id: ElementId,
     value: f32,
     height: Pixels,
+    danger: bool,
 }
 
 impl LinearProgress {
@@ -395,11 +396,19 @@ impl LinearProgress {
             id: id.into(),
             value,
             height: px(8.),
+            danger: false,
         }
     }
 
     pub fn height(mut self, height: Pixels) -> Self {
         self.height = height;
+        self
+    }
+
+    /// Fills with the error color instead of the primary one: a meter that went over its
+    /// limit (the context is almost full).
+    pub fn danger(mut self, danger: bool) -> Self {
+        self.danger = danger;
         self
     }
 }
@@ -426,7 +435,7 @@ impl RenderOnce for LinearProgress {
                     .h_full()
                     .w(gpui::relative(value.clamp(0., 1.)))
                     .corners(all(radius))
-                    .bg(s.primary),
+                    .bg(if self.danger { s.error } else { s.primary }),
             )
     }
 }

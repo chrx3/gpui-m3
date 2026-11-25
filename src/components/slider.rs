@@ -24,6 +24,8 @@ pub struct StopSlider {
     value: Option<usize>,
     compact: bool,
     vertical: bool,
+    fill: bool,
+    draggable: bool,
     on_change: Option<ChangeHandler<usize>>,
 }
 
@@ -35,8 +37,25 @@ impl StopSlider {
             value: value.into(),
             compact: false,
             vertical: false,
+            fill: false,
+            draggable: false,
             on_change: None,
         }
+    }
+
+    /// Full-width variant: the stops share the width and the control is 40 px tall, so the
+    /// whole strip is easy to grab. Meant for a row of its own, not for a menu item's trailing.
+    pub fn fill(mut self) -> Self {
+        self.fill = true;
+        self
+    }
+
+    /// Press anywhere on the control and drag to scrub: the stop under the pointer is
+    /// selected as it moves, and the drag ends on release even outside the control.
+    /// Needs [`StopSlider::on_change`]; horizontal only.
+    pub fn draggable(mut self) -> Self {
+        self.draggable = true;
+        self
     }
 
     /// Menu variant (15 × 12 stops).
@@ -60,15 +79,20 @@ impl StopSlider {
 impl RenderOnce for StopSlider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let s = *Theme::of(cx);
-        let (stop_w, stop_h, height) = if self.compact {
+        let (stop_w, stop_h, height) = if self.fill {
+            (40., 14., 40.)
+        } else if self.compact {
             (15., 12., 24.)
         } else {
             (18., 14., 28.)
         };
         let vertical = self.vertical;
+        let fill = self.fill && !vertical;
         let mut row = div().relative().flex().flex_none().items_center();
         row = if vertical {
             row.flex_col().w(px(height))
+        } else if fill {
+            row.h(px(height)).w_full()
         } else {
             row.h(px(height))
         };
@@ -84,7 +108,9 @@ impl RenderOnce for StopSlider {
             let current = self.value == Some(i);
             let (first, last) = (i == 0, i + 1 == self.stops);
             // (width, height, side margin, radii)
-            let (w, h, margin, r) = if current {
+            let (w, h, margin, r) = if current && fill {
+                (6., 30., 4., [3.; 4])
+            } else if current {
                 (5., height, 3., [3.; 4])
             } else {
                 let (a, b) = (stop_h / 2., 4.);
@@ -117,8 +143,14 @@ impl RenderOnce for StopSlider {
                     .h(px(w.max(1.)))
                     .w(px(h.max(1.)))
                     .corners(corners([r1, r2, r3, r0]))
+            } else if fill && !current {
+                stop.mx(px(margin + 2.))
+                    .flex_1()
+                    .min_w(px(0.))
+                    .h(px(h.max(1.)))
+                    .corners(corners([r0, r1, r2, r3]))
             } else {
-                stop.mx(px(margin + 1.5))
+                stop.mx(px(margin + if fill { 2. } else { 1.5 }))
                     .w(px(w.max(1.)))
                     .h(px(h.max(1.)))
                     .corners(corners([r0, r1, r2, r3]))
@@ -132,6 +164,9 @@ impl RenderOnce for StopSlider {
         let Some(f) = self.on_change else {
             return row.into_any_element();
         };
+        if self.draggable && !vertical {
+            row = row.child(drag_layer(&self.id, self.stops, f.clone(), window, cx));
+        }
         let row_id = child_id(&self.id, "row");
         let (state, handle, ring_visible) = use_focus(&row_id, window, cx);
         let ring = focus_ring(&row_id, ring_visible, all(px(height / 2.)), window, cx);
@@ -148,6 +183,69 @@ impl RenderOnce for StopSlider {
             .children(ring)
             .into_any_element()
     }
+}
+
+/// The stop under a pointer at `fraction` (0 to 1) of the control's width: the control is split
+/// in equal slices, so the result never depends on how the stops are drawn at the moment.
+fn stop_at_fraction(fraction: f32, stops: usize) -> usize {
+    if stops == 0 || fraction.is_nan() {
+        return 0;
+    }
+    let slice = (fraction.clamp(0., 1.) * stops as f32).floor() as usize;
+    slice.min(stops - 1)
+}
+
+/// The layer that turns pressing and moving over a [`StopSlider`] into stop picks. The mouse
+/// events are listened to at window level, so a drag keeps working when the pointer leaves the
+/// control, and ends on any release or when no button is pressed any more.
+fn drag_layer(
+    id: &ElementId,
+    stops: usize,
+    on_change: ChangeHandler<usize>,
+    window: &mut Window,
+    cx: &mut App,
+) -> impl IntoElement {
+    let dragging = window.use_keyed_state(child_id(id, "drag"), cx, |_, _| false);
+    canvas(
+        |_, _, _| {},
+        move |bounds: Bounds<Pixels>, _, window, _| {
+            let pick = move |x: Pixels| {
+                let width = f32::from(bounds.size.width);
+                let fraction = if width > 0. {
+                    f32::from(x - bounds.origin.x) / width
+                } else {
+                    0.
+                };
+                stop_at_fraction(fraction, stops)
+            };
+            let (down, down_state) = (on_change.clone(), dragging.clone());
+            window.on_mouse_event(move |e: &MouseDownEvent, phase, w, cx| {
+                if phase.bubble() && e.button == MouseButton::Left && bounds.contains(&e.position) {
+                    down_state.update(cx, |d, _| *d = true);
+                    down(pick(e.position.x), w, cx);
+                }
+            });
+            let (moving, move_state) = (on_change.clone(), dragging.clone());
+            window.on_mouse_event(move |e: &MouseMoveEvent, phase, w, cx| {
+                if !phase.bubble() || !*move_state.read(cx) {
+                    return;
+                }
+                if e.pressed_button == Some(MouseButton::Left) {
+                    moving(pick(e.position.x), w, cx);
+                } else {
+                    move_state.update(cx, |d, _| *d = false);
+                }
+            });
+            let up_state = dragging.clone();
+            window.on_mouse_event(move |_: &MouseUpEvent, _, _, cx| {
+                if *up_state.read(cx) {
+                    up_state.update(cx, |d, _| *d = false);
+                }
+            });
+        },
+    )
+    .absolute()
+    .size_full()
 }
 
 /// The stop an arrow key reaches; with no value, forward starts at the first stop and back at the last.
@@ -996,6 +1094,26 @@ mod tests {
 
     fn close(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-4
+    }
+
+    #[test]
+    fn the_pointer_picks_the_stop_under_it() {
+        assert_eq!(stop_at_fraction(0., 5), 0);
+        assert_eq!(stop_at_fraction(0.19, 5), 0);
+        assert_eq!(stop_at_fraction(0.2, 5), 1);
+        assert_eq!(stop_at_fraction(0.5, 5), 2);
+        assert_eq!(stop_at_fraction(0.99, 5), 4);
+        assert_eq!(stop_at_fraction(1., 5), 4);
+    }
+
+    #[test]
+    fn dragging_past_the_ends_or_with_odd_input_stays_in_range() {
+        assert_eq!(stop_at_fraction(-3., 5), 0);
+        assert_eq!(stop_at_fraction(7., 5), 4);
+        assert_eq!(stop_at_fraction(f32::NAN, 5), 0);
+        assert_eq!(stop_at_fraction(f32::INFINITY, 5), 4);
+        assert_eq!(stop_at_fraction(0.9, 1), 0);
+        assert_eq!(stop_at_fraction(0.9, 0), 0);
     }
 
     #[test]

@@ -132,6 +132,9 @@ pub struct BottomSheet {
     children: Vec<AnyElement>,
     on_dismiss: Option<ClickHandler>,
     shown: f32,
+    header: Option<AnyElement>,
+    footer: Option<AnyElement>,
+    pin_to_anchor: bool,
 }
 
 impl BottomSheet {
@@ -145,7 +148,29 @@ impl BottomSheet {
             children: Vec::new(),
             on_dismiss: None,
             shown: 1.,
+            header: None,
+            footer: None,
+            pin_to_anchor: false,
         }
+    }
+
+    /// Fixed content between the handle and the scrolling body (tabs, a filter field).
+    pub fn header(mut self, header: impl IntoElement) -> Self {
+        self.header = Some(header.into_any_element());
+        self
+    }
+
+    /// Fixed content under the scrolling body (the actions of the sheet).
+    pub fn footer(mut self, footer: impl IntoElement) -> Self {
+        self.footer = Some(footer.into_any_element());
+        self
+    }
+
+    /// Moves the header under the body, next to the footer: a sheet grows upward from the
+    /// bottom edge, so that is where the controls stay put when the body changes height.
+    pub fn pin_to_anchor(mut self, pin: bool) -> Self {
+        self.pin_to_anchor = pin;
+        self
     }
 
     /// A modal sheet over a scrim.
@@ -203,6 +228,13 @@ impl RenderOnce for BottomSheet {
         let viewport = window.viewport_size();
         let handle = self.handle;
         let padding = self.padding;
+        let (header, footer, pinned) = (self.header, self.footer, self.pin_to_anchor);
+        let fixed = |el: AnyElement| div().flex().flex_none().flex_col().px(padding).pb(px(8.)).child(el);
+        let (top, mut bottom): (Option<AnyElement>, Vec<AnyElement>) = if pinned {
+            (None, footer.into_iter().chain(header).collect())
+        } else {
+            (header, footer.into_iter().collect())
+        };
         let mut sheet = div()
             .id(child_id(&self.id, "sheet"))
             .relative()
@@ -226,6 +258,7 @@ impl RenderOnce for BottomSheet {
                     ),
                 )
             })
+            .when_some(top, |d, top| d.child(fixed(top)))
             .child(
                 div()
                     .id(child_id(&self.id, "body"))
@@ -238,6 +271,9 @@ impl RenderOnce for BottomSheet {
                     .when(!handle, |d| d.pt(padding))
                     .children(self.children),
             );
+        for el in bottom.drain(..) {
+            sheet = sheet.child(fixed(el));
+        }
         if !self.modal {
             return sheet.into_any_element();
         }
