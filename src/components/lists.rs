@@ -1,6 +1,7 @@
 //! Rows for side panels: file trees, change lists and tab strips.
 
 use std::f32::consts::FRAC_PI_2;
+use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder as _;
@@ -13,10 +14,29 @@ use gpui::{
 use super::{ChangeHandler, ClickHandler, Icon, RoundedExt, Tooltip, all, child_id};
 use crate::interaction::{interactive, state_layer, use_interaction};
 use crate::motion::{Spring, animate_color, animate_f32, key};
-use crate::theme::{MONO_FONT_FAMILY, Theme, alpha, font_family};
+use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family};
 
 /// Indentation per tree level.
 const TREE_INDENT: f32 = 14.;
+
+/// La parte de una etiqueta que coincide con la búsqueda, en negrita y el primario
+/// (como [`super::MenuItem::label_highlights`]).
+fn highlighted_label(scheme: &Scheme, label: SharedString, ranges: &[Range<usize>]) -> AnyElement {
+    if ranges.is_empty() {
+        return label.into_any_element();
+    }
+    let style = gpui::HighlightStyle {
+        color: Some(scheme.primary),
+        font_weight: Some(FontWeight(700.)),
+        ..Default::default()
+    };
+    let ranges: Vec<_> = ranges
+        .iter()
+        .filter(|r| r.end <= label.len() && label.is_char_boundary(r.start) && label.is_char_boundary(r.end))
+        .map(|r| (r.clone(), style))
+        .collect();
+    gpui::StyledText::new(label).with_highlights(ranges).into_any_element()
+}
 
 /// File tree row: a 30 px pill indented 14 px per level, with indent guides, a chevron that
 /// turns for folders and a colored icon.
@@ -34,6 +54,7 @@ pub struct TreeRow {
     guides: bool,
     tooltip: Option<SharedString>,
     trailing: Option<AnyElement>,
+    highlights: Vec<Range<usize>>,
     on_click: Option<ClickHandler>,
 }
 
@@ -52,6 +73,7 @@ impl TreeRow {
             guides: true,
             tooltip: None,
             trailing: None,
+            highlights: Vec::new(),
             on_click: None,
         }
     }
@@ -109,6 +131,13 @@ impl TreeRow {
     /// Content at the end of the row (e.g. the folder of a search result).
     pub fn trailing(mut self, el: impl IntoElement) -> Self {
         self.trailing = Some(el.into_any_element());
+        self
+    }
+
+    /// Byte ranges of the label to emphasize (the part matching a query), in bold and the
+    /// primary color. See [`super::match_ranges`].
+    pub fn label_highlights(mut self, ranges: Vec<Range<usize>>) -> Self {
+        self.highlights = ranges;
         self
     }
 
@@ -204,7 +233,7 @@ impl RenderOnce for TreeRow {
                     .overflow_hidden()
                     .text_ellipsis()
                     .opacity(opacity)
-                    .child(self.label),
+                    .child(highlighted_label(&s, self.label, &self.highlights)),
             )
             .children(self.trailing);
         if let Some(text) = self.tooltip {

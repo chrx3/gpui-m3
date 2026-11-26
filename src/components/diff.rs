@@ -383,7 +383,8 @@ const LINE_H: f32 = 18.;
 const INNER_RADIUS: f32 = 15.;
 
 /// A line diff like the reference design's: old and new line numbers, `+`/`−` marks, unchanged
-/// runs folded as "⋯ N unchanged lines" (click to open), "Show all" past `max_rows`, and an
+/// runs folded as "⋯ N unchanged lines" (click to open, text with [`DiffView::fold_label`]),
+/// "Show all" past `max_rows`, and an
 /// optional header with the file name and `+N −M`. A new file hides the old numbers.
 ///
 /// The diff is computed once per content and cached; pass a shared [`Diff`] with
@@ -397,7 +398,12 @@ pub struct DiffView {
     max_rows: usize,
     bordered: bool,
     show_all_label: Option<super::ShowAllLabel>,
+    /// El texto de los tramos plegados («⋯ N unchanged lines» por omisión).
+    fold_label: Option<FoldLabel>,
 }
+
+/// El texto de un tramo plegado, según cuántas líneas esconde.
+pub type FoldLabel = Rc<dyn Fn(usize) -> SharedString>;
 
 impl DiffView {
     pub fn new(id: impl Into<ElementId>, old: &str, new: &str) -> Self {
@@ -413,7 +419,15 @@ impl DiffView {
             max_rows: 400,
             bordered: true,
             show_all_label: None,
+            fold_label: None,
         }
+    }
+
+    /// The text of a folded run of unchanged lines, from how many lines it hides;
+    /// "⋯ N unchanged lines" by default.
+    pub fn fold_label(mut self, label: impl Fn(usize) -> SharedString + 'static) -> Self {
+        self.fold_label = Some(Rc::new(label));
+        self
     }
 
     /// The text of the "Show all" row, from the hidden lines (always
@@ -570,6 +584,11 @@ impl RenderOnce for DiffView {
                 }
                 DiffRow::Fold { id, lines } => {
                     let open = open.clone();
+                    let text = self
+                        .fold_label
+                        .as_ref()
+                        .map(|label| label(lines.len()))
+                        .unwrap_or_else(|| format!("⋯ {} unchanged lines", lines.len()).into());
                     div()
                         .id(("fold", id))
                         .w_full()
@@ -586,18 +605,25 @@ impl RenderOnce for DiffView {
                                 cx.notify();
                             })
                         })
-                        .child(format!("⋯ {} unchanged lines", lines.len()))
+                        .child(text)
                         .into_any_element()
                 }
-                DiffRow::Skipped { lines } => div()
-                    .w_full()
-                    .px(px(12.))
-                    .py(px(2.))
-                    .when(!layered, |d| d.bg(s.surface_container))
-                    .text_color(s.outline)
-                    .whitespace_nowrap()
-                    .child(format!("⋯ {lines} unchanged lines"))
-                    .into_any_element(),
+                DiffRow::Skipped { lines } => {
+                    let text = self
+                        .fold_label
+                        .as_ref()
+                        .map(|label| label(lines))
+                        .unwrap_or_else(|| format!("⋯ {lines} unchanged lines").into());
+                    div()
+                        .w_full()
+                        .px(px(12.))
+                        .py(px(2.))
+                        .when(!layered, |d| d.bg(s.surface_container))
+                        .text_color(s.outline)
+                        .whitespace_nowrap()
+                        .child(text)
+                        .into_any_element()
+                }
             });
         }
 
