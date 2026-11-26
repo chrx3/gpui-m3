@@ -1,19 +1,20 @@
 //! Line diffs: the pure model ([`Diff`]: lines, hunks, folding, stats) and its views
 //! ([`DiffView`], [`DiffBar`]).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    App, ClickEvent, ElementId, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
+    ParentElement, Pixels, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement,
+    Styled, StyledText, Window, div, px,
 };
 use similar::{ChangeTag, DiffTag, TextDiff};
 
-use super::child_id;
+use super::{Icon, child_id};
 use crate::cache::{Lru, content_key};
 use crate::motion::key;
 use crate::theme::{MONO_FONT_FAMILY, Scheme, Theme, alpha, font_family};
@@ -349,6 +350,90 @@ fn skipped(prev: &DiffLine, next: &DiffLine) -> Option<usize> {
         .filter(|&n| n > 0)
 }
 
+/// The changed word spans between a removed and an added line (byte ranges in
+/// each): the diff's intra-line highlight. Words come from [`similar`], so only
+/// the words that changed are emphasized.
+fn word_spans(old: &str, new: &str) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
+    let diff = TextDiff::configure()
+        .timeout(Duration::from_millis(100))
+        .diff_words(old, new);
+    let (mut old_spans, mut new_spans) = (Vec::new(), Vec::new());
+    let (mut old_off, mut new_off) = (0usize, 0usize);
+    for op in diff.ops() {
+        for change in diff.iter_changes(op) {
+            let len = change.value().len();
+            match change.tag() {
+                ChangeTag::Delete => {
+                    old_spans.push(old_off..old_off + len);
+                    old_off += len;
+                }
+                ChangeTag::Insert => {
+                    new_spans.push(new_off..new_off + len);
+                    new_off += len;
+                }
+                ChangeTag::Equal => {
+                    old_off += len;
+                    new_off += len;
+                }
+            }
+        }
+    }
+    (old_spans, new_spans)
+}
+
+/// Byte ranges to emphasize in each changed line: adjacent removed/added runs
+/// pair up, first with first. With the tabs already expanded, so the ranges
+/// match what is drawn.
+fn intra_spans(lines: &[DiffLine]) -> HashMap<usize, (Vec<Range<usize>>, DiffLineKind)> {
+    let mut out = HashMap::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].kind != DiffLineKind::Removed {
+            i += 1;
+            continue;
+        }
+        let mut removed = Vec::new();
+        while i < lines.len() && lines[i].kind == DiffLineKind::Removed {
+            removed.push(i);
+            i += 1;
+        }
+        let mut added = Vec::new();
+        while i < lines.len() && lines[i].kind == DiffLineKind::Added {
+            added.push(i);
+            i += 1;
+        }
+        for (r, a) in removed.iter().zip(added.iter()) {
+            let (old_spans, new_spans) = word_spans(&expand_tabs(&lines[*r].text), &expand_tabs(&lines[*a].text));
+            if !old_spans.is_empty() {
+                out.insert(*r, (old_spans, DiffLineKind::Removed));
+            }
+            if !new_spans.is_empty() {
+                out.insert(*a, (new_spans, DiffLineKind::Added));
+            }
+        }
+    }
+    out
+}
+
+/// The row of the previous (`forward: false`) or next change from `top`, wrapping
+/// around. Rows hold line indices into the diff's lines.
+fn nav_target(rows: &[DiffRow], lines: &[DiffLine], top: usize, forward: bool) -> Option<usize> {
+    let changes: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| matches!(row, DiffRow::Line(i) if lines[*i].kind != DiffLineKind::Context))
+        .map(|(n, _)| n)
+        .collect();
+    if changes.is_empty() {
+        return None;
+    }
+    if forward {
+        changes.iter().find(|&&n| n > top).or_else(|| changes.first()).copied()
+    } else {
+        changes.iter().rev().find(|&&n| n < top).or_else(|| changes.last()).copied()
+    }
+}
+
 thread_local! {
     static DIFFS: std::cell::RefCell<Lru<Rc<Diff>>> = const { std::cell::RefCell::new(Lru::new(1024)) };
 }
@@ -370,6 +455,18 @@ fn row_colors(s: &Scheme, dark: bool) -> (Hsla, Hsla) {
         (alpha(s.success, 0.14), alpha(s.error, 0.13))
     } else {
         (alpha(s.success, 0.12), alpha(s.error, 0.10))
+    }
+}
+
+/// Background of the changed words inside an added or removed row: stronger
+/// than the row itself, readable in light and dark.
+fn intra_bg(kind: DiffLineKind, s: &Scheme, dark: bool) -> Hsla {
+    match (kind, dark) {
+        (DiffLineKind::Added, true) => alpha(s.success, 0.38),
+        (DiffLineKind::Added, false) => alpha(s.success, 0.30),
+        (DiffLineKind::Removed, true) => alpha(s.error, 0.40),
+        (DiffLineKind::Removed, false) => alpha(s.error, 0.28),
+        (DiffLineKind::Context, _) => s.surface,
     }
 }
 
@@ -400,6 +497,8 @@ pub struct DiffView {
     show_all_label: Option<super::ShowAllLabel>,
     /// El texto de los tramos plegados («⋯ N unchanged lines» por omisión).
     fold_label: Option<FoldLabel>,
+    /// «Anterior / siguiente cambio» en la cabecera, con scroll al vecino.
+    nav: bool,
 }
 
 /// El texto de un tramo plegado, según cuántas líneas esconde.
@@ -420,6 +519,7 @@ impl DiffView {
             bordered: true,
             show_all_label: None,
             fold_label: None,
+            nav: false,
         }
     }
 
@@ -464,6 +564,13 @@ impl DiffView {
         self.bordered = false;
         self
     }
+
+    /// Previous / next change in the header, scrolling to the neighbor. Off by
+    /// default, so other uses of the view do not change.
+    pub fn nav(mut self, nav: bool) -> Self {
+        self.nav = nav;
+        self
+    }
 }
 
 impl RenderOnce for DiffView {
@@ -474,6 +581,9 @@ impl RenderOnce for DiffView {
         let open =
             window.use_keyed_state(key(&self.id, "open"), cx, |_, _| BTreeSet::<usize>::new());
         let all = window.use_keyed_state(key(&self.id, "all"), cx, |_, _| false);
+        let scroll =
+            window.use_keyed_state(key(&self.id, "scroll"), cx, |_, _| ScrollHandle::new());
+        let scroll = scroll.read(cx).clone();
         let rows = self.diff.rows(self.context, open.read(cx));
         let show_all = *all.read(cx);
         let total = rows.len();
@@ -484,6 +594,10 @@ impl RenderOnce for DiffView {
         };
         let new_file = self.diff.is_new_file();
         let lines = self.diff.lines();
+        // Con `nav`, la cabecera lleva «anterior / siguiente cambio»: solo si algo cambió.
+        let has_changes = rows
+            .iter()
+            .any(|row| matches!(row, DiffRow::Line(i) if lines[*i].kind != DiffLineKind::Context));
 
         // Width of the number columns from the largest number (min-width 3.2em in the reference).
         let biggest = lines
@@ -552,6 +666,20 @@ impl RenderOnce for DiffView {
             }),
         ];
         let last = shown.saturating_sub(1);
+        // Lo cambiado palabra por palabra en cada par quitado/agregado; se
+        // calcula una vez por contenido (no en cada cuadro).
+        let intra_state = window.use_keyed_state(key(&self.id, "intra"), cx, |_, _| {
+            (Rc::new(Diff::default()), HashMap::new())
+        });
+        let same = Rc::ptr_eq(&intra_state.read(cx).0, &self.diff);
+        let spans: HashMap<usize, (Vec<Range<usize>>, DiffLineKind)> = if same {
+            intra_state.read(cx).1.clone()
+        } else {
+            let spans = intra_spans(lines);
+            let fresh = spans.clone();
+            intra_state.update(cx, |cached, _| *cached = (self.diff.clone(), fresh));
+            spans
+        };
         let mut body = div().flex().flex_col().flex_none().min_w_full();
         for (n, row) in rows.into_iter().take(shown).enumerate() {
             let layered = (n == 0 && top_bg.is_some()) || (n == last && bottom_bg.is_some());
@@ -564,6 +692,19 @@ impl RenderOnce for DiffView {
                         DiffLineKind::Context => (None, " ", s.on_surface_variant),
                     };
                     let bg = bg.filter(|_| !layered);
+                    let expanded = expand_tabs(&line.text);
+                    let text = match spans.get(&i) {
+                        Some((ranges, kind)) => {
+                            let style = HighlightStyle {
+                                background_color: Some(intra_bg(*kind, &s, theme.dark)),
+                                ..Default::default()
+                            };
+                            StyledText::new(expanded)
+                                .with_highlights(ranges.iter().cloned().map(|range| (range, style)))
+                                .into_any_element()
+                        }
+                        None => expanded.into_any_element(),
+                    };
                     div()
                         .flex()
                         .w_full()
@@ -579,7 +720,7 @@ impl RenderOnce for DiffView {
                                 .text_color(mark_color)
                                 .child(mark),
                         )
-                        .child(div().flex_none().pr(px(12.)).child(expand_tabs(&line.text)))
+                        .child(div().flex_none().pr(px(12.)).child(text))
                         .into_any_element()
                 }
                 DiffRow::Fold { id, lines } => {
@@ -627,6 +768,46 @@ impl RenderOnce for DiffView {
             });
         }
 
+        // Ir al cambio anterior o al siguiente (con vuelta): hace scroll a la
+        // fila vecina.
+        let go = |forward: bool| {
+            let diff = self.diff.clone();
+            let context = self.context;
+            let open = open.clone();
+            let scroll = scroll.clone();
+            move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                let rows = diff.rows(context, open.read(cx));
+                let top = scroll.top_item();
+                if let Some(target) = nav_target(&rows, diff.lines(), top, forward) {
+                    scroll.scroll_to_top_of_item(target);
+                }
+            }
+        };
+        let nav = (self.nav && has_changes).then(|| {
+            let prev = div()
+                .id(child_id(&self.id, "prev"))
+                .p(px(4.))
+                .rounded_full()
+                .cursor_pointer()
+                .hover(|d| d.bg(s.surface_container_high))
+                .on_click(go(false))
+                .child(
+                    Icon::new("chevron-down")
+                        .rotate(std::f32::consts::PI)
+                        .size(px(14.))
+                        .color(s.on_surface_variant),
+                );
+            let next = div()
+                .id(child_id(&self.id, "next"))
+                .p(px(4.))
+                .rounded_full()
+                .cursor_pointer()
+                .hover(|d| d.bg(s.surface_container_high))
+                .on_click(go(true))
+                .child(Icon::new("chevron-down").size(px(14.)).color(s.on_surface_variant));
+            div().flex_none().flex().items_center().child(prev).child(next)
+        });
+
         let header = self.path.as_ref().map(|path| {
             let name = path
                 .rsplit(['/', '\\'])
@@ -653,6 +834,7 @@ impl RenderOnce for DiffView {
                         .font_weight(FontWeight::MEDIUM)
                         .child(name),
                 )
+                .children(nav)
                 .child(
                     div()
                         .flex_none()
@@ -720,6 +902,7 @@ impl RenderOnce for DiffView {
             .child(
                 div()
                     .id(child_id(&self.id, "body"))
+                    .track_scroll(&scroll)
                     .overflow_x_scroll()
                     // A row lets the lines keep their full width, so long ones scroll sideways.
                     .flex()
@@ -958,5 +1141,51 @@ mod tests {
             }),
             Some(1)
         );
+    }
+
+    #[test]
+    fn changed_words_are_emphasized() {
+        let (old_spans, new_spans) = word_spans("hello brave world", "hello bright world");
+        let old: String = old_spans.iter().map(|r| &"hello brave world"[r.clone()]).collect();
+        let new: String = new_spans.iter().map(|r| &"hello bright world"[r.clone()]).collect();
+        assert_eq!(old, "brave");
+        assert_eq!(new, "bright");
+        // Idénticas: nada que resaltar.
+        assert_eq!(word_spans("same", "same"), (Vec::new(), Vec::new()));
+    }
+
+    #[test]
+    fn only_adjacent_pairs_highlight() {
+        let diff = Diff::new("one\ntwo\nthree\n", "one\nTWO\nthree\n");
+        let spans = intra_spans(diff.lines());
+        // El par quitado/agregado resalta lo cambiado; el contexto, no.
+        assert_eq!(spans.len(), 2);
+        let removed: String = spans[&1].0.iter().map(|r| &"two"[r.clone()]).collect();
+        let added: String = spans[&2].0.iter().map(|r| &"TWO"[r.clone()]).collect();
+        assert_eq!((removed.as_str(), added.as_str()), ("two", "TWO"));
+        assert!(matches!(spans[&1].1, DiffLineKind::Removed));
+        assert!(matches!(spans[&2].1, DiffLineKind::Added));
+    }
+
+    #[test]
+    fn nav_moves_to_the_neighbor_and_wraps() {
+        let diff = Diff::new("a\nb\nc\nd\ne\n", "a\nB\nc\nD\ne\n");
+        let rows = diff.rows(0, &BTreeSet::new());
+        // Los cambios están en las filas 1, 2, 4 y 5 (quitado/agregado de cada par).
+        let change_rows: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| matches!(r, DiffRow::Line(i) if diff.lines()[*i].kind != DiffLineKind::Context))
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(change_rows.len(), 4);
+        // Desde arriba, siguiente va al primer cambio; anterior envuelve al último.
+        assert_eq!(nav_target(&rows, diff.lines(), 0, true), Some(change_rows[0]));
+        assert_eq!(nav_target(&rows, diff.lines(), 0, false), Some(change_rows[3]));
+        // Entre cambios, vecino a cada lado; en un cambio, al siguiente (no al mismo).
+        assert_eq!(nav_target(&rows, diff.lines(), change_rows[0], true), Some(change_rows[1]));
+        assert_eq!(nav_target(&rows, diff.lines(), change_rows[2], false), Some(change_rows[1]));
+        // Tras el último, siguiente envuelve al primero.
+        assert_eq!(nav_target(&rows, diff.lines(), change_rows[3], true), Some(change_rows[0]));
     }
 }
